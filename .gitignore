@@ -40,6 +40,13 @@ gvimext.dll
 gvimext.lib
 runtime/doc/uganda.nsis.txt
 
+# Windows - bvim
+src/Win32/*
+src/x64/*
+*.vcxproj.user
+*.VC.db
+*.VC.VC.opendb
+
 # Borland C++
 bcc.cfg
 *.ilc

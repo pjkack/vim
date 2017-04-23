@@ -88,6 +88,11 @@ static char *(features[]) =
 #else
 	"-balloon_eval",
 #endif
+#ifdef FEAT_BORE
+	"+bore",
+#else
+	"-bore",
+#endif
 #ifdef FEAT_BROWSE
 	"+browse",
 #else
@@ -2392,7 +2397,11 @@ intro_message(
     char	*p;
     static char	*(lines[]) =
     {
+#ifdef FEAT_BORE
+	N_("BVIM - Bore Vi IMproved"),
+#else
 	N_("VIM - Vi IMproved"),
+#endif
 	"",
 	N_("version "),
 	N_("by Bram Moolenaar et al."),

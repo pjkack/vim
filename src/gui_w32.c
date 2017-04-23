@@ -5063,6 +5063,15 @@ _WndProc(
 	return 1L;
 #endif
 
+#ifdef FEAT_BORE
+    case WM_USER + 1234:
+    {
+	extern void bore_async_execute_update(DWORD flags);
+	bore_async_execute_update(lParam);
+	break;
+    } 
+#endif
+
     default:
 #ifdef MSWIN_FIND_REPLACE
 	if (uMsg == s_findrep_msg && s_findrep_msg != 0)

@@ -1,137 +1,68 @@
-`README.md` for version 8.0 of Vim: Vi IMproved.
-[![Build Status](https://travis-ci.org/vim/vim.svg?branch=master)](https://travis-ci.org/vim/vim)
-[![Coverage Status](https://codecov.io/gh/vim/vim/coverage.svg?branch=master)](https://codecov.io/gh/vim/vim?branch=master)
-[![Coverage Status](https://coveralls.io/repos/vim/vim/badge.svg?branch=master&service=github)](https://coveralls.io/github/vim/vim?branch=master)
-[![Appveyor Build status](https://ci.appveyor.com/api/projects/status/o2qht2kjm02sgghk?svg=true)](https://ci.appveyor.com/project/chrisbra/vim)
-[![Coverity Scan](https://scan.coverity.com/projects/241/badge.svg)](https://scan.coverity.com/projects/vim)
+`README.md` for version 8.0 of BVIM: Bore Vi IMproved.
 
+BVIM: gVim 8.0 with Visual Studio extensions
+=======================================================
 
-## What is Vim? ##
+BVIM is a version of gVim which adds a few features which helps working on large Visual Studio projects.
 
-Vim is a greatly improved version of the good old UNIX editor Vi.  Many new
-features have been added: multi-level undo, syntax highlighting, command line
-history, on-line help, spell checking, filename completion, block operations,
-script language, etc.  There is also a Graphical User Interface (GUI)
-available.  Still, Vi compatibility is maintained, those who have Vi "in the
-fingers" will feel at home.  See `runtime/doc/vi_diff.txt` for differences with
-Vi.
+The goal is to make all common programming actions take less than 500 ms on a fast machine.
 
-This editor is very useful for editing programs and other plain text files.
-All commands are given with normal keyboard characters, so those who can type
-with ten fingers can work very fast.  Additionally, function keys can be
-mapped to commands by the user, and the mouse can be used.
+BVIM is supported on Windows 7 and builds with Visual Studio 2015 using src/vim_vs2015.sln.
 
-Vim runs under MS-Windows (NT, 2000, XP, Vista, 7, 8, 10), Macintosh, VMS and
-almost all flavours of UNIX.  Porting to other systems should not be very
-difficult.  Older versions of Vim run on MS-DOS, MS-Windows 95/98/Me, Amiga
-DOS, Atari MiNT, BeOS, RISC OS and OS/2.  These are no longer maintained.
+boresln <.sln file | directory>
+------------------------------------------------------
+Open a solution and build a list of all files that are included in the projects. This must be the first thing done in order to use the other commands. Alternatively a directory can be specified. This will include all files in all sub directories. Opening a git directory will only include files that are already added in the repository, this requires `git` to exist in path.
 
+boreopen
+-------------------------------------------------------
+Open a help-like window listing all files in the solution. Use `/` to search for the wanted file and press `enter` to open it.
+boreopen
 
-## Distribution ##
+boretoggle
+-------------------------------------------------------
+Cycle between related files in the solution. The order is hardcoded to: cpp cxx c inl hpp hxx h pro asm s ddf
 
-You can often use your favorite package manager to install Vim.  On Mac and
-Linux a small version of Vim is pre-installed, you still need to install Vim
-if you want more features.
+borefind [-i] [-p] [-e ext1,ext2,...,ext9] <string>
+-------------------------------------------------------
+Do an exact string search through all files in the solution for <string>. At most 100 hits per file is reported and the total hits is capped to 1000. The search is case sensitive by default. Optionally the search can be case insensitive `-i`, restricted to the project of the current buffer `-p`, or limited to a set of file extensions `-e`.
 
-There are separate distributions for Unix, PC, Amiga and some other systems.
-This `README.md` file comes with the runtime archive.  It includes the
-documentation, syntax files and other files that are used at runtime.  To run
-Vim you must get either one of the binary archives or a source archive.
-Which one you need depends on the system you want to run it on and whether you
-want or must compile it yourself.  Check http://www.vim.org/download.php for
-an overview of currently available distributions.
+boreconfig[!] [configuration|platform]
+------------------------------------------------------
+Show or set the currently active solution configuration and platform. Used when executing any of the borebuild commands. `boreconfig!` shows a list with all available configurations. Setting the configuration and project uses a string prefix match, so switching between release and debug is as simple as `:borec r` and `:borec d`.
 
-Some popular places to get the latest Vim:
-* Check out the git repository from [github](https://github.com/vim/vim).
-* Get the source code as an [archive](https://github.com/vim/vim/releases).
-* Get a Windows executable from the
-[vim-win32-installer](https://github.com/vim/vim-win32-installer/releases) repository.
+borebuild<sln|proj|projonly|file|info>[!] [project_name | file]
+------------------------------------------------------
+Build the whole solution `:borebuildsln`, or specified project `:borebuildproj` with or without references `:borebuildprojonly`, or file `:borebuildfile`, using the currently active configuration. Bang `!` will force a rebuild. `:borebuildinfo` will show the status of the current or last build. Requires `msbuild` to exist in path.
 
+boreproj[!] [project_name | file]
+------------------------------------------------------
+Show or set the currently active project. Only used to set the `g:bore_proj_path` variable, useful for scripting or commands. `boreproj!` shows a list of all available projects. Setting the project uses a string prefix match to save some typing.
 
+bore_ctrlpmatch(...)
+------------------------------------------------------
+Fast ctrlp matcher function written in c code for ctrlp. A simple algorithm that requires all substrings to match, always producing meaningful results without ranking the hits.
+`let g:ctrlp_match_func = { 'match': 'bore_ctrlpmatch' } `
 
-## Compiling ##
+bore_statusline(int flags)
+------------------------------------------------------
+Use in `statusline` or `titlestring` to display any combination of project `0x04` of current buffer, or active configuration `0x02` and platform `0x01`.
 
-If you obtained a binary distribution you don't need to compile Vim.  If you
-obtained a source distribution, all the stuff for compiling Vim is in the
-`src` directory.  See `src/INSTALL` for instructions.
+g:bore_base_dir
+-------------------------------------------------------
+The base directory of the solution file. It is either the directory of the solution file itself, or its parent directory. All bore file paths are relative to this directory. Useful for e.g. writing a single tags file from all solution files.
 
+g:bore_sln_config
+-------------------------------------------------------
+The currently active solution configuration, i.e. `configuration|platform`.
 
-## Installation ##
+g:bore_filelist_file
+-------------------------------------------------------
+The filename of the file which contains a list of relative paths for all files included in the solution. Useful for e.g. building a tags file from all solution files.
 
-See one of these files for system-specific instructions.  Either in the
-READMEdir directory (in the repository) or the top directory (if you unpack an
-archive):
+g:bore_proj_path
+-------------------------------------------------------
+The path to the project set by `boreproj`, useful for scripting.
 
-	README_ami.txt		Amiga
-	README_unix.txt		Unix
-	README_dos.txt		MS-DOS and MS-Windows
-	README_mac.txt		Macintosh
-	README_vms.txt		VMS
-
-There are other `README_*.txt` files, depending on the distribution you used.
-
-
-## Documentation ##
-
-The Vim tutor is a one hour training course for beginners.  Often it can be
-started as `vimtutor`.  See `:help tutor` for more information.
-
-The best is to use `:help` in Vim.  If you don't have an executable yet, read
-`runtime/doc/help.txt`.  It contains pointers to the other documentation
-files.  The User Manual reads like a book and is recommended to learn to use
-Vim.  See `:help user-manual`.
-
-
-## Copying ##
-
-Vim is Charityware.  You can use and copy it as much as you like, but you are
-encouraged to make a donation to help orphans in Uganda.  Please read the file
-`runtime/doc/uganda.txt` for details (do `:help uganda` inside Vim).
-
-Summary of the license: There are no restrictions on using or distributing an
-unmodified copy of Vim.  Parts of Vim may also be distributed, but the license
-text must always be included.  For modified versions a few restrictions apply.
-The license is GPL compatible, you may compile Vim with GPL libraries and
-distribute it.
-
-
-## Sponsoring ##
-
-Fixing bugs and adding new features takes a lot of time and effort.  To show
-your appreciation for the work and motivate Bram and others to continue
-working on Vim please send a donation.
-
-Since Bram is back to a paid job the money will now be used to help children
-in Uganda.  See `runtime/doc/uganda.txt`.  But at the same time donations
-increase Bram's motivation to keep working on Vim!
-
-For the most recent information about sponsoring look on the Vim web site:
-	http://www.vim.org/sponsor/
-
-
-## Contributing ##
-
-If you would like to help making Vim better, see the [CONTRIBUTING.md](https://github.com/vim/vim/blob/master/CONTRIBUTING.md) file.
-
-
-## Information ##
-
-The latest news about Vim can be found on the Vim home page:
-	http://www.vim.org/
-
-If you have problems, have a look at the Vim documentation or tips:
-	http://www.vim.org/docs.php
-	http://vim.wikia.com/wiki/Vim_Tips_Wiki
-
-If you still have problems or any other questions, use one of the mailing
-lists to discuss them with Vim users and developers:
-	http://www.vim.org/maillist.php
-
-If nothing else works, report bugs directly:
-	Bram Moolenaar <Bram@vim.org>
-
-
-## Main author ##
-
-Send any other comments, patches, flowers and suggestions to:
-	Bram Moolenaar <Bram@vim.org>
+g:bore_search_thread_count
+-------------------------------------------------------
+The number of threads used by `borefind`. Defaults to 4.
