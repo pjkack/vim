@@ -29,7 +29,6 @@ src/auto/pathdef.c
 *.obj
 *.pdb
 *.ilk
-*.sln
 *.suo
 *.res
 *.RES
