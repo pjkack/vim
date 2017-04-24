@@ -2897,6 +2897,14 @@ inmacro(char_u *opt, char_u *s)
     return (macro[0] != NUL);
 }
 
+static int isWhitespaceLine(char_u *s)
+{
+    while (*s && vim_isspace(*s))
+	++s;
+
+    return *s == 0;
+}
+
 /*
  * startPS: return TRUE if line 'lnum' is the start of a section or paragraph.
  * If 'para' is '{' or '}' only check for sections.
@@ -2908,7 +2916,7 @@ startPS(linenr_T lnum, int para, int both)
     char_u	*s;
 
     s = ml_get(lnum);
-    if (*s == para || *s == '\f' || (both && *s == '}'))
+    if (*s == para || (para == 0 && isWhitespaceLine(s)) || *s == '\f' || (both && *s == '}'))
 	return TRUE;
     if (*s == '.' && (inmacro(p_sections, s + 1) ||
 					   (!para && inmacro(p_para, s + 1))))
