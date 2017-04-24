@@ -33,9 +33,9 @@ static int (_cdecl *pmain)(int, char **);
 #ifndef PROTO
 #ifdef FEAT_GUI
 #ifndef VIMDLL
-void _cdecl SaveInst(HINSTANCE hInst);
+void _cdecl SaveInst(HINSTANCE hInst, int nCmdShow);
 #endif
-static void (_cdecl *pSaveInst)(HINSTANCE);
+static void (_cdecl *pSaveInst)(HINSTANCE, int);
 #endif
 
     int WINAPI
@@ -117,7 +117,8 @@ WinMain(
 #ifdef __MINGW32__
 	    GetModuleHandle(NULL)
 #else
-	    hInstance
+	    hInstance,
+	    nCmdShow
 #endif
 	    );
 #endif

@@ -328,6 +328,7 @@ static int		s_findrep_is_find;	/* TRUE for find dialog, FALSE
 #endif
 
 static HINSTANCE	s_hinst = NULL;
+static int		s_ncmdshow = 0;
 #if !defined(FEAT_GUI)
 static
 #endif
@@ -2213,9 +2214,10 @@ void
 _export
 #endif
 _cdecl
-SaveInst(HINSTANCE hInst)
+SaveInst(HINSTANCE hInst, int nCmdShow)
 {
     s_hinst = hInst;
+    s_ncmdshow = nCmdShow;
 }
 #endif
 
@@ -5382,6 +5384,10 @@ gui_mch_init(void)
 	{
 	    SetParent(s_hwnd, (HWND)win_socket_id);
 	    ShowWindow(s_hwnd, SW_SHOWMAXIMIZED);
+	}
+	else
+	{
+	    ShowWindow(s_hwnd, s_ncmdshow);
 	}
     }
 
