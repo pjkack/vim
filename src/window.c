@@ -50,6 +50,9 @@ static void win_free(win_T *wp, tabpage_T *tp);
 static void frame_append(frame_T *after, frame_T *frp);
 static void frame_insert(frame_T *before, frame_T *frp);
 static void frame_remove(frame_T *frp);
+#ifdef FEAT_BORE
+static void win_goto_alt_large();
+#endif
 static void win_goto_ver(int up, long count);
 static void win_goto_hor(int left, long count);
 static void frame_add_height(frame_T *frp, int n);
@@ -266,6 +269,15 @@ newwindow:
 		    win_goto(wp);
 		}
 		break;
+
+#ifdef FEAT_BORE
+/* cursor between the two largest windows */
+    case 'm':
+    // case Ctrl_M: collides with CAR
+		CHECK_CMDWIN
+		win_goto_alt_large();
+		break;
+#endif
 
 /* cursor to window below */
     case 'j':
@@ -614,6 +626,10 @@ get_wincmd_addr_type(char_u *arg, exarg_T *eap)
     case 's':
     case Ctrl_N:
     case 'n':
+#ifdef FEAT_BORE
+    case 'm':
+    // case Ctrl_M: collides with CAR
+#endif
     case 'j':
     case Ctrl_J:
     case 'k':
@@ -4207,6 +4223,53 @@ win_find_tabpage(win_T *win)
 	    if (wp == win)
 		return tp;
     return NULL;
+}
+#endif
+
+#ifdef FEAT_BORE
+/*
+ * Alternate between the two largest windows
+ */
+    static void
+win_goto_alt_large()
+{
+    int area;
+    int wa1 = 0;
+    int wa2 = 0;
+    win_T* wp = NULL;
+    win_T* wp1 = NULL;
+    win_T* wp2 = NULL;
+
+    if (ONE_WINDOW)
+    {
+	beep_flush();
+	return;
+    }
+
+    FOR_ALL_WINDOWS(wp)
+    {
+	area = wp->w_width * wp->w_height;
+	if (area > wa1) {
+	    wa2 = wa1;
+	    wp2 = wp1;
+	    wa1 = area;
+	    wp1 = wp;
+	}
+	else if (area > wa2)
+	{
+	    wa2 = area;
+	    wp2 = wp;
+	}
+    }
+
+    if (wp1 && curwin != wp1)
+    {
+	win_goto(wp1);
+    }
+    else if (wp2 && curwin != wp2)
+    {
+	win_goto(wp2);
+    }
 }
 #endif
 
