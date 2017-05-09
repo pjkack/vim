@@ -3,11 +3,7 @@
 BVIM: gVim 8.0 with Visual Studio extensions
 =======================================================
 
-BVIM is a version of gVim which adds a few features which helps working on large Visual Studio projects.
-
-The goal is to make all common programming actions take less than 500 ms on a fast machine.
-
-BVIM is supported on Windows 7 and builds with Visual Studio 2015 using src/vim_vs2015.sln.
+BVIM is a version of gVim which adds a few features which helps working on large Visual Studio projects. The goal is to make all common programming actions take less than 500 ms on a fast machine. It is supported on Windows 7 and above, it builds with Visual Studio 2015 using src/vim_vs2015.sln, and it is developed and maintained by Jonas Kjellström and Per-Jonny Käck.
 
 boresln <.sln file | directory>
 ------------------------------------------------------
@@ -38,6 +34,15 @@ boreproj[!] [project_name | file]
 ------------------------------------------------------
 Show or set the currently active project. Only used to set the `g:bore_proj_path` variable, useful for scripting or commands. `boreproj!` shows a list of all available projects. Setting the project uses a string prefix match to save some typing.
 
+ctoggle, ltoggle
+------------------------------------------------------
+Toggle (as in show or hide) the quickfix list or location list window easily without any complicated vim scripts. This command is easy to use in a key binding like `
+nnoremap <silent><F4> :ctoggle<CR>`.
+
+CTRL-W CTRL-m
+------------------------------------------------------
+Window command to move cursor between the two largest windows.
+
 bore_ctrlpmatch(...)
 ------------------------------------------------------
 Fast ctrlp matcher function written in c code for ctrlp. A simple algorithm that requires all substrings to match, always producing meaningful results without ranking the hits.
@@ -45,7 +50,13 @@ Fast ctrlp matcher function written in c code for ctrlp. A simple algorithm that
 
 bore_statusline(int flags)
 ------------------------------------------------------
-Use in `statusline` or `titlestring` to display any combination of project `0x04` of current buffer, or active configuration `0x02` and platform `0x01`.
+Use in `statusline` or `titlestring` to display any combination of project `0x04` of current buffer, or active configuration `0x02` and platform `0x01`. Example usage:
+```vim
+if has('bore')
+	set statusline+=%{bore_statusline(4)}
+	set titlestring=%{v:servername}%{bore_statusline(3)}\ -\ %f%{bore_statusline(4)}
+endif
+```
 
 g:bore_base_dir
 -------------------------------------------------------

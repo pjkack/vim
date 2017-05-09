@@ -42,6 +42,7 @@ runtime/doc/uganda.nsis.txt
 # Windows - bvim
 src/Win32/*
 src/x64/*
+*.metagen
 *.vcxproj.user
 *.VC.db
 *.VC.VC.opendb

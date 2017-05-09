@@ -998,7 +998,7 @@
  *			a modified version of Vim.
  *			Also from the "--with-modified-by" configure argument.
  */
-/* #define MODIFIED_BY "John Doe" */
+#define MODIFIED_BY "Jonas Kjellström and Per-Jonny Käck"
 
 /*
  * Machine dependent:
