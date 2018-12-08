@@ -1241,13 +1241,10 @@ fail:
 // mappings is a null-terminated array of strings with buffer mappings of the form "<key> <command>"
 static void bore_show_borebuf(bore_t* b, const char* filename, int minheight, const char** mappings)
 {
-    //char_u    *arg;
     char_u  maparg[512];
-    int    n;
 #ifdef FEAT_WINDOWS
     win_T    *wp;
 #endif
-    //    char_u        *p;
     int    empty_fnum = 0;
     int    alt_fnum = 0;
     buf_T    *buf;

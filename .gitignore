@@ -37,12 +37,12 @@ src/pathdef.c
 src/Obj*/pathdef.c
 gvimext.dll
 gvimext.lib
+gvim.lib
 runtime/doc/uganda.nsis.txt
 
 # Windows - bvim
 src/.vs/*
-src/Win32/*
-src/x64/*
+src/ObjVS*/*
 *.metagen
 *.vcxproj.user
 *.VC.db

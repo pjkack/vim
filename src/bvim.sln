@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio 14
-VisualStudioVersion = 14.0.25420.1
+# Visual Studio 15
+VisualStudioVersion = 15.0.27422.1
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "bvim", "bvim.vcxproj", "{4A07341F-829B-7311-ABD0-68B31D7CB23A}"
 EndProject
@@ -9,6 +9,10 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 	ProjectSection(SolutionItems) = preProject
 		Performance2.psess = Performance2.psess
 	EndProjectSection
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "libvterm", "libvterm.vcxproj", "{36096AF6-57A1-4261-B346-E4836BD9893B}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "xdiff", "xdiff.vcxproj", "{F09EEFFE-4796-4EC3-8994-45B0C2A3EB95}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -26,6 +30,22 @@ Global
 		{4A07341F-829B-7311-ABD0-68B31D7CB23A}.Release|Win32.Build.0 = Release|Win32
 		{4A07341F-829B-7311-ABD0-68B31D7CB23A}.Release|x64.ActiveCfg = Release|x64
 		{4A07341F-829B-7311-ABD0-68B31D7CB23A}.Release|x64.Build.0 = Release|x64
+		{36096AF6-57A1-4261-B346-E4836BD9893B}.Debug|Win32.ActiveCfg = Debug|Win32
+		{36096AF6-57A1-4261-B346-E4836BD9893B}.Debug|Win32.Build.0 = Debug|Win32
+		{36096AF6-57A1-4261-B346-E4836BD9893B}.Debug|x64.ActiveCfg = Debug|x64
+		{36096AF6-57A1-4261-B346-E4836BD9893B}.Debug|x64.Build.0 = Debug|x64
+		{36096AF6-57A1-4261-B346-E4836BD9893B}.Release|Win32.ActiveCfg = Release|Win32
+		{36096AF6-57A1-4261-B346-E4836BD9893B}.Release|Win32.Build.0 = Release|Win32
+		{36096AF6-57A1-4261-B346-E4836BD9893B}.Release|x64.ActiveCfg = Release|x64
+		{36096AF6-57A1-4261-B346-E4836BD9893B}.Release|x64.Build.0 = Release|x64
+		{F09EEFFE-4796-4EC3-8994-45B0C2A3EB95}.Debug|Win32.ActiveCfg = Debug|Win32
+		{F09EEFFE-4796-4EC3-8994-45B0C2A3EB95}.Debug|Win32.Build.0 = Debug|Win32
+		{F09EEFFE-4796-4EC3-8994-45B0C2A3EB95}.Debug|x64.ActiveCfg = Debug|x64
+		{F09EEFFE-4796-4EC3-8994-45B0C2A3EB95}.Debug|x64.Build.0 = Debug|x64
+		{F09EEFFE-4796-4EC3-8994-45B0C2A3EB95}.Release|Win32.ActiveCfg = Release|Win32
+		{F09EEFFE-4796-4EC3-8994-45B0C2A3EB95}.Release|Win32.Build.0 = Release|Win32
+		{F09EEFFE-4796-4EC3-8994-45B0C2A3EB95}.Release|x64.ActiveCfg = Release|x64
+		{F09EEFFE-4796-4EC3-8994-45B0C2A3EB95}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

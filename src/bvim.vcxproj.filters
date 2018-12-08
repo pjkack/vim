@@ -16,6 +16,9 @@
     <Filter Include="bore">
       <UniqueIdentifier>{a33bce04-c480-4017-8c70-861264ae2657}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Proto Files">
+      <UniqueIdentifier>{0b07f90d-2459-4985-8d63-6fd87e067e49}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="blowfish.c">
@@ -216,6 +219,12 @@
     <ClCompile Include="pathdef.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="beval.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="terminal.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="vim.rc">
@@ -223,98 +232,288 @@
     </ResourceCompile>
   </ItemGroup>
   <ItemGroup>
-    <None Include="proto\blowfish.pro" />
-    <None Include="proto\buffer.pro" />
-    <None Include="proto\charset.pro" />
-    <None Include="proto\diff.pro" />
-    <None Include="proto\digraph.pro" />
-    <None Include="proto\edit.pro" />
-    <None Include="proto\eval.pro" />
-    <None Include="proto\ex_cmds.pro" />
-    <None Include="proto\ex_cmds2.pro" />
-    <None Include="proto\ex_docmd.pro" />
-    <None Include="proto\ex_eval.pro" />
-    <None Include="proto\ex_getln.pro" />
-    <None Include="proto\fileio.pro" />
-    <None Include="proto\fold.pro" />
-    <None Include="proto\getchar.pro" />
-    <None Include="proto\gui.pro" />
-    <None Include="proto\gui_athena.pro" />
-    <None Include="proto\gui_beval.pro" />
-    <None Include="proto\gui_gtk.pro" />
-    <None Include="proto\gui_gtk_x11.pro" />
-    <None Include="proto\gui_mac.pro" />
-    <None Include="proto\gui_motif.pro" />
-    <None Include="proto\gui_photon.pro" />
-    <None Include="proto\gui_riscos.pro" />
-    <None Include="proto\gui_w16.pro" />
-    <None Include="proto\gui_w32.pro" />
-    <None Include="proto\gui_x11.pro" />
-    <None Include="proto\gui_xmdlg.pro" />
-    <None Include="proto\hangulin.pro" />
-    <None Include="proto\hardcopy.pro" />
-    <None Include="proto\hashtab.pro" />
-    <None Include="proto\if_bore.pro" />
-    <None Include="proto\if_cscope.pro" />
-    <None Include="proto\if_lua.pro" />
-    <None Include="proto\if_mzsch.pro" />
-    <None Include="proto\if_ole.pro" />
-    <None Include="proto\if_perl.pro" />
-    <None Include="proto\if_perlsfio.pro" />
-    <None Include="proto\if_python.pro" />
-    <None Include="proto\if_python3.pro" />
-    <None Include="proto\if_ruby.pro" />
-    <None Include="proto\if_tcl.pro" />
-    <None Include="proto\if_xcmdsrv.pro" />
-    <None Include="proto\main.pro" />
-    <None Include="proto\mark.pro" />
-    <None Include="proto\mbyte.pro" />
-    <None Include="proto\memfile.pro" />
-    <None Include="proto\memline.pro" />
-    <None Include="proto\menu.pro" />
-    <None Include="proto\message.pro" />
-    <None Include="proto\misc1.pro" />
-    <None Include="proto\misc2.pro" />
-    <None Include="proto\move.pro" />
-    <None Include="proto\netbeans.pro" />
-    <None Include="proto\normal.pro" />
-    <None Include="proto\ops.pro" />
-    <None Include="proto\option.pro" />
-    <None Include="proto\os_amiga.pro" />
-    <None Include="proto\os_mac_conv.pro" />
-    <None Include="proto\os_msdos.pro" />
-    <None Include="proto\os_mswin.pro" />
-    <None Include="proto\os_qnx.pro" />
-    <None Include="proto\os_riscos.pro" />
-    <None Include="proto\os_unix.pro" />
-    <None Include="proto\os_win16.pro" />
-    <None Include="proto\os_win32.pro" />
-    <None Include="proto\os_vms.pro" />
-    <None Include="proto\popupmnu.pro" />
-    <None Include="proto\pty.pro" />
-    <None Include="proto\quickfix.pro" />
-    <None Include="proto\regexp.pro" />
-    <None Include="proto\screen.pro" />
-    <None Include="proto\search.pro" />
-    <None Include="proto\sha256.pro" />
-    <None Include="proto\spell.pro" />
-    <None Include="proto\syntax.pro" />
-    <None Include="proto\tag.pro" />
-    <None Include="proto\term.pro" />
-    <None Include="proto\termlib.pro" />
-    <None Include="proto\ui.pro" />
-    <None Include="proto\undo.pro" />
-    <None Include="proto\version.pro" />
-    <None Include="proto\window.pro" />
-    <None Include="proto\workshop.pro" />
-    <None Include="proto\json.pro" />
-    <None Include="proto\dict.pro" />
-    <None Include="proto\farsi.pro" />
-    <None Include="proto\list.pro" />
-    <None Include="proto\userfunc.pro" />
-    <None Include="proto\spellfile.pro" />
-    <None Include="proto\arabic.pro" />
-    <None Include="proto\channel.pro" />
+    <None Include="proto\arabic.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\beval.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\blowfish.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\buffer.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\channel.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\charset.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\dict.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\diff.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\digraph.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\edit.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\eval.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\ex_cmds.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\ex_cmds2.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\ex_docmd.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\ex_eval.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\ex_getln.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\farsi.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\fileio.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\fold.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\getchar.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\gui.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\gui_athena.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\gui_beval.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\gui_gtk.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\gui_gtk_x11.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\gui_mac.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\gui_motif.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\gui_photon.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\gui_riscos.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\gui_w16.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\gui_w32.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\gui_x11.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\gui_xmdlg.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\hangulin.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\hardcopy.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\hashtab.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\if_bore.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\if_cscope.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\if_lua.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\if_mzsch.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\if_ole.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\if_perl.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\if_perlsfio.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\if_python.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\if_python3.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\if_ruby.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\if_tcl.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\if_xcmdsrv.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\json.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\list.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\main.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\mark.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\mbyte.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\memfile.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\memline.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\menu.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\message.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\misc1.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\misc2.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\move.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\netbeans.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\normal.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\ops.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\option.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\os_amiga.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\os_mac_conv.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\os_msdos.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\os_mswin.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\os_qnx.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\os_riscos.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\os_unix.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\os_vms.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\os_win16.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\os_win32.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\popupmnu.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\pty.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\quickfix.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\regexp.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\screen.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\search.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\sha256.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\spell.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\spellfile.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\syntax.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\tag.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\term.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\terminal.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\termlib.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\ui.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\undo.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\userfunc.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\version.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\window.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\workshop.pro">
+      <Filter>Proto Files</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="arabic.h">
@@ -480,6 +679,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="ex_cmdidxs.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="beval.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

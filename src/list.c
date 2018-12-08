@@ -86,6 +86,19 @@ list_alloc(void)
 }
 
 /*
+ * list_alloc() with an ID for alloc_fail().
+ */
+    list_T *
+list_alloc_id(alloc_id_T id UNUSED)
+{
+#ifdef FEAT_EVAL
+    if (alloc_fail_id == id && alloc_does_fail((long_u)sizeof(list_T)))
+	return NULL;
+#endif
+    return (list_alloc());
+}
+
+/*
  * Allocate an empty list for a return value, with reference count set.
  * Returns OK or FAIL.
  */
@@ -97,11 +110,21 @@ rettv_list_alloc(typval_T *rettv)
     if (l == NULL)
 	return FAIL;
 
-    rettv->vval.v_list = l;
-    rettv->v_type = VAR_LIST;
     rettv->v_lock = 0;
-    ++l->lv_refcount;
+    rettv_list_set(rettv, l);
     return OK;
+}
+
+/*
+ * Set a list as the return value
+ */
+    void
+rettv_list_set(typval_T *rettv, list_T *l)
+{
+    rettv->v_type = VAR_LIST;
+    rettv->vval.v_list = l;
+    if (l != NULL)
+	++l->lv_refcount;
 }
 
 /*
@@ -465,6 +488,25 @@ list_append_dict(list_T *list, dict_T *dict)
 }
 
 /*
+ * Append list2 to list1.
+ * Return FAIL when out of memory.
+ */
+    int
+list_append_list(list_T *list1, list_T *list2)
+{
+    listitem_T	*li = listitem_alloc();
+
+    if (li == NULL)
+	return FAIL;
+    li->li_tv.v_type = VAR_LIST;
+    li->li_tv.v_lock = 0;
+    li->li_tv.vval.v_list = list2;
+    list_append(list1, li);
+    ++list2->lv_refcount;
+    return OK;
+}
+
+/*
  * Make a copy of "str" and append it as an item to list "l".
  * When "len" >= 0 use "str[len]".
  * Returns FAIL when out of memory.
@@ -730,7 +772,7 @@ list_join_inner(
     for (item = l->lv_first; item != NULL && !got_int; item = item->li_next)
     {
 	s = echo_string_core(&item->li_tv, &tofree, numbuf, copyID,
-					   echo_style, restore_copyID, FALSE);
+				      echo_style, restore_copyID, !echo_style);
 	if (s == NULL)
 	    return FAIL;
 
@@ -875,11 +917,7 @@ failret:
 
     *arg = skipwhite(*arg + 1);
     if (evaluate)
-    {
-	rettv->v_type = VAR_LIST;
-	rettv->vval.v_list = l;
-	++l->lv_refcount;
-    }
+	rettv_list_set(rettv, l);
 
     return OK;
 }

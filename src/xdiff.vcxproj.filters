@@ -1,0 +1,59 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hh;hpp;hxx;hm;inl;inc;xsd</Extensions>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="xdiff\xdiff.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="xdiff\xdiffi.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="xdiff\xemit.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="xdiff\xinclude.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="xdiff\xmacros.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="xdiff\xprepare.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="xdiff\xtypes.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="xdiff\xutils.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="xdiff\xdiffi.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="xdiff\xemit.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="xdiff\xhistogram.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="xdiff\xpatience.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="xdiff\xprepare.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="xdiff\xutils.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+</Project>
