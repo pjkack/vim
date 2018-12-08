@@ -3,7 +3,7 @@
 BVIM: gVim 8.0 with Visual Studio extensions
 =======================================================
 
-BVIM is a version of gVim which adds a few features which helps working on large Visual Studio projects. The goal is to make all common programming actions take less than 500 ms on a fast machine. It is supported on Windows 7 and above, it builds with Visual Studio 2015 using src/vim_vs2015.sln, and it is developed and maintained by Jonas Kjellström and Per-Jonny Käck.
+BVIM is a version of gVim which adds a few features which helps working on large Visual Studio projects. The goal is to make all common programming actions take less than 500 ms on a fast machine. It is supported on Windows 7 and above, it builds with Visual Studio 2017 using src/bvim.sln, and it is developed and maintained by Jonas Kjellström and Per-Jonny Käck.
 
 boresln <.sln file | directory>
 ------------------------------------------------------

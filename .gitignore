@@ -40,6 +40,7 @@ gvimext.lib
 runtime/doc/uganda.nsis.txt
 
 # Windows - bvim
+src/.vs/*
 src/Win32/*
 src/x64/*
 *.metagen

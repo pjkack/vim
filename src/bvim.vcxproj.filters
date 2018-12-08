@@ -213,7 +213,7 @@
     <ClCompile Include="channel.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="auto\pathdef.c">
+    <ClCompile Include="pathdef.c">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
