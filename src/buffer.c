@@ -5579,6 +5579,12 @@ read_viminfo_bufferlist(
     /* Handle long line and escaped characters. */
     xline = viminfo_readstring(virp, 1, FALSE);
 
+#ifdef FEAT_BORE
+    /* Read existing viminfo buffer list also when 'writing',
+     * this will add any recent items from other vim sessions */
+    writing = 0;
+#endif
+
     /* don't read in if there are files on the command-line or if writing: */
     if (xline != NULL && !writing && ARGCOUNT == 0
 				       && find_viminfo_parameter('%') != NULL)
@@ -5618,6 +5624,23 @@ read_viminfo_bufferlist(
     return viminfo_readline(virp);
 }
 
+#ifdef FEAT_BORE
+/*
+ * Compare functions for qsort() below, that compares b_last_used.
+ * Copy of local static function in mark.c
+ */
+    static int
+buf_compare(const void *s1, const void *s2)
+{
+    buf_T *buf1 = *(buf_T **)s1;
+    buf_T *buf2 = *(buf_T **)s2;
+
+    if (buf1->b_last_used == buf2->b_last_used)
+	return 0;
+    return buf1->b_last_used > buf2->b_last_used ? -1 : 1;
+}
+#endif
+
     void
 write_viminfo_bufferlist(FILE *fp)
 {
@@ -5643,7 +5666,27 @@ write_viminfo_bufferlist(FILE *fp)
 	set_last_cursor(win);
 
     fputs(_("\n# Buffer list:\n"), fp);
+
+#ifdef FEAT_BORE
+    garray_T buflist;
+    int i;
+
+    ga_init2(&buflist, sizeof(buf_T *), 50);
     FOR_ALL_BUFFERS(buf)
+    {
+	if (ga_grow(&buflist, 1) == OK)
+	    ((buf_T **)buflist.ga_data)[buflist.ga_len++] = buf;
+    }
+
+    /* Sort the list of buffers on b_last_used. */
+    qsort(buflist.ga_data, (size_t)buflist.ga_len,
+	sizeof(buf_T *), buf_compare);
+
+    i = 0;
+    for (buf = ((buf_T **)buflist.ga_data)[i]; i < buflist.ga_len; buf = ((buf_T **)buflist.ga_data)[++i])
+#else
+    FOR_ALL_BUFFERS(buf)
+#endif
     {
 	if (buf->b_fname == NULL
 		|| !buf->b_p_bl
