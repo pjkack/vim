@@ -141,6 +141,8 @@ static int bore_str_match_score(const char* target, const char* candidate)
         ++candidate;
         ++score;
     }
+    if (*candidate == '\0' && *target == '\0')
+        ++score;
     return score;
 }
 
@@ -155,10 +157,15 @@ static int bore_is_excluded_file(const char* path)
     const char* ext = (char*)vim_strrchr((char_u*)path, '.');
     if (ext)
     {
-        if (0 == STRICMP((char*)ext, ".pdb") ||
+        if (0 == STRICMP((char*)ext, ".bin") ||
             0 == STRICMP((char*)ext, ".dll") ||
-            0 == STRICMP((char*)ext, ".vcxproj") ||
-            0 == STRICMP((char*)ext, ".exe"))
+            0 == STRICMP((char*)ext, ".exe") ||
+            0 == STRICMP((char*)ext, ".pdb") ||
+            0 == STRICMP((char*)ext, ".zip") ||
+            0 == STRICMP((char*)ext, ".bmp") ||
+            0 == STRICMP((char*)ext, ".gif") ||
+            0 == STRICMP((char*)ext, ".jpg") ||
+            0 == STRICMP((char*)ext, ".png"))
             return 1;
     }
 
