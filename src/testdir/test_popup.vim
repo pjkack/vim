@@ -2,6 +2,7 @@
 
 source shared.vim
 source screendump.vim
+source check.vim
 
 let g:months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 let g:setting = ''
@@ -249,7 +250,7 @@ endfunc
 
 func Test_noinsert_complete()
   func! s:complTest1() abort
-    call complete(1, ['source', 'soundfold'])
+    eval ['source', 'soundfold']->complete(1)
     return ''
   endfunc
 
@@ -273,6 +274,38 @@ func Test_noinsert_complete()
   bwipe!
 
   set completeopt-=noinsert
+  iunmap <F5>
+endfunc
+
+func Test_complete_no_filter()
+  func! s:complTest1() abort
+    call complete(1, [{'word': 'foobar'}])
+    return ''
+  endfunc
+  func! s:complTest2() abort
+    call complete(1, [{'word': 'foobar', 'equal': 1}])
+    return ''
+  endfunc
+
+  let completeopt = &completeopt
+
+  " without equal=1
+  new
+  set completeopt=menuone,noinsert,menu
+  inoremap <F5>  <C-R>=s:complTest1()<CR>
+  call feedkeys("i\<F5>z\<CR>\<CR>\<ESC>.", 'tx')
+  call assert_equal('z', getline(1))
+  bwipe!
+
+  " with equal=1
+  new
+  set completeopt=menuone,noinsert,menu
+  inoremap <F5>  <C-R>=s:complTest2()<CR>
+  call feedkeys("i\<F5>z\<CR>\<CR>\<ESC>.", 'tx')
+  call assert_equal('foobar', getline(1))
+  bwipe!
+
+  let &completeopt = completeopt
   iunmap <F5>
 endfunc
 
@@ -370,7 +403,7 @@ func DummyCompleteFour(findstart, base)
     return 0
   else
     call complete_add('four1')
-    call complete_add('four2')
+    eval 'four2'->complete_add()
     call complete_check()
     call complete_add('four3')
     call complete_add('four4')
@@ -457,6 +490,8 @@ endfunc
 " Test that 'completefunc' on Scratch buffer with preview window works when
 " it's OK.
 func Test_completefunc_with_scratch_buffer()
+  CheckFeature quickfix
+
   new +setlocal\ buftype=nofile\ bufhidden=wipe\ noswapfile
   set completeopt+=preview
   setlocal completefunc=DummyCompleteFive
@@ -631,9 +666,10 @@ func Test_complete_CTRLN_startofbuffer()
 endfunc
 
 func Test_popup_and_window_resize()
-  if !has('terminal') || has('gui_running')
-    return
-  endif
+  CheckFeature terminal
+  CheckFeature quickfix
+  CheckNotGui
+
   let h = winheight(0)
   if h < 15
     return
@@ -664,14 +700,13 @@ func Test_popup_and_window_resize()
 endfunc
 
 func Test_popup_and_preview_autocommand()
+  CheckFeature python
+  CheckFeature quickfix
+  if winheight(0) < 15
+    throw 'Skipped: window height insufficient'
+  endif
+
   " This used to crash Vim
-  if !has('python')
-    return
-  endif
-  let h = winheight(0)
-  if h < 15
-    return
-  endif
   new
   augroup MyBufAdd
     au!
@@ -702,15 +737,16 @@ func Test_popup_and_preview_autocommand()
 endfunc
 
 func Test_popup_and_previewwindow_dump()
-  if !CanRunVimInTerminal()
-    return
-  endif
-  call writefile([
-    \ 'set previewheight=9',
-    \ 'silent! pedit',
-    \ 'call setline(1, map(repeat(["ab"], 10), "v:val. v:key"))',
-    \ 'exec "norm! G\<C-E>\<C-E>"',
-	\ ], 'Xscript')
+  CheckScreendump
+  CheckFeature quickfix
+
+  let lines =<< trim END
+    set previewheight=9
+    silent! pedit
+    call setline(1, map(repeat(["ab"], 10), "v:val. v:key"))
+    exec "norm! G\<C-E>\<C-E>"
+  END
+  call writefile(lines, 'Xscript')
   let buf = RunVimInTerminal('-S Xscript', {})
 
   " Test that popup and previewwindow do not overlap.
@@ -724,9 +760,8 @@ func Test_popup_and_previewwindow_dump()
 endfunc
 
 func Test_balloon_split()
-  if !exists('*balloon_split')
-    return
-  endif
+  CheckFunction balloon_split
+
   call assert_equal([
         \ 'tempname: 0x555555e380a0 "/home/mool/.viminfz.tmp"',
         \ ], balloon_split(
@@ -737,13 +772,14 @@ func Test_balloon_split()
         \ ], balloon_split(
         \ 'one two three four one two three four one two three four'))
 
-  call assert_equal([
-        \ 'struct = {',
-        \ '  one = 1,',
-        \ '  two = 2,',
-        \ '  three = 3}',
-        \ ], balloon_split(
-        \ 'struct = {one = 1, two = 2, three = 3}'))
+  eval 'struct = {one = 1, two = 2, three = 3}'
+        \ ->balloon_split()
+        \ ->assert_equal([
+        \   'struct = {',
+        \   '  one = 1,',
+        \   '  two = 2,',
+        \   '  three = 3}',
+        \ ])
 
   call assert_equal([
         \ 'struct = {',
@@ -761,17 +797,23 @@ func Test_balloon_split()
         \ '  next = 123}',
         \ ], balloon_split(
         \ 'struct = 0x234 {long = 2343 "\\"some long string that will be wrapped in two\\"", next = 123}'))
+  call assert_equal([
+        \ 'Some comment',
+        \ '',
+        \ 'typedef this that;',
+        \ ], balloon_split(
+        \ "Some comment\n\ntypedef this that;"))
 endfunc
 
 func Test_popup_position()
-  if !CanRunVimInTerminal()
-    return
-  endif
-  call writefile([
-	\ '123456789_123456789_123456789_a',
-	\ '123456789_123456789_123456789_b',
-	\ '            123',
-	\ ], 'Xtest')
+  CheckScreendump
+
+  let lines =<< trim END
+    123456789_123456789_123456789_a
+    123456789_123456789_123456789_b
+                123
+  END
+  call writefile(lines, 'Xtest')
   let buf = RunVimInTerminal('Xtest', {})
   call term_sendkeys(buf, ":vsplit\<CR>")
 
@@ -806,15 +848,15 @@ func Test_popup_position()
 endfunc
 
 func Test_popup_command()
-  if !CanRunVimInTerminal() || !has('menu')
-    return
-  endif
+  CheckScreendump
+  CheckFeature menu
 
-  call writefile([
-	\ 'one two three four five',
-	\ 'and one two Xthree four five',
-	\ 'one more two three four five',
-	\ ], 'Xtest')
+  let lines =<< trim END
+	one two three four five
+	and one two Xthree four five
+	one more two three four five
+  END
+  call writefile(lines, 'Xtest')
   let buf = RunVimInTerminal('Xtest', {})
   call term_sendkeys(buf, ":source $VIMRUNTIME/menu.vim\<CR>")
   call term_sendkeys(buf, "/X\<CR>:popup PopUp\<CR>")
@@ -882,5 +924,195 @@ func Test_complete_o_tab()
   delfunc s:act_on_text_changed
 endfunc
 
+func Test_menu_only_exists_in_terminal()
+  CheckCommand tlmenu
+  CheckNotGui
+
+  tlnoremenu  &Edit.&Paste<Tab>"+gP  <C-W>"+
+  aunmenu *
+  try
+    popup Edit
+    call assert_false(1, 'command should have failed')
+  catch
+    call assert_exception('E328:')
+  endtry
+endfunc
+
+func Test_popup_complete_info_01()
+  new
+  inoremap <buffer><F5> <C-R>=complete_info().mode<CR>
+  func s:complTestEval() abort
+    call complete(1, ['aa', 'ab'])
+    return ''
+  endfunc
+  inoremap <buffer><F6> <C-R>=s:complTestEval()<CR>
+  call writefile([
+        \ 'dummy	dummy.txt	1',
+        \], 'Xdummy.txt')
+  setlocal tags=Xdummy.txt
+  setlocal dictionary=Xdummy.txt
+  setlocal thesaurus=Xdummy.txt
+  setlocal omnifunc=syntaxcomplete#Complete
+  setlocal completefunc=syntaxcomplete#Complete
+  setlocal spell
+  for [keys, mode_name] in [
+        \ ["", ''],
+        \ ["\<C-X>", 'ctrl_x'],
+        \ ["\<C-X>\<C-N>", 'keyword'],
+        \ ["\<C-X>\<C-P>", 'keyword'],
+        \ ["\<C-X>\<C-L>", 'whole_line'],
+        \ ["\<C-X>\<C-F>", 'files'],
+        \ ["\<C-X>\<C-]>", 'tags'],
+        \ ["\<C-X>\<C-D>", 'path_defines'],
+        \ ["\<C-X>\<C-I>", 'path_patterns'],
+        \ ["\<C-X>\<C-K>", 'dictionary'],
+        \ ["\<C-X>\<C-T>", 'thesaurus'],
+        \ ["\<C-X>\<C-V>", 'cmdline'],
+        \ ["\<C-X>\<C-U>", 'function'],
+        \ ["\<C-X>\<C-O>", 'omni'],
+        \ ["\<C-X>s", 'spell'],
+        \ ["\<F6>", 'eval'],
+        \]
+    call feedkeys("i" . keys . "\<F5>\<Esc>", 'tx')
+    call assert_equal(mode_name, getline('.'))
+    %d
+  endfor
+  call delete('Xdummy.txt')
+  bwipe!
+endfunc
+
+func UserDefinedComplete(findstart, base)
+  if a:findstart
+    return 0
+  else
+    return [
+          \   { 'word': 'Jan', 'menu': 'January' },
+          \   { 'word': 'Feb', 'menu': 'February' },
+          \   { 'word': 'Mar', 'menu': 'March' },
+          \   { 'word': 'Apr', 'menu': 'April' },
+          \   { 'word': 'May', 'menu': 'May' },
+          \ ]
+  endif
+endfunc
+
+func GetCompleteInfo()
+  if empty(g:compl_what)
+    let g:compl_info = complete_info()
+  else
+    let g:compl_info = g:compl_what->complete_info()
+  endif
+  return ''
+endfunc
+
+func Test_popup_complete_info_02()
+  new
+  inoremap <buffer><F5> <C-R>=GetCompleteInfo()<CR>
+  setlocal completefunc=UserDefinedComplete
+
+  let d = {
+    \   'mode': 'function',
+    \   'pum_visible': 1,
+    \   'items': [
+    \     {'word': 'Jan', 'menu': 'January', 'user_data': '', 'info': '', 'kind': '', 'abbr': ''},
+    \     {'word': 'Feb', 'menu': 'February', 'user_data': '', 'info': '', 'kind': '', 'abbr': ''},
+    \     {'word': 'Mar', 'menu': 'March', 'user_data': '', 'info': '', 'kind': '', 'abbr': ''},
+    \     {'word': 'Apr', 'menu': 'April', 'user_data': '', 'info': '', 'kind': '', 'abbr': ''},
+    \     {'word': 'May', 'menu': 'May', 'user_data': '', 'info': '', 'kind': '', 'abbr': ''}
+    \   ],
+    \   'selected': 0,
+    \ }
+
+  let g:compl_what = []
+  call feedkeys("i\<C-X>\<C-U>\<F5>", 'tx')
+  call assert_equal(d, g:compl_info)
+
+  let g:compl_what = ['mode', 'pum_visible', 'selected']
+  call remove(d, 'items')
+  call feedkeys("i\<C-X>\<C-U>\<F5>", 'tx')
+  call assert_equal(d, g:compl_info)
+
+  let g:compl_what = ['mode']
+  call remove(d, 'selected')
+  call remove(d, 'pum_visible')
+  call feedkeys("i\<C-X>\<C-U>\<F5>", 'tx')
+  call assert_equal(d, g:compl_info)
+  bwipe!
+endfunc
+
+func Test_popup_complete_info_no_pum()
+  new
+  call assert_false( pumvisible() )
+  let no_pum_info = complete_info()
+  let d = {
+        \   'mode': '',
+        \   'pum_visible': 0,
+        \   'items': [],
+        \   'selected': -1,
+        \  }
+  call assert_equal( d, complete_info() )
+  bwipe!
+endfunc
+
+func Test_CompleteChanged()
+  new
+  call setline(1, ['foo', 'bar', 'foobar', ''])
+  set complete=. completeopt=noinsert,noselect,menuone
+  function! OnPumChange()
+    let g:event = copy(v:event)
+    let g:item = get(v:event, 'completed_item', {})
+    let g:word = get(g:item, 'word', v:null)
+  endfunction
+  augroup AAAAA_Group
+    au!
+    autocmd CompleteChanged * :call OnPumChange()
+  augroup END
+  call cursor(4, 1)
+
+  call feedkeys("Sf\<C-N>", 'tx')
+  call assert_equal({'completed_item': {}, 'width': 15,
+        \ 'height': 2, 'size': 2,
+        \ 'col': 0, 'row': 4, 'scrollbar': v:false}, g:event)
+  call feedkeys("a\<C-N>\<C-N>\<C-E>", 'tx')
+  call assert_equal('foo', g:word)
+  call feedkeys("a\<C-N>\<C-N>\<C-N>\<C-E>", 'tx')
+  call assert_equal('foobar', g:word)
+  call feedkeys("a\<C-N>\<C-N>\<C-N>\<C-N>\<C-E>", 'tx')
+  call assert_equal(v:null, g:word)
+  call feedkeys("a\<C-N>\<C-N>\<C-N>\<C-N>\<C-P>", 'tx')
+  call assert_equal('foobar', g:word)
+
+  autocmd! AAAAA_Group
+  set complete& completeopt&
+  delfunc! OnPumChange
+  bw!
+endfunc
+
+function! GetPumPosition()
+  call assert_true( pumvisible() )
+  let g:pum_pos = pum_getpos()
+  return ''
+endfunction
+
+func Test_pum_getpos()
+  new
+  inoremap <buffer><F5> <C-R>=GetPumPosition()<CR>
+  setlocal completefunc=UserDefinedComplete
+
+  let d = {
+    \   'height':    5,
+    \   'width':     15,
+    \   'row':       1,
+    \   'col':       0,
+    \   'size':      5,
+    \   'scrollbar': v:false,
+    \ }
+  call feedkeys("i\<C-X>\<C-U>\<F5>", 'tx')
+  call assert_equal(d, g:pum_pos)
+
+  call assert_false( pumvisible() )
+  call assert_equal( {}, pum_getpos() )
+  bw!
+  unlet g:pum_pos
+endfunc
 
 " vim: shiftwidth=2 sts=2 expandtab

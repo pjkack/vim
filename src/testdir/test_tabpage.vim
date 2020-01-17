@@ -1,7 +1,11 @@
 " Tests for tabpage
 
+source screendump.vim
+source check.vim
 
 function Test_tabpage()
+  CheckFeature quickfix
+
   bw!
   " Simple test for opening and closing a tab page
   tabnew
@@ -33,7 +37,7 @@ function Test_tabpage()
   tabnew
   tabfirst
   call settabvar(2, 'val_num', 100)
-  call settabvar(2, 'val_str', 'SetTabVar test')
+  eval 'SetTabVar test'->settabvar(2, 'val_str')
   call settabvar(2, 'val_list', ['red', 'blue', 'green'])
   "
   call assert_true(gettabvar(2, 'val_num') == 100 && gettabvar(2, 'val_str') == 'SetTabVar test' && gettabvar(2, 'val_list') == ['red', 'blue', 'green'])
@@ -57,7 +61,7 @@ function Test_tabpage()
   q
   "
   "
-  " Test for ":tab drop multi-opend-file" to keep current tabpage and window.
+  " Test for ":tab drop multi-opened-file" to keep current tabpage and window.
   new test1
   tabnew
   new test1
@@ -105,6 +109,14 @@ function Test_tabpage()
   call assert_equal(4, tabpagenr())
   7tabmove 5
   call assert_equal(5, tabpagenr())
+  -tabmove
+  call assert_equal(4, tabpagenr())
+  +tabmove
+  call assert_equal(5, tabpagenr())
+  -2tabmove
+  call assert_equal(3, tabpagenr())
+  +3tabmove
+  call assert_equal(6, tabpagenr())
 
   " The following are a no-op
   norm! 2gt
@@ -132,9 +144,6 @@ endfunc
 
 " Test autocommands
 function Test_tabpage_with_autocmd()
-  if !has('autocmd')
-    return
-  endif
   command -nargs=1 -bar C :call add(s:li, '=== ' . <q-args> . ' ===')|<args>
   augroup TestTabpageGroup
     au!
@@ -177,7 +186,7 @@ function Test_tabpage_with_autocmd()
   let s:li = split(join(map(copy(winr), 'gettabwinvar('.tabn.', v:val, "a")')), '\s\+')
   call assert_equal(['a', 'a'], s:li)
   let s:li = []
-  C call map(copy(winr), 'settabwinvar('.tabn.', v:val, ''a'', v:val*2)')
+  C call map(copy(winr), '(v:val*2)->settabwinvar(' .. tabn .. ', v:val, ''a'')')
   let s:li = split(join(map(copy(winr), 'gettabwinvar('.tabn.', v:val, "a")')), '\s\+')
   call assert_equal(['2', '4'], s:li)
 
@@ -214,6 +223,8 @@ function Test_tabpage_with_autocmd()
 endfunction
 
 function Test_tabpage_with_tab_modifier()
+  CheckFeature quickfix
+
   for n in range(4)
     tabedit
   endfor
@@ -545,6 +556,29 @@ func Test_tabs()
 
   1tabonly!
   bw!
+endfunc
+
+func Test_tabpage_cmdheight()
+  if !CanRunVimInTerminal()
+    throw 'Skipped: cannot make screendumps'
+  endif
+  call writefile([
+        \ 'set laststatus=2',
+        \ 'set cmdheight=2',
+        \ 'tabnew',
+        \ 'set cmdheight=3',
+        \ 'tabnext',
+        \ 'redraw!',
+        \ 'echo "hello\nthere"',
+        \ 'tabnext',
+        \ 'redraw',
+	\ ], 'XTest_tabpage_cmdheight')
+  " Check that cursor line is concealed
+  let buf = RunVimInTerminal('-S XTest_tabpage_cmdheight', {'statusoff': 3})
+  call VerifyScreenDump(buf, 'Test_tabpage_cmdheight', {})
+
+  call StopVimInTerminal(buf)
+  call delete('XTest_tabpage_cmdheight')
 endfunc
 
 " vim: shiftwidth=2 sts=2 expandtab

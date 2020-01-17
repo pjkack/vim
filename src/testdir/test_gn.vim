@@ -2,7 +2,7 @@
 
 func Test_gn_command()
   noautocmd new
-  " replace a single char by itsself quoted:
+  " replace a single char by itself quoted:
   call setline('.', 'abc x def x ghi x jkl')
   let @/ = 'x'
   exe "norm! cgn'x'\<esc>.."
@@ -128,7 +128,53 @@ func Test_gn_command()
   call assert_equal([' nnoremap', '', 'match'], getline(1,'$'))
   sil! %d_
 
+  " make sure it works correctly for one-char wide search items
+  call setline('.', ['abcdefghi'])
+  let @/ = 'a'
+  exe "norm! 0fhvhhgNgU"
+  call assert_equal(['ABCDEFGHi'], getline(1,'$'))
+  call setline('.', ['abcdefghi'])
+  let @/ = 'b'
+  " this gn wraps around the end of the file
+  exe "norm! 0fhvhhgngU"
+  call assert_equal(['aBCDEFGHi'], getline(1,'$'))
+  sil! %d _
+  call setline('.', ['abcdefghi'])
+  let @/ = 'f'
+  exe "norm! 0vllgngU"
+  call assert_equal(['ABCDEFghi'], getline(1,'$'))
+  sil! %d _
+  call setline('.', ['12345678'])
+  let @/ = '5'
+  norm! gg0f7vhhhhgnd
+  call assert_equal(['12348'], getline(1,'$'))
+  sil! %d _
+  call setline('.', ['12345678'])
+  let @/ = '5'
+  norm! gg0f2vf7gNd
+  call assert_equal(['1678'], getline(1,'$'))
+  sil! %d _
+
   set wrapscan&vim
 endfu
+
+func Test_gn_multi_line()
+  new
+  call setline(1, [
+        \ 'func Tm1()',
+        \ ' echo "one"',
+        \ 'endfunc',
+        \ 'func Tm2()',
+        \ ' echo "two"',
+        \ 'endfunc',
+        \ 'func Tm3()',
+        \ ' echo "three"',
+        \ 'endfunc',
+        \])
+  /\v^func Tm\d\(\)\n.*\zs".*"\ze$
+  normal jgnrx
+  call assert_equal(' echo xxxxx', getline(5))
+  bwipe!
+endfunc
 
 " vim: shiftwidth=2 sts=2 expandtab

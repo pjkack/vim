@@ -3,7 +3,7 @@
 " Maintainer:          Nick Jensen <nickspoon@gmail.com>
 " Former Maintainers:  Anduin Withers <awithers@anduin.com>
 "                      Johannes Zellner <johannes@zellner.org>
-" Last Change:         2018-06-29
+" Last Change:         2019-08-01
 " Filenames:           *.cs
 " License:             Vim (see :h license)
 " Repository:          https://github.com/nickspoons/vim-cs
@@ -11,12 +11,12 @@
 " REFERENCES:
 " [1] ECMA TC39: C# Language Specification (WD13Oct01.doc)
 
-if exists("b:current_syntax")
-    finish
+if exists('b:current_syntax')
+  finish
 endif
 
-let s:cs_cpo_save = &cpo
-set cpo&vim
+let s:save_cpo = &cpoptions
+set cpoptions&vim
 
 
 syn keyword	csType	bool byte char decimal double float int long object sbyte short string T uint ulong ushort var void dynamic
@@ -34,7 +34,7 @@ syn keyword	csException	try catch finally throw when
 syn keyword	csLinq	ascending by descending equals from group in into join let on orderby select where
 syn keyword	csAsync	async await
 
-syn keyword	csUnspecifiedStatement	as base checked event fixed in is lock nameof operator out params ref sizeof stackalloc this typeof unchecked unsafe using
+syn keyword	csUnspecifiedStatement	as base checked event fixed in is lock nameof operator out params ref sizeof stackalloc this unchecked unsafe using
 syn keyword	csUnsupportedStatement	add remove value
 syn keyword	csUnspecifiedKeyword	explicit implicit
 
@@ -44,10 +44,18 @@ syn match	csContextualStatement	/\<partial[[:space:]\n]\+\(class\|struct\|interf
 syn match	csContextualStatement	/\<\(get\|set\)\(;\|[[:space:]\n]*{\)/me=s+3
 syn match	csContextualStatement	/\<where\>[^:]\+:/me=s+5
 
+" Operators
+syn keyword	csTypeOf	typeof contained
+syn region	csTypeOfStatement	start="typeof(" end=")" contains=csType, csTypeOf
+
 " Punctuation
 syn match	csBraces	"[{}\[\]]" display
 syn match	csParens	"[()]" display
-syn match	csOpSymbols	"[+\-><=]\{1,2}" display
+syn match	csOpSymbols	"+\{1,2}" display
+syn match	csOpSymbols	"-\{1,2}" display
+syn match	csOpSymbols	"=\{1,2}" display
+syn match	csOpSymbols	">\{1,2}" display
+syn match	csOpSymbols	"<\{1,2}" display
 syn match	csOpSymbols	"[!><+\-*/]=" display
 syn match	csOpSymbols	"[!*/^]" display
 syn match	csOpSymbols	"=>" display
@@ -56,6 +64,9 @@ syn match	csLogicSymbols	"&&" display
 syn match	csLogicSymbols	"||" display
 syn match	csLogicSymbols	"?" display
 syn match	csLogicSymbols	":" display
+
+" Generics
+syn region	csGeneric	matchgroup=csGenericBraces start="<" end=">" oneline contains=csType,csGeneric,csUserType,csUserIdentifier,csUserInterface,csUserMethod
 
 " Comments
 "
@@ -81,8 +92,8 @@ syn keyword	csXmlTag	contained list listheader item term description altcomplian
 
 syn cluster xmlTagHook add=csXmlTag
 
-syn match	csXmlCommentLeader	+\/\/\/+    contained
-syn match	csXmlComment	+\/\/\/.*$+ contains=csXmlCommentLeader,@csXml,@Spell
+syn match	csXmlCommentLeader	"///" contained
+syn match	csXmlComment	"///.*$" contains=csXmlCommentLeader,@csXml,@Spell keepend
 syn include	@csXml syntax/xml.vim
 hi def link	xmlRegion Comment
 
@@ -94,7 +105,8 @@ syn region	csSummary	start="^\s*/// <summary" end="^\%\(\s*///\)\@!" transparent
 
 
 syn region	csClassType	start="@\@1<!\<class\>"hs=s+6 end="[:\n{]"me=e-1 contains=csClass
-syn region	csNewType	start="@\@1<!\<new\>"hs=s+4 end="[;\n{(<\[]"me=e-1 contains=csNew contains=csNewType
+" csUserType may be defined by user scripts/plugins - it should be contained in csNewType
+syn region	csNewType	start="@\@1<!\<new\>"hs=s+4 end="[;\n{(<\[]"me=e-1 contains=csNew,csUserType
 syn region	csIsType	start=" is "hs=s+4 end="[A-Za-z0-9]\+" oneline contains=csIsAs
 syn region	csIsType	start=" as "hs=s+4 end="[A-Za-z0-9]\+" oneline contains=csIsAs
 syn keyword	csNew	new contained
@@ -140,21 +152,22 @@ syn region	csInterVerbString	matchgroup=csQuote start=+\$@"+ end=+"+ skip=+""+ e
 
 syn region	csBracketed	matchgroup=csParens start=+(+ end=+)+ contained transparent contains=@csAll,csBracketed
 
-syn cluster	csAll	contains=csCharacter,csClassType,csComment,csContextualStatement,csEndColon,csInterpolatedString,csIsType,csLabel,csLogicSymbols,csNewType,csConstant,csNumber,csOpSymbols,csOperatorError,csParens,csPreCondit,csRegion,csString,csSummary,csUnicodeNumber,csUnicodeSpecifier,csVerbatimString
+syn cluster	csAll	contains=csCharacter,csClassType,csComment,csContextualStatement,csEndColon,csInterpolatedString,csIsType,csLabel,csLogicSymbols,csNewType,csConstant,csNumber,csOpSymbols,csOperatorError,csParens,csPreCondit,csRegion,csString,csSummary,csType,csUnicodeNumber,csUnicodeSpecifier,csVerbatimString,csUserType,csUserIdentifier,csUserInterface,csUserMethod
 
 " The default highlighting.
 hi def link	csType	Type
-hi def link	csNewType	Type
 hi def link	csClassType	Type
 hi def link	csIsType	Type
-hi def link	csStorage	StorageClass
-hi def link	csClass	StorageClass
+hi def link	csStorage	Structure
+hi def link	csClass	Structure
 hi def link	csRepeat	Repeat
 hi def link	csConditional	Conditional
 hi def link	csLabel	Label
 hi def link	csModifier	StorageClass
 hi def link	csConstant	Constant
 hi def link	csException	Exception
+hi def link	csTypeOf	Keyword
+hi def link	csTypeOfStatement	Typedef
 hi def link	csUnspecifiedStatement	Statement
 hi def link	csUnsupportedStatement	Statement
 hi def link	csUnspecifiedKeyword	Keyword
@@ -164,16 +177,12 @@ hi def link	csIsAs 	Keyword
 hi def link	csAsync	Keyword
 hi def link	csContextualStatement	Statement
 hi def link	csOperatorError	Error
-hi def link	csInterfaceDeclaration	Include
 
 hi def link	csTodo	Todo
 hi def link	csComment	Comment
 
-hi def link	csEndColon	Statement
 hi def link	csOpSymbols	Operator
-hi def link	csLogicSymbols	Boolean
-hi def link	csBraces	Function
-hi def link	csParens	Operator
+hi def link	csLogicSymbols	Operator
 
 hi def link	csSpecialError	Error
 hi def link	csSpecialCharError	Error
@@ -195,14 +204,16 @@ hi def link	csInterpolationAlignDel	csInterpolationDelimiter
 hi def link	csInterpolationFormat	csInterpolationDelimiter
 hi def link	csInterpolationFormatDel	csInterpolationDelimiter
 
+hi def link	csGenericBraces	csBraces
+
 " xml markup
 hi def link	csXmlCommentLeader	Comment
 hi def link	csXmlComment	Comment
 hi def link	csXmlTag	Statement
 
-let b:current_syntax = "cs"
+let b:current_syntax = 'cs'
 
-let &cpo = s:cs_cpo_save
-unlet s:cs_cpo_save
+let &cpoptions = s:save_cpo
+unlet s:save_cpo
 
 " vim: vts=16,28

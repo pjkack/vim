@@ -48,12 +48,14 @@ json_encode(typval_T *val, int options)
 {
     garray_T ga;
 
-    /* Store bytes in the growarray. */
+    // Store bytes in the growarray.
     ga_init2(&ga, 1, 4000);
     json_encode_gap(&ga, val, options);
+    ga_append(&ga, NUL);
     return ga.ga_data;
 }
 
+#if defined(FEAT_JOB_CHANNEL) || defined(PROTO)
 /*
  * Encode ["nr", "val"] into a JSON format string in allocated memory.
  * "options" can contain JSON_JS, JSON_NO_NONE and JSON_NL.
@@ -81,8 +83,10 @@ json_encode_nr_expr(int nr, typval_T *val, int options)
     if (json_encode_gap(&ga, &listtv, options) == OK && (options & JSON_NL))
 	ga_append(&ga, '\n');
     list_unref(listtv.vval.v_list);
+    ga_append(&ga, NUL);
     return ga.ga_data;
 }
+#endif
 
     static void
 write_string(garray_T *gap, char_u *str)
@@ -94,14 +98,14 @@ write_string(garray_T *gap, char_u *str)
 	ga_concat(gap, (char_u *)"\"\"");
     else
     {
-#if defined(FEAT_MBYTE) && defined(USE_ICONV)
+#if defined(USE_ICONV)
 	vimconv_T   conv;
 	char_u	    *converted = NULL;
 
 	if (!enc_utf8)
 	{
-	    /* Convert the text from 'encoding' to utf-8, the JSON string is
-	     * always utf-8. */
+	    // Convert the text from 'encoding' to utf-8, the JSON string is
+	    // always utf-8.
 	    conv.vc_type = CONV_NONE;
 	    convert_setup(&conv, p_enc, (char_u*)"utf-8");
 	    if (conv.vc_type != CONV_NONE)
@@ -113,12 +117,8 @@ write_string(garray_T *gap, char_u *str)
 	while (*res != NUL)
 	{
 	    int c;
-#ifdef FEAT_MBYTE
-	    /* always use utf-8 encoding, ignore 'encoding' */
+	    // always use utf-8 encoding, ignore 'encoding'
 	    c = utf_ptr2char(res);
-#else
-	    c = *res;
-#endif
 
 	    switch (c)
 	    {
@@ -132,20 +132,15 @@ write_string(garray_T *gap, char_u *str)
 		    ga_append(gap, '\\'); ga_append(gap, 'f'); break;
 		case 0x0d:
 		    ga_append(gap, '\\'); ga_append(gap, 'r'); break;
-		case 0x22: /* " */
-		case 0x5c: /* \ */
+		case 0x22: // "
+		case 0x5c: // backslash
 		    ga_append(gap, '\\');
 		    ga_append(gap, c);
 		    break;
 		default:
 		    if (c >= 0x20)
 		    {
-#ifdef FEAT_MBYTE
 			numbuf[utf_char2bytes(c, numbuf)] = NUL;
-#else
-			numbuf[0] = c;
-			numbuf[1] = NUL;
-#endif
 			ga_concat(gap, numbuf);
 		    }
 		    else
@@ -155,14 +150,10 @@ write_string(garray_T *gap, char_u *str)
 			ga_concat(gap, numbuf);
 		    }
 	    }
-#ifdef FEAT_MBYTE
 	    res += utf_ptr2len(res);
-#else
-	    ++res;
-#endif
 	}
 	ga_append(gap, '"');
-#if defined(FEAT_MBYTE) && defined(USE_ICONV)
+#if defined(USE_ICONV)
 	vim_free(converted);
 #endif
     }
@@ -195,8 +186,10 @@ json_encode_item(garray_T *gap, typval_T *val, int copyID, int options)
 {
     char_u	numbuf[NUMBUFLEN];
     char_u	*res;
+    blob_T	*b;
     list_T	*l;
     dict_T	*d;
+    int		i;
 
     switch (val->v_type)
     {
@@ -207,16 +200,16 @@ json_encode_item(garray_T *gap, typval_T *val, int copyID, int options)
 		case VVAL_TRUE: ga_concat(gap, (char_u *)"true"); break;
 		case VVAL_NONE: if ((options & JSON_JS) != 0
 					     && (options & JSON_NO_NONE) == 0)
-				    /* empty item */
+				    // empty item
 				    break;
-				/* FALLTHROUGH */
+				// FALLTHROUGH
 		case VVAL_NULL: ga_concat(gap, (char_u *)"null"); break;
 	    }
 	    break;
 
 	case VAR_NUMBER:
 	    vim_snprintf((char *)numbuf, NUMBUFLEN, "%lld",
-						(long long)val->vval.v_number);
+						(long_long_T)val->vval.v_number);
 	    ga_concat(gap, numbuf);
 	    break;
 
@@ -229,9 +222,28 @@ json_encode_item(garray_T *gap, typval_T *val, int copyID, int options)
 	case VAR_PARTIAL:
 	case VAR_JOB:
 	case VAR_CHANNEL:
-	    /* no JSON equivalent TODO: better error */
-	    EMSG(_(e_invarg));
+	    // no JSON equivalent TODO: better error
+	    emsg(_(e_invarg));
 	    return FAIL;
+
+	case VAR_BLOB:
+	    b = val->vval.v_blob;
+	    if (b == NULL || b->bv_ga.ga_len == 0)
+		ga_concat(gap, (char_u *)"[]");
+	    else
+	    {
+		ga_append(gap, '[');
+		for (i = 0; i < b->bv_ga.ga_len; i++)
+		{
+		    if (i > 0)
+			ga_concat(gap, (char_u *)",");
+		    vim_snprintf((char *)numbuf, NUMBUFLEN, "%d",
+			    (int)blob_get(b, i));
+		    ga_concat(gap, numbuf);
+		}
+		ga_append(gap, ']');
+	    }
+	    break;
 
 	case VAR_LIST:
 	    l = val->vval.v_list;
@@ -256,7 +268,7 @@ json_encode_item(garray_T *gap, typval_T *val, int copyID, int options)
 				&& li->li_next == NULL
 				&& li->li_tv.v_type == VAR_SPECIAL
 				&& li->li_tv.vval.v_number == VVAL_NONE)
-			    /* add an extra comma if the last item is v:none */
+			    // add an extra comma if the last item is v:none
 			    ga_append(gap, ',');
 			li = li->li_next;
 			if (li != NULL)
@@ -316,7 +328,12 @@ json_encode_item(garray_T *gap, typval_T *val, int copyID, int options)
 	    if (isnan(val->vval.v_float))
 		ga_concat(gap, (char_u *)"NaN");
 	    else if (isinf(val->vval.v_float))
-		ga_concat(gap, (char_u *)"Infinity");
+	    {
+		if (val->vval.v_float < 0.0)
+		    ga_concat(gap, (char_u *)"-Infinity");
+		else
+		    ga_concat(gap, (char_u *)"Infinity");
+	    }
 	    else
 # endif
 	    {
@@ -388,25 +405,21 @@ json_decode_string(js_read_T *reader, typval_T *res, int quote)
     if (res != NULL)
 	ga_init2(&ga, 1, 200);
 
-    p = reader->js_buf + reader->js_used + 1; /* skip over " or ' */
+    p = reader->js_buf + reader->js_used + 1; // skip over " or '
     while (*p != quote)
     {
-	/* The JSON is always expected to be utf-8, thus use utf functions
-	 * here. The string is converted below if needed. */
-	if (*p == NUL || p[1] == NUL
-#ifdef FEAT_MBYTE
-		|| utf_ptr2len(p) < utf_byte2len(*p)
-#endif
-		)
+	// The JSON is always expected to be utf-8, thus use utf functions
+	// here. The string is converted below if needed.
+	if (*p == NUL || p[1] == NUL || utf_ptr2len(p) < utf_byte2len(*p))
 	{
-	    /* Not enough bytes to make a character or end of the string. Get
-	     * more if possible. */
+	    // Not enough bytes to make a character or end of the string. Get
+	    // more if possible.
 	    if (reader->js_fill == NULL)
 		break;
 	    len = (int)(reader->js_end - p);
 	    reader->js_used = (int)(p - reader->js_buf);
 	    if (!reader->js_fill(reader))
-		break; /* didn't get more */
+		break; // didn't get more
 	    p = reader->js_buf + reader->js_used;
 	    reader->js_end = reader->js_buf + STRLEN(reader->js_buf);
 	    continue;
@@ -439,7 +452,13 @@ json_decode_string(js_read_T *reader, typval_T *res, int quote)
 		    nr = 0;
 		    len = 0;
 		    vim_str2nr(p + 2, NULL, &len,
-				     STR2NR_HEX + STR2NR_FORCE, &nr, NULL, 4);
+			     STR2NR_HEX + STR2NR_FORCE, &nr, NULL, 4, TRUE);
+		    if (len == 0)
+		    {
+			if (res != NULL)
+			    ga_clear(&ga);
+			return FAIL;
+		    }
 		    p += len + 2;
 		    if (0xd800 <= nr && nr <= 0xdfff
 			    && (int)(reader->js_end - p) >= 6
@@ -447,10 +466,16 @@ json_decode_string(js_read_T *reader, typval_T *res, int quote)
 		    {
 			varnumber_T	nr2 = 0;
 
-			/* decode surrogate pair: \ud812\u3456 */
+			// decode surrogate pair: \ud812\u3456
 			len = 0;
 			vim_str2nr(p + 2, NULL, &len,
-				     STR2NR_HEX + STR2NR_FORCE, &nr2, NULL, 4);
+			     STR2NR_HEX + STR2NR_FORCE, &nr2, NULL, 4, TRUE);
+			if (len == 0)
+			{
+			    if (res != NULL)
+				ga_clear(&ga);
+			    return FAIL;
+			}
 			if (0xdc00 <= nr2 && nr2 <= 0xdfff)
 			{
 			    p += len + 2;
@@ -460,17 +485,14 @@ json_decode_string(js_read_T *reader, typval_T *res, int quote)
 		    }
 		    if (res != NULL)
 		    {
-#ifdef FEAT_MBYTE
 			char_u	buf[NUMBUFLEN];
+
 			buf[utf_char2bytes((int)nr, buf)] = NUL;
 			ga_concat(&ga, buf);
-#else
-			ga_append(&ga, (int)nr);
-#endif
 		    }
 		    break;
 		default:
-		    /* not a special char, skip over \ */
+		    // not a special char, skip over backslash
 		    ++p;
 		    continue;
 	    }
@@ -483,11 +505,7 @@ json_decode_string(js_read_T *reader, typval_T *res, int quote)
 	}
 	else
 	{
-#ifdef FEAT_MBYTE
 	    len = utf_ptr2len(p);
-#else
-	    len = 1;
-#endif
 	    if (res != NULL)
 	    {
 		if (ga_grow(&ga, len) == FAIL)
@@ -510,12 +528,12 @@ json_decode_string(js_read_T *reader, typval_T *res, int quote)
 	{
 	    ga_append(&ga, NUL);
 	    res->v_type = VAR_STRING;
-#if defined(FEAT_MBYTE) && defined(USE_ICONV)
+#if defined(USE_ICONV)
 	    if (!enc_utf8)
 	    {
 		vimconv_T   conv;
 
-		/* Convert the utf-8 string to 'encoding'. */
+		// Convert the utf-8 string to 'encoding'.
 		conv.vc_type = CONV_NONE;
 		convert_setup(&conv, (char_u*)"utf-8", p_enc);
 		if (conv.vc_type != CONV_NONE)
@@ -542,14 +560,14 @@ json_decode_string(js_read_T *reader, typval_T *res, int quote)
 }
 
 typedef enum {
-    JSON_ARRAY,		/* parsing items in an array */
-    JSON_OBJECT_KEY,	/* parsing key of an object */
-    JSON_OBJECT		/* parsing item in an object, after the key */
+    JSON_ARRAY,		// parsing items in an array
+    JSON_OBJECT_KEY,	// parsing key of an object
+    JSON_OBJECT		// parsing item in an object, after the key
 } json_decode_T;
 
 typedef struct {
     json_decode_T jd_type;
-    typval_T	  jd_tv;	/* the list or dict */
+    typval_T	  jd_tv;	// the list or dict
     typval_T	  jd_key_tv;
     char_u	  *jd_key;
 } json_dec_item_T;
@@ -593,17 +611,17 @@ json_decode_item(js_read_T *reader, typval_T *res, int options)
 	    {
 		retval = MAYBE;
 		if (top_item->jd_type == JSON_OBJECT)
-		    /* did get the key, clear it */
+		    // did get the key, clear it
 		    clear_tv(&top_item->jd_key_tv);
 		goto theend;
 	    }
 	    if (top_item->jd_type == JSON_OBJECT_KEY
 					    || top_item->jd_type == JSON_ARRAY)
 	    {
-		/* Check for end of object or array. */
+		// Check for end of object or array.
 		if (*p == (top_item->jd_type == JSON_ARRAY ? ']' : '}'))
 		{
-		    ++reader->js_used; /* consume the ']' or '}' */
+		    ++reader->js_used; // consume the ']' or '}'
 		    --stack.ga_len;
 		    if (stack.ga_len == 0)
 		    {
@@ -626,7 +644,7 @@ json_decode_item(js_read_T *reader, typval_T *res, int options)
 	{
 	    char_u *key;
 
-	    /* accept an object key that is not in quotes */
+	    // accept an object key that is not in quotes
 	    key = p = reader->js_buf + reader->js_used;
 	    while (*p != NUL && *p != ':' && *p > ' ')
 		++p;
@@ -642,7 +660,7 @@ json_decode_item(js_read_T *reader, typval_T *res, int options)
 	{
 	    switch (*p)
 	    {
-		case '[': /* start of array */
+		case '[': // start of array
 		    if (top_item && top_item->jd_type == JSON_OBJECT_KEY)
 		    {
 			retval = FAIL;
@@ -661,7 +679,7 @@ json_decode_item(js_read_T *reader, typval_T *res, int options)
 			break;
 		    }
 
-		    ++reader->js_used; /* consume the '[' */
+		    ++reader->js_used; // consume the '['
 		    top_item = ((json_dec_item_T *)stack.ga_data)
 								+ stack.ga_len;
 		    top_item->jd_type = JSON_ARRAY;
@@ -673,7 +691,7 @@ json_decode_item(js_read_T *reader, typval_T *res, int options)
 		    }
 		    continue;
 
-		case '{': /* start of object */
+		case '{': // start of object
 		    if (top_item && top_item->jd_type == JSON_OBJECT_KEY)
 		    {
 			retval = FAIL;
@@ -692,7 +710,7 @@ json_decode_item(js_read_T *reader, typval_T *res, int options)
 			break;
 		    }
 
-		    ++reader->js_used; /* consume the '{' */
+		    ++reader->js_used; // consume the '{'
 		    top_item = ((json_dec_item_T *)stack.ga_data)
 								+ stack.ga_len;
 		    top_item->jd_type = JSON_OBJECT_KEY;
@@ -704,7 +722,7 @@ json_decode_item(js_read_T *reader, typval_T *res, int options)
 		    }
 		    continue;
 
-		case '"': /* string */
+		case '"': // string
 		    retval = json_decode_string(reader, cur_item, *p);
 		    break;
 
@@ -713,20 +731,20 @@ json_decode_item(js_read_T *reader, typval_T *res, int options)
 			retval = json_decode_string(reader, cur_item, *p);
 		    else
 		    {
-			EMSG(_(e_invarg));
+			emsg(_(e_invarg));
 			retval = FAIL;
 		    }
 		    break;
 
-		case ',': /* comma: empty item */
+		case ',': // comma: empty item
 		    if ((options & JSON_JS) == 0)
 		    {
-			EMSG(_(e_invarg));
+			emsg(_(e_invarg));
 			retval = FAIL;
 			break;
 		    }
-		    /* FALLTHROUGH */
-		case NUL: /* empty */
+		    // FALLTHROUGH
+		case NUL: // empty
 		    if (cur_item != NULL)
 		    {
 			cur_item->v_type = VAR_SPECIAL;
@@ -736,7 +754,7 @@ json_decode_item(js_read_T *reader, typval_T *res, int options)
 		    break;
 
 		default:
-		    if (VIM_ISDIGIT(*p) || *p == '-')
+		    if (VIM_ISDIGIT(*p) || (*p == '-' && VIM_ISDIGIT(p[1])))
 		    {
 #ifdef FEAT_FLOAT
 			char_u  *sp = p;
@@ -751,7 +769,7 @@ json_decode_item(js_read_T *reader, typval_T *res, int options)
 			    }
 			    if (!VIM_ISDIGIT(*sp))
 			    {
-				EMSG(_(e_invarg));
+				emsg(_(e_invarg));
 				retval = FAIL;
 				break;
 			    }
@@ -777,8 +795,14 @@ json_decode_item(js_read_T *reader, typval_T *res, int options)
 			    varnumber_T nr;
 
 			    vim_str2nr(reader->js_buf + reader->js_used,
-				    NULL, &len, 0, /* what */
-				    &nr, NULL, 0);
+				    NULL, &len, 0, // what
+				    &nr, NULL, 0, TRUE);
+			    if (len == 0)
+			    {
+				emsg(_(e_invarg));
+				retval = FAIL;
+				goto theend;
+			    }
 			    if (cur_item != NULL)
 			    {
 				cur_item->v_type = VAR_NUMBER;
@@ -834,6 +858,17 @@ json_decode_item(js_read_T *reader, typval_T *res, int options)
 			retval = OK;
 			break;
 		    }
+		    if (STRNICMP((char *)p, "-Infinity", 9) == 0)
+		    {
+			reader->js_used += 9;
+			if (cur_item != NULL)
+			{
+			    cur_item->v_type = VAR_FLOAT;
+			    cur_item->vval.v_float = -INFINITY;
+			}
+			retval = OK;
+			break;
+		    }
 		    if (STRNICMP((char *)p, "Infinity", 8) == 0)
 		    {
 			reader->js_used += 8;
@@ -846,11 +881,12 @@ json_decode_item(js_read_T *reader, typval_T *res, int options)
 			break;
 		    }
 #endif
-		    /* check for truncated name */
+		    // check for truncated name
 		    len = (int)(reader->js_end - (reader->js_buf + reader->js_used));
 		    if (
 			    (len < 5 && STRNICMP((char *)p, "false", len) == 0)
 #ifdef FEAT_FLOAT
+			    || (len < 9 && STRNICMP((char *)p, "-Infinity", len) == 0)
 			    || (len < 8 && STRNICMP((char *)p, "Infinity", len) == 0)
 			    || (len < 3 && STRNICMP((char *)p, "NaN", len) == 0)
 #endif
@@ -863,8 +899,8 @@ json_decode_item(js_read_T *reader, typval_T *res, int options)
 		    break;
 	    }
 
-	    /* We are finished when retval is FAIL or MAYBE and when at the
-	     * toplevel. */
+	    // We are finished when retval is FAIL or MAYBE and when at the
+	    // toplevel.
 	    if (retval == FAIL)
 		break;
 	    if (retval == MAYBE || stack.ga_len == 0)
@@ -873,11 +909,11 @@ json_decode_item(js_read_T *reader, typval_T *res, int options)
 	    if (top_item != NULL && top_item->jd_type == JSON_OBJECT_KEY
 		    && cur_item != NULL)
 	    {
-		top_item->jd_key = get_tv_string_buf_chk(cur_item, key_buf);
+		top_item->jd_key = tv_get_string_buf_chk(cur_item, key_buf);
 		if (top_item->jd_key == NULL)
 		{
 		    clear_tv(cur_item);
-		    EMSG(_(e_invarg));
+		    emsg(_(e_invarg));
 		    retval = FAIL;
 		    goto theend;
 		}
@@ -915,7 +951,7 @@ item_end:
 			retval = MAYBE;
 		    else
 		    {
-			EMSG(_(e_invarg));
+			emsg(_(e_invarg));
 			retval = FAIL;
 		    }
 		    goto theend;
@@ -933,7 +969,7 @@ item_end:
 			retval = MAYBE;
 		    else
 		    {
-			EMSG(_(e_invarg));
+			emsg(_(e_invarg));
 			retval = FAIL;
 		    }
 		    goto theend;
@@ -950,7 +986,7 @@ item_end:
 			&& dict_find(top_item->jd_tv.vval.v_dict,
 						 top_item->jd_key, -1) != NULL)
 		{
-		    EMSG2(_("E938: Duplicate key in JSON: \"%s\""),
+		    semsg(_("E938: Duplicate key in JSON: \"%s\""),
 							     top_item->jd_key);
 		    clear_tv(&top_item->jd_key_tv);
 		    clear_tv(cur_item);
@@ -989,7 +1025,7 @@ item_end:
 			retval = MAYBE;
 		    else
 		    {
-			EMSG(_(e_invarg));
+			emsg(_(e_invarg));
 			retval = FAIL;
 		    }
 		    goto theend;
@@ -1001,14 +1037,14 @@ item_end:
 	}
     }
 
-    /* Get here when parsing failed. */
+    // Get here when parsing failed.
     if (res != NULL)
     {
 	clear_tv(res);
 	res->v_type = VAR_SPECIAL;
 	res->vval.v_number = VVAL_NONE;
     }
-    EMSG(_(e_invarg));
+    emsg(_(e_invarg));
 
 theend:
     ga_clear(&stack);
@@ -1020,30 +1056,31 @@ theend:
  * "options" can be JSON_JS or zero;
  * Return FAIL if not the whole message was consumed.
  */
-    int
+    static int
 json_decode_all(js_read_T *reader, typval_T *res, int options)
 {
     int ret;
 
-    /* We find the end once, to avoid calling strlen() many times. */
+    // We find the end once, to avoid calling strlen() many times.
     reader->js_end = reader->js_buf + STRLEN(reader->js_buf);
     json_skip_white(reader);
     ret = json_decode_item(reader, res, options);
     if (ret != OK)
     {
 	if (ret == MAYBE)
-	    EMSG(_(e_invarg));
+	    emsg(_(e_invarg));
 	return FAIL;
     }
     json_skip_white(reader);
     if (reader->js_buf[reader->js_used] != NUL)
     {
-	EMSG(_(e_trailing));
+	emsg(_(e_trailing));
 	return FAIL;
     }
     return OK;
 }
 
+#if defined(FEAT_JOB_CHANNEL) || defined(PROTO)
 /*
  * Decode the JSON from "reader" and store the result in "res".
  * "options" can be JSON_JS or zero;
@@ -1056,7 +1093,7 @@ json_decode(js_read_T *reader, typval_T *res, int options)
 {
     int ret;
 
-    /* We find the end once, to avoid calling strlen() many times. */
+    // We find the end once, to avoid calling strlen() many times.
     reader->js_end = reader->js_buf + STRLEN(reader->js_buf);
     json_skip_white(reader);
     ret = json_decode_item(reader, res, options);
@@ -1064,6 +1101,7 @@ json_decode(js_read_T *reader, typval_T *res, int options)
 
     return ret;
 }
+#endif
 
 /*
  * Decode the JSON from "reader" to find the end of the message.
@@ -1072,7 +1110,7 @@ json_decode(js_read_T *reader, typval_T *res, int options)
  * Return FAIL if the message has a decoding error.
  * Return MAYBE if the message is truncated, need to read more.
  * This only works reliable if the message contains an object, array or
- * string.  A number might be trucated without knowing.
+ * string.  A number might be truncated without knowing.
  * Does not advance the reader.
  */
     int
@@ -1081,11 +1119,60 @@ json_find_end(js_read_T *reader, int options)
     int used_save = reader->js_used;
     int ret;
 
-    /* We find the end once, to avoid calling strlen() many times. */
+    // We find the end once, to avoid calling strlen() many times.
     reader->js_end = reader->js_buf + STRLEN(reader->js_buf);
     json_skip_white(reader);
     ret = json_decode_item(reader, NULL, options);
     reader->js_used = used_save;
     return ret;
+}
+
+/*
+ * "js_decode()" function
+ */
+    void
+f_js_decode(typval_T *argvars, typval_T *rettv)
+{
+    js_read_T	reader;
+
+    reader.js_buf = tv_get_string(&argvars[0]);
+    reader.js_fill = NULL;
+    reader.js_used = 0;
+    if (json_decode_all(&reader, rettv, JSON_JS) != OK)
+	emsg(_(e_invarg));
+}
+
+/*
+ * "js_encode()" function
+ */
+    void
+f_js_encode(typval_T *argvars, typval_T *rettv)
+{
+    rettv->v_type = VAR_STRING;
+    rettv->vval.v_string = json_encode(&argvars[0], JSON_JS);
+}
+
+/*
+ * "json_decode()" function
+ */
+    void
+f_json_decode(typval_T *argvars, typval_T *rettv)
+{
+    js_read_T	reader;
+
+    reader.js_buf = tv_get_string(&argvars[0]);
+    reader.js_fill = NULL;
+    reader.js_used = 0;
+    json_decode_all(&reader, rettv, 0);
+}
+
+/*
+ * "json_encode()" function
+ */
+    void
+f_json_encode(typval_T *argvars, typval_T *rettv)
+{
+    rettv->v_type = VAR_STRING;
+    rettv->vval.v_string = json_encode(&argvars[0], 0);
 }
 #endif

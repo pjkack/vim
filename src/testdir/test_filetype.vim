@@ -44,8 +44,10 @@ endfunc
 
 " Filetypes detected just from matching the file name.
 let s:filename_checks = {
+    \ '8th': ['file.8th'],
     \ 'a2ps': ['/etc/a2ps.cfg', '/etc/a2ps/file.cfg', 'a2psrc', '.a2psrc'],
     \ 'a65': ['file.a65'],
+    \ 'aap': ['file.aap'],
     \ 'abap': ['file.abap'],
     \ 'abc': ['file.abc'],
     \ 'abel': ['file.abl'],
@@ -56,7 +58,8 @@ let s:filename_checks = {
     \ 'aml': ['file.aml'],
     \ 'ampl': ['file.run'],
     \ 'ant': ['build.xml'],
-    \ 'apache': ['.htaccess', '/etc/httpd/file.conf'],
+    \ 'apache': ['.htaccess', '/etc/httpd/file.conf', '/etc/apache2/sites-2/file.com', '/etc/apache2/some.config', '/etc/apache2/conf.file/conf', '/etc/apache2/mods-some/file', '/etc/apache2/sites-some/file', '/etc/httpd/conf.d/file.config'],
+    \ 'apachestyle': ['/etc/proftpd/file.config,/etc/proftpd/conf.file/file'],
     \ 'applescript': ['file.scpt'],
     \ 'aptconf': ['apt.conf', '/.aptitude/config'],
     \ 'arch': ['.arch-inventory'],
@@ -81,7 +84,7 @@ let s:filename_checks = {
     \ 'c': ['enlightenment/file.cfg', 'file.qc', 'file.c'],
     \ 'cabal': ['file.cabal'],
     \ 'calendar': ['calendar'],
-    \ 'catalog': ['catalog'],
+    \ 'catalog': ['catalog', 'sgml.catalogfile'],
     \ 'cdl': ['file.cdl'],
     \ 'cdrdaoconf': ['/etc/cdrdao.conf', '/etc/defaults/cdrdao', '/etc/default/cdrdao', '.cdrdao'],
     \ 'cdrtoc': ['file.toc'],
@@ -102,7 +105,7 @@ let s:filename_checks = {
     \ 'coco': ['file.atg'],
     \ 'conaryrecipe': ['file.recipe'],
     \ 'conf': ['auto.master'],
-    \ 'config': ['configure.in', 'configure.ac'],
+    \ 'config': ['configure.in', 'configure.ac', 'Pipfile'],
     \ 'context': ['tex/context/any/file.tex', 'file.mkii', 'file.mkiv', 'file.mkvi'],
     \ 'cpp': ['file.cxx', 'file.c++', 'file.hh', 'file.hxx', 'file.hpp', 'file.ipp', 'file.moc', 'file.tcc', 'file.inl', 'file.tlh'],
     \ 'crm': ['file.crm'],
@@ -119,6 +122,7 @@ let s:filename_checks = {
     \ 'cvs': ['cvs123'],
     \ 'cvsrc': ['.cvsrc'],
     \ 'cynpp': ['file.cyn'],
+    \ 'dart': ['file.dart', 'file.drt'],
     \ 'datascript': ['file.ds'],
     \ 'dcd': ['file.dcd'],
     \ 'debcontrol': ['/debian/control'],
@@ -132,7 +136,7 @@ let s:filename_checks = {
     \ 'diff': ['file.diff', 'file.rej'],
     \ 'dircolors': ['.dir_colors', '.dircolors', '/etc/DIR_COLORS'],
     \ 'dnsmasq': ['/etc/dnsmasq.conf'],
-    \ 'dockerfile': ['Dockerfile', 'file.Dockerfile'],
+    \ 'dockerfile': ['Containerfile', 'Dockerfile', 'file.Dockerfile'],
     \ 'dosbatch': ['file.bat', 'file.sys'],
     \ 'dosini': ['.editorconfig', '/etc/yum.conf', 'file.ini'],
     \ 'dot': ['file.dot'],
@@ -198,9 +202,10 @@ let s:filename_checks = {
     \ 'hex': ['file.hex', 'file.h32'],
     \ 'hgcommit': ['hg-editor-file.txt'],
     \ 'hog': ['file.hog', 'snort.conf', 'vision.conf'],
+    \ 'hollywood': ['file.hws'],
     \ 'hostconf': ['/etc/host.conf'],
     \ 'hostsaccess': ['/etc/hosts.allow', '/etc/hosts.deny'],
-    \ 'htmlcheetah': ['file.tmpl'],
+    \ 'template': ['file.tmpl'],
     \ 'htmlm4': ['file.html.m4'],
     \ 'httest': ['file.htt', 'file.htb'],
     \ 'ibasic': ['file.iba', 'file.ibi'],
@@ -218,12 +223,13 @@ let s:filename_checks = {
     \ 'jam': ['file.jpl', 'file.jpr'],
     \ 'java': ['file.java', 'file.jav'],
     \ 'javacc': ['file.jj', 'file.jjt'],
-    \ 'javascript': ['file.js', 'file.javascript', 'file.es', 'file.jsx', 'file.mjs'],
+    \ 'javascript': ['file.js', 'file.javascript', 'file.es', 'file.mjs', 'file.cjs'],
+    \ 'javascriptreact': ['file.jsx'],
     \ 'jess': ['file.clp'],
     \ 'jgraph': ['file.jgr'],
     \ 'jovial': ['file.jov', 'file.j73', 'file.jovial'],
     \ 'jproperties': ['file.properties', 'file.properties_xx', 'file.properties_xx_xx'],
-    \ 'json': ['file.json', 'file.jsonp', 'file.webmanifest'],
+    \ 'json': ['file.json', 'file.jsonp', 'file.webmanifest', 'Pipfile.lock'],
     \ 'jsp': ['file.jsp'],
     \ 'kconfig': ['Kconfig', 'Kconfig.debug'],
     \ 'kivy': ['file.kv'],
@@ -270,6 +276,7 @@ let s:filename_checks = {
     \ 'mason': ['file.mason', 'file.mhtml', 'file.comp'],
     \ 'master': ['file.mas', 'file.master'],
     \ 'mel': ['file.mel'],
+    \ 'meson': ['meson.build', 'meson_options.txt'],
     \ 'messages': ['/log/auth', '/log/cron', '/log/daemon', '/log/debug', '/log/kern', '/log/lpr', '/log/mail', '/log/messages', '/log/news/news', '/log/syslog', '/log/user',
     \     '/log/auth.log', '/log/cron.log', '/log/daemon.log', '/log/debug.log', '/log/kern.log', '/log/lpr.log', '/log/mail.log', '/log/messages.log', '/log/news/news.log', '/log/syslog.log', '/log/user.log',
     \     '/log/auth.err', '/log/cron.err', '/log/daemon.err', '/log/debug.err', '/log/kern.err', '/log/lpr.err', '/log/mail.err', '/log/messages.err', '/log/news/news.err', '/log/syslog.err', '/log/user.err',
@@ -358,6 +365,7 @@ let s:filename_checks = {
     \ 'rcs': ['file,v'],
     \ 'readline': ['.inputrc', 'inputrc'],
     \ 'remind': ['.reminders', 'file.remind', 'file.rem'],
+    \ 'rego': ['file.rego'],
     \ 'resolv': ['resolv.conf'],
     \ 'reva': ['file.frt'],
     \ 'rexx': ['file.rex', 'file.orx', 'file.rxo', 'file.rxj', 'file.jrexx', 'file.rexxj', 'file.rexx', 'file.testGroup', 'file.testUnit'],
@@ -425,7 +433,7 @@ let s:filename_checks = {
     \ 'svg': ['file.svg'],
     \ 'svn': ['svn-commitfile.tmp'],
     \ 'sysctl': ['/etc/sysctl.conf', '/etc/sysctl.d/file.conf'],
-    \ 'systemd': ['any/systemd/file.automount', 'any/systemd/file.mount', 'any/systemd/file.path', 'any/systemd/file.service', 'any/systemd/file.socket', 'any/systemd/file.swap', 'any/systemd/file.target', 'any/systemd/file.timer'],
+    \ 'systemd': ['any/systemd/file.automount', 'any/systemd/file.mount', 'any/systemd/file.path', 'any/systemd/file.service', 'any/systemd/file.socket', 'any/systemd/file.swap', 'any/systemd/file.target', 'any/systemd/file.timer', '/etc/systemd/system/some.d/file.conf', '/etc/systemd/system/some.d/.#file'],
     \ 'systemverilog': ['file.sv', 'file.svh'],
     \ 'tags': ['tags'],
     \ 'tak': ['file.tak'],
@@ -451,6 +459,8 @@ let s:filename_checks = {
     \ 'tssgm': ['file.tssgm'],
     \ 'tssop': ['file.tssop'],
     \ 'twig': ['file.twig'],
+    \ 'typescript': ['file.ts'],
+    \ 'typescriptreact': ['file.tsx'],
     \ 'uc': ['file.uc'],
     \ 'udevconf': ['/etc/udev/udev.conf'],
     \ 'udevperm': ['/etc/udev/permissions.d/file.permissions'],
@@ -467,13 +477,14 @@ let s:filename_checks = {
     \ 'verilog': ['file.v'],
     \ 'verilogams': ['file.va', 'file.vams'],
     \ 'vgrindefs': ['vgrindefs'],
-    \ 'vhdl': ['file.hdl', 'file.vhd', 'file.vhdl', 'file.vbe', 'file.vst'],
+    \ 'vhdl': ['file.hdl', 'file.vhd', 'file.vhdl', 'file.vbe', 'file.vst', 'file.vhdl_123'],
     \ 'vim': ['file.vim', 'file.vba', '.exrc', '_exrc'],
     \ 'viminfo': ['.viminfo', '_viminfo'],
     \ 'vmasm': ['file.mar'],
     \ 'voscm': ['file.cm'],
     \ 'vrml': ['file.wrl'],
     \ 'vroom': ['file.vroom'],
+    \ 'vue': ['file.vue'],
     \ 'wast': ['file.wast', 'file.wat'],
     \ 'webmacro': ['file.wm'],
     \ 'wget': ['.wgetrc', 'wgetrc'],
@@ -485,7 +496,7 @@ let s:filename_checks = {
     \ 'xhtml': ['file.xhtml', 'file.xht'],
     \ 'xinetd': ['/etc/xinetd.conf'],
     \ 'xmath': ['file.msc', 'file.msf'],
-    \ 'xml': ['/etc/blkid.tab', '/etc/blkid.tab.old', 'file.xmi', 'file.csproj', 'file.csproj.user', 'file.ts', 'file.ui', 'file.tpm', '/etc/xdg/menus/file.menu', 'fglrxrc', 'file.xlf', 'file.xliff', 'file.xul', 'file.wsdl'],
+    \ 'xml': ['/etc/blkid.tab', '/etc/blkid.tab.old', 'file.xmi', 'file.csproj', 'file.csproj.user', 'file.ui', 'file.tpm', '/etc/xdg/menus/file.menu', 'fglrxrc', 'file.xlf', 'file.xliff', 'file.xul', 'file.wsdl'],
     \ 'xmodmap': ['anyXmodmap'],
     \ 'xf86conf': ['xorg.conf', 'xorg.conf-4'],
     \ 'xpm2': ['file.xpm2'],
@@ -501,7 +512,6 @@ let s:filename_checks = {
     \ 'zimbutempl': ['file.zut'],
     \ 'zsh': ['.zprofile', '/etc/zprofile', '.zfbfmarks', 'file.zsh'],
     \
-    \ 'aap': ['file.aap'],
     \ 'help': [$VIMRUNTIME . '/doc/help.txt'],
     \ 'xpm': ['file.xpm'],
     \ }
@@ -515,11 +525,15 @@ func CheckItems(checks)
     for i in range(0, len(names) - 1)
       new
       try
-        exe 'edit ' . names[i]
+        exe 'edit ' . fnameescape(names[i])
       catch
-	call assert_report('cannot edit "' . names[i] . '": ' . v:errmsg)
+	call assert_report('cannot edit "' . names[i] . '": ' . v:exception)
       endtry
-      call assert_equal(ft, &filetype, 'with file name: ' . names[i])
+      if &filetype == '' && &readonly
+	" File exists but not able to edit it (permission denied)
+      else
+	call assert_equal(ft, &filetype, 'with file name: ' . names[i])
+      endif
       bwipe!
     endfor
   endfor
@@ -581,6 +595,8 @@ let s:script_checks = {
       \ 'cfengine': [['#!/path/cfengine']],
       \ 'erlang': [['#!/path/escript']],
       \ 'haskell': [['#!/path/haskell']],
+      \ 'cpp': [['// Standard iostream objects -*- C++ -*-'],
+      \         ['// -*- C++ -*-']],
       \ }
 
 func Test_script_detection()
@@ -599,5 +615,5 @@ endfunc
 
 func Test_setfiletype_completion()
   call feedkeys(":setfiletype java\<C-A>\<C-B>\"\<CR>", 'tx')
-  call assert_equal('"setfiletype java javacc javascript', @:)
+  call assert_equal('"setfiletype java javacc javascript javascriptreact', @:)
 endfunc

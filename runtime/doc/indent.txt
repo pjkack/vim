@@ -1,4 +1,4 @@
-*indent.txt*    For Vim version 8.1.  Last change: 2018 Apr 04
+*indent.txt*    For Vim version 8.2.  Last change: 2019 Dec 07
 
 
 		  VIM REFERENCE MANUAL    by Bram Moolenaar
@@ -60,12 +60,13 @@ typing certain characters or commands in certain contexts.  Note that this not
 only triggers C-indenting.  When 'indentexpr' is not empty 'indentkeys' is
 used instead.  The format of 'cinkeys' and 'indentkeys' is equal.
 
-The default is "0{,0},0),:,0#,!^F,o,O,e" which specifies that indenting occurs
-as follows:
+The default is "0{,0},0),0],:,0#,!^F,o,O,e" which specifies that indenting
+occurs as follows:
 
 	"0{"	if you type '{' as the first character in a line
 	"0}"	if you type '}' as the first character in a line
 	"0)"	if you type ')' as the first character in a line
+	"0]"	if you type ']' as the first character in a line
 	":"	if you type ':' after a label or case statement
 	"0#"	if you type '#' as the first character in a line
 	"!^F"	if you type CTRL-F (which is not inserted)
@@ -531,7 +532,7 @@ The examples below assume a 'shiftwidth' of 4.
 <
 			*javascript-cinoptions* *javascript-indenting* *cino-J*
 	JN    Indent JavaScript object declarations correctly by not confusing
-	      them with labels.  The value 'N' is currently unused but must be 
+	      them with labels.  The value 'N' is currently unused but must be
 	      non-zero (e.g. 'J1').  If you enable this you probably also want
 	      to set |cino-j|. >
 
@@ -540,7 +541,7 @@ The examples below assume a 'shiftwidth' of 4.
 			that: this,
 			some: ok,
 		    },
-		    "bar":{ 
+		    "bar":{
 			a : 2,
 			b: "123abc",
 			x: 4,
@@ -811,6 +812,16 @@ Detail:
       <!-- --> : -1
 
 
+MATLAB			*ft-matlab-indent* *matlab-indent* *matlab-indenting*
+
+The setting Function indenting format in MATLAB Editor/Debugger Language
+Preferences corresponds to: >
+    :let g:MATLAB_function_indent = {0, 1 or 2 (default)}
+
+Where 0 is for Classic, 1 for Indent nested functions and 2 for Indent all
+functions.
+
+
 PHP				*ft-php-indent* *php-indent* *php-indenting*
 
 NOTE:	PHP files will be indented correctly only if PHP |syntax| is active.
@@ -884,7 +895,7 @@ To automatically remove '\r' characters when the 'fileformat' is set to Unix: >
 							*PHP_BracesAtCodeLevel*
 To indent braces at the same level than the code they contain: >
     :let g:PHP_BracesAtCodeLevel = 1
-    
+
 This will give the following result: >
     if ($foo)
 	{
@@ -900,7 +911,7 @@ NOTE:	Indenting will be a bit slower if this option is used because some
 	optimizations won't be available.
 -------------
 
-							*PHP_vintage_case_default_indent*
+					*PHP_vintage_case_default_indent*
 To indent 'case:' and 'default:' statements in switch() blocks: >
     :let g:PHP_vintage_case_default_indent = 1
 
@@ -927,6 +938,43 @@ You will obtain the following result: >
         ->age()
         ->info();
 
+-------------
+
+					*PHP_IndentFunctionCallParameters*
+Extra indentation levels to add to parameters in multi-line function calls. >
+    let g:PHP_IndentFunctionCallParameters = 1
+
+Function call arguments will indent 1 extra level. For two-space indentation: >
+
+    function call_the_thing(
+      $with_this,
+      $and_that
+    ) {
+      $this->do_the_thing(
+          $with_this,
+          $and_that
+      );
+    }
+
+-------------
+
+				*PHP_IndentFunctionDeclarationParameters*
+Extra indentation levels to add to arguments in multi-line function
+definitions. >
+    let g:PHP_IndentFunctionDeclarationParameters = 1
+
+Function arguments in declarations will indent 1 extra level. For two-space
+indentation: >
+
+    function call_the_thing(
+        $with_this,
+        $and_that
+    ) {
+      $this->do_the_thing(
+        $with_this,
+        $and_that
+      );
+    }
 
 
 PYTHON							*ft-python-indent*
@@ -946,6 +994,11 @@ The method uses |searchpair()| to look back for unclosed parenthesis.  This
 can sometimes be slow, thus it timeouts after 150 msec.  If you notice the
 indenting isn't correct, you can set a larger timeout in msec: >
 	let g:pyindent_searchpair_timeout = 500
+
+If looking back for unclosed parenthesis is still too slow, especially during
+a copy-paste operation, or if you don't need indenting inside multi-line
+parentheses, you can completely disable this feature: >
+	let g:pyindent_disable_parentheses_indenting = 1
 
 
 R								*ft-r-indent*

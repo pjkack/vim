@@ -345,9 +345,15 @@ AC_ARG_WITH(view-name, [  --with-view-name=NAME   what to call the View executab
 AC_SUBST(VIEWNAME)
 
 AC_MSG_CHECKING(--with-global-runtime argument)
-AC_ARG_WITH(global-runtime, [  --with-global-runtime=DIR    global runtime directory in 'runtimepath'],
-	AC_MSG_RESULT($withval); AC_DEFINE_UNQUOTED(RUNTIME_GLOBAL, "$withval"),
+AC_ARG_WITH(global-runtime, [  --with-global-runtime=DIR    global runtime directory in 'runtimepath', comma-separated for multiple directories],
+	RUNTIME_GLOBAL="$withval"; AC_MSG_RESULT($withval),
 	AC_MSG_RESULT(no))
+
+if test "X$RUNTIME_GLOBAL" != "X"; then
+  RUNTIME_GLOBAL_AFTER=$(printf -- "$RUNTIME_GLOBAL\\n" | $AWK -F, 'BEGIN { comma=0 } { for (i = NF; i > 0; i--) { if (comma) { printf ",%s/after", $i } else { printf "%s/after", $i; comma=1 } } } END { printf "\n" }')
+  AC_DEFINE_UNQUOTED(RUNTIME_GLOBAL, "$RUNTIME_GLOBAL")
+  AC_DEFINE_UNQUOTED(RUNTIME_GLOBAL_AFTER, "$RUNTIME_GLOBAL_AFTER")
+fi
 
 AC_MSG_CHECKING(--with-modified-by argument)
 AC_ARG_WITH(modified-by, [  --with-modified-by=NAME       name of who modified a release version],
@@ -1960,7 +1966,7 @@ if test "$enable_rubyinterp" = "yes" -o "$enable_rubyinterp" = "dynamic"; then
 	    libruby_soname=`$vi_cv_path_ruby -r rbconfig -e "puts $ruby_rbconfig::CONFIG[['LIBRUBY_SO']]"`
 	  fi
 	  AC_DEFINE(DYNAMIC_RUBY)
-	  RUBY_CFLAGS="-DDYNAMIC_RUBY_DLL=\\\"$libruby_soname\\\" -DDYNAMIC_RUBY_VER=$rubyversion $RUBY_CFLAGS"
+	  RUBY_CFLAGS="-DDYNAMIC_RUBY_DLL=\\\"$libruby_soname\\\" $RUBY_CFLAGS"
 	  RUBY_LIBS=
 	fi
       else
@@ -1988,22 +1994,6 @@ AC_ARG_ENABLE(cscope,
 AC_MSG_RESULT($enable_cscope)
 if test "$enable_cscope" = "yes"; then
   AC_DEFINE(FEAT_CSCOPE)
-fi
-
-AC_MSG_CHECKING(--enable-workshop argument)
-AC_ARG_ENABLE(workshop,
-	[  --enable-workshop       Include Sun Visual Workshop support.], ,
-	[enable_workshop="no"])
-AC_MSG_RESULT($enable_workshop)
-if test "$enable_workshop" = "yes"; then
-  AC_DEFINE(FEAT_SUN_WORKSHOP)
-  WORKSHOP_SRC="workshop.c integration.c"
-  AC_SUBST(WORKSHOP_SRC)
-  WORKSHOP_OBJ="objects/workshop.o objects/integration.o"
-  AC_SUBST(WORKSHOP_OBJ)
-  if test "${enable_gui-xxx}" = xxx; then
-    enable_gui=motif
-  fi
 fi
 
 AC_MSG_CHECKING(--disable-netbeans argument)
@@ -2114,10 +2104,12 @@ else
 fi
 if test "$enable_terminal" = "yes" -a "$enable_channel" = "yes"; then
   AC_DEFINE(FEAT_TERMINAL)
-  TERM_SRC="libvterm/src/encoding.c libvterm/src/keyboard.c libvterm/src/mouse.c libvterm/src/parser.c libvterm/src/pen.c libvterm/src/termscreen.c libvterm/src/state.c libvterm/src/unicode.c libvterm/src/vterm.c"
+  TERM_SRC="libvterm/src/encoding.c libvterm/src/keyboard.c libvterm/src/mouse.c libvterm/src/parser.c libvterm/src/pen.c libvterm/src/creen.c libvterm/src/state.c libvterm/src/unicode.c libvterm/src/vterm.c"
   AC_SUBST(TERM_SRC)
-  TERM_OBJ="objects/encoding.o objects/keyboard.o objects/mouse.o objects/parser.o objects/pen.o objects/termscreen.o objects/state.o objects/unicode.o objects/vterm.o"
+  TERM_OBJ="objects/vterm_encoding.o objects/vterm_keyboard.o objects/vterm_mouse.o objects/vterm_parser.o objects/vterm_pen.o objects/vterm_screen.o objects/vterm_state.o objects/vterm_unicode.o objects/vterm_vterm.o"
   AC_SUBST(TERM_OBJ)
+  TERM_TEST="test_libvterm"
+  AC_SUBST(TERM_TEST)
 fi
 
 AC_MSG_CHECKING(--enable-autoservername argument)
@@ -2132,17 +2124,42 @@ fi
 AC_MSG_CHECKING(--enable-multibyte argument)
 AC_ARG_ENABLE(multibyte,
 	[  --enable-multibyte      Include multibyte editing support.], ,
-	[enable_multibyte="no"])
+	[enable_multibyte="yes"])
 AC_MSG_RESULT($enable_multibyte)
-if test "$enable_multibyte" = "yes"; then
-  AC_DEFINE(FEAT_MBYTE)
+if test "$enable_multibyte" != "yes"; then
+  AC_MSG_ERROR([The multi-byte feature can no longer be disabled. If you have
+		a problem with this, discuss on the Vim mailing list.])
 fi
 
-AC_MSG_CHECKING(--enable-hangulinput argument)
-AC_ARG_ENABLE(hangulinput,
-	[  --enable-hangulinput    Include Hangul input support.], ,
-	[enable_hangulinput="no"])
-AC_MSG_RESULT($enable_hangulinput)
+dnl Right-to-Left language support for Vim will be included with big features,
+dnl unless ENABLE_RIGHTLEFT is undefined.
+AC_MSG_CHECKING(--disable-rightleft argument)
+AC_ARG_ENABLE(rightleft,
+	[  --disable-rightleft     Do not include Right-to-Left language support.],
+	, [enable_rightleft="yes"])
+if test "$enable_rightleft" = "yes"; then
+	AC_MSG_RESULT(no)
+else
+	AC_MSG_RESULT(yes)
+	AC_DEFINE(DISABLE_RIGHTLEFT)
+fi
+
+dnl Arabic language support for Vim will be included with big features,
+dnl unless ENABLE_ARABIC is undefined.
+AC_MSG_CHECKING(--disable-arabic argument)
+AC_ARG_ENABLE(arabic,
+	[  --disable-arabic        Do not include Arabic language support.],
+	, [enable_arabic="yes"])
+if test "$enable_arabic" = "yes"; then
+	AC_MSG_RESULT(no)
+else
+	AC_MSG_RESULT(yes)
+	AC_DEFINE(DISABLE_ARABIC)
+fi
+
+dnl Farsi language support has been removed, ignore --disable-farsi
+AC_ARG_ENABLE(farsi,
+	[  --disable-farsi         Deprecated.],,)
 
 AC_MSG_CHECKING(--enable-xim argument)
 AC_ARG_ENABLE(xim,
@@ -2321,8 +2338,8 @@ if test "x$QNX" = "xyes" -a "x$with_x" = "xno" ; then
   case "$enable_gui_canon" in
     no)		AC_MSG_RESULT(no GUI support)
 		SKIP_PHOTON=YES ;;
-    yes|"")	AC_MSG_RESULT(yes - automatic GUI support) ;;
-    auto)	AC_MSG_RESULT(auto - automatic GUI support) ;;
+    yes|""|auto) AC_MSG_RESULT(automatic GUI support)
+    		gui_auto=yes ;;
     photon)	AC_MSG_RESULT(Photon GUI support) ;;
     *)		AC_MSG_RESULT([Sorry, $enable_gui GUI is not supported])
 		SKIP_PHOTON=YES ;;
@@ -2333,7 +2350,8 @@ elif test "x$MACOS_X" = "xyes" -a "x$with_x" = "xno" ; then
   case "$enable_gui_canon" in
     no)		AC_MSG_RESULT(no GUI support)
 		SKIP_CARBON=YES ;;
-    yes|"")	AC_MSG_RESULT(yes - automatic GUI support) ;;
+    yes|"")	AC_MSG_RESULT(yes - automatic GUI support)
+    		gui_auto=yes ;;
     auto)	AC_MSG_RESULT(auto - Carbon GUI is outdated - disable GUI support)
 		SKIP_CARBON=YES ;;
     carbon)	AC_MSG_RESULT(Carbon GUI support) ;;
@@ -2346,6 +2364,7 @@ else
   case "$enable_gui_canon" in
     no|none)	AC_MSG_RESULT(no GUI support) ;;
     yes|""|auto)	AC_MSG_RESULT(yes/auto - automatic GUI support)
+		gui_auto=yes
 		SKIP_GTK2=
 		SKIP_GNOME=
 		SKIP_MOTIF=
@@ -2593,6 +2612,9 @@ return 1;
       GTK_CFLAGS=""
       GTK_LIBS=""
       ifelse([$3], , :, [$3])
+      if test "$fail_if_missing" = "yes" -a "X$gui_auto" != "Xyes"; then
+	AC_MSG_ERROR([could not configure GTK])
+      fi
     }
     fi
   }
@@ -2676,6 +2698,10 @@ AC_DEFUN([GNOME_INIT],[
 	GNOME_INIT_HOOK([],fail)
 ])
 
+if test "X$PKG_CONFIG" = "X"; then
+  AC_PATH_TOOL(PKG_CONFIG, pkg-config, no)
+fi
+
 
 dnl ---------------------------------------------------------------------------
 dnl Check for GTK2.  If it fails, then continue on for Motif as before...
@@ -2689,10 +2715,6 @@ if test -z "$SKIP_GTK2"; then
     AC_MSG_RESULT(gtk test enabled)
   else
     AC_MSG_RESULT(gtk test disabled)
-  fi
-
-  if test "X$PKG_CONFIG" = "X"; then
-    AC_PATH_TOOL(PKG_CONFIG, pkg-config, no)
   fi
 
   if test "x$PKG_CONFIG" != "xno"; then
@@ -2741,10 +2763,6 @@ if test -z "$SKIP_GTK3"; then
     AC_MSG_RESULT(gtk test enabled)
   else
     AC_MSG_RESULT(gtk test disabled)
-  fi
-
-  if test "X$PKG_CONFIG" = "X"; then
-    AC_PATH_TOOL(PKG_CONFIG, pkg-config, no)
   fi
 
   if test "x$PKG_CONFIG" != "xno"; then
@@ -3034,9 +3052,8 @@ if test -z "$SKIP_ATHENA" -o -z "$SKIP_NEXTAW" -o -z "$SKIP_MOTIF" -o -z "$SKIP_
   fi
   CPPFLAGS=$cppflags_save
 
-  dnl automatically enable XIM when hangul input isn't enabled
-  if test "$enable_xim" = "auto" -a "$enable_hangulinput" != "yes" \
-		-a "x$GUITYPE" != "xNONE" ; then
+  dnl automatically enable XIM in the GUI
+  if test "$enable_xim" = "auto" -a "x$GUITYPE" != "xNONE" ; then
     AC_MSG_RESULT(X GUI selected; xim has been enabled)
     enable_xim="yes"
   fi
@@ -3154,20 +3171,6 @@ case `uname` in
     *)          CYGWIN=no; AC_MSG_RESULT(no);;
 esac
 
-dnl Only really enable hangul input when GUI and XFONTSET are available
-if test "$enable_hangulinput" = "yes"; then
-  if test "x$GUITYPE" = "xNONE"; then
-    AC_MSG_RESULT(no GUI selected; hangul input has been disabled)
-    enable_hangulinput=no
-  else
-    AC_DEFINE(FEAT_HANGULIN)
-    HANGULIN_SRC=hangulin.c
-    AC_SUBST(HANGULIN_SRC)
-    HANGULIN_OBJ=objects/hangulin.o
-    AC_SUBST(HANGULIN_OBJ)
-  fi
-fi
-
 dnl Checks for libraries and include files.
 
 AC_CACHE_CHECK([whether toupper is broken], [vim_cv_toupper_broken],
@@ -3230,7 +3233,7 @@ AC_CHECK_HEADERS(stdint.h stdlib.h string.h \
 	unistd.h stropts.h errno.h sys/resource.h \
 	sys/systeminfo.h locale.h sys/stream.h termios.h \
 	libc.h sys/statfs.h poll.h sys/poll.h pwd.h \
-	utime.h sys/param.h libintl.h libgen.h \
+	utime.h sys/param.h sys/ptms.h libintl.h libgen.h \
 	util/debug.h util/msg18n.h frame.h sys/acl.h \
 	sys/access.h sys/sysinfo.h wchar.h wctype.h)
 
@@ -3710,23 +3713,64 @@ main()
 
 if test "x$vim_cv_getcwd_broken" = "xyes" ; then
   AC_DEFINE(BAD_GETCWD)
+  AC_CHECK_FUNCS(getwd)
 fi
 
 dnl Check for functions in one big call, to reduce the size of configure.
 dnl Can only be used for functions that do not require any include.
 AC_CHECK_FUNCS(fchdir fchown fchmod fsync getcwd getpseudotty \
-	getpwent getpwnam getpwuid getrlimit gettimeofday getwd lstat \
+	getpwent getpwnam getpwuid getrlimit gettimeofday localtime_r lstat \
 	memset mkdtemp nanosleep opendir putenv qsort readlink select setenv \
 	getpgid setpgid setsid sigaltstack sigstack sigset sigsetjmp sigaction \
 	sigprocmask sigvec strcasecmp strerror strftime stricmp strncasecmp \
-	strnicmp strpbrk strtol tgetent towlower towupper iswupper \
-	usleep utime utimes mblen ftruncate unsetenv)
+	strnicmp strpbrk strptime strtol tgetent towlower towupper iswupper \
+	tzset usleep utime utimes mblen ftruncate unsetenv posix_openpt)
 AC_FUNC_SELECT_ARGTYPES
 AC_FUNC_FSEEKO
 
 dnl define _LARGE_FILES, _FILE_OFFSET_BITS and _LARGEFILE_SOURCE when
 dnl appropriate, so that off_t is 64 bits when needed.
 AC_SYS_LARGEFILE
+
+AC_MSG_CHECKING(--enable-canberra argument)
+AC_ARG_ENABLE(canberra,
+	[  --disable-canberra      Do not use libcanberra.],
+	, [enable_canberra="maybe"])
+
+if test "$enable_canberra" = "maybe"; then
+  if test "$features" = "big" -o "$features" = "huge"; then
+    AC_MSG_RESULT(Defaulting to yes)
+    enable_canberra="yes"
+  else
+    AC_MSG_RESULT(Defaulting to no)
+    enable_canberra="no"
+  fi
+else
+  AC_MSG_RESULT($enable_canberra)
+fi
+if test "$enable_canberra" = "yes"; then
+  if test "x$PKG_CONFIG" != "xno"; then
+    canberra_lib=`$PKG_CONFIG --libs libcanberra 2>/dev/null`
+    canberra_cflags=`$PKG_CONFIG --cflags libcanberra 2>/dev/null`
+  fi
+  if test "x$canberra_lib" = "x"; then
+    canberra_lib=-lcanberra
+    canberra_cflags=-D_REENTRANT
+  fi
+  AC_MSG_CHECKING(for libcanberra)
+  ac_save_CFLAGS="$CFLAGS"
+  ac_save_LIBS="$LIBS"
+  CFLAGS="$CFLAGS $canberra_cflags"
+  LIBS="$LIBS $canberra_lib"
+  AC_TRY_LINK([
+  # include <canberra.h>
+      ], [
+     ca_context *hello;
+     ca_context_create(&hello);],
+       AC_MSG_RESULT(yes); AC_DEFINE(HAVE_CANBERRA),
+       AC_MSG_RESULT(no; try installing libcanberra-dev); CFLAGS="$ac_save_CFLAGS"; LIBS="$ac_save_LIBS")
+fi
+
 
 dnl fstatfs() can take 2 to 4 arguments, try to use st_blksize if possible
 AC_MSG_CHECKING(for st_blksize)
@@ -4192,11 +4236,11 @@ dnl -i+m to test for older Exuberant ctags
 AC_MSG_CHECKING(how to create tags)
 test -f tags && mv tags tags.save
 if (eval ctags --version /dev/null | grep Exuberant) < /dev/null 1>&AC_FD_CC 2>&1; then
-  TAGPRG="ctags -I INIT+ --fields=+S"
+  TAGPRG="ctags -I INIT+,INIT2+,INIT3+,INIT4+,INIT5+ --fields=+S"
 elif (eval exctags --version /dev/null | grep Exuberant) < /dev/null 1>&AC_FD_CC 2>&1; then
-  TAGPRG="exctags -I INIT+ --fields=+S"
+  TAGPRG="exctags -I INIT+,INIT2+,INIT3+,INIT4+,INIT5+ --fields=+S"
 elif (eval exuberant-ctags --version /dev/null | grep Exuberant) < /dev/null 1>&AC_FD_CC 2>&1; then
-  TAGPRG="exuberant-ctags -I INIT+ --fields=+S"
+  TAGPRG="exuberant-ctags -I INIT+,INIT2+,INIT3+,INIT4+,INIT5+ --fields=+S"
 else
   TAGPRG="ctags"
   (eval etags	   /dev/null) < /dev/null 1>&AC_FD_CC 2>&1 && TAGPRG="etags"
@@ -4272,6 +4316,21 @@ if test "$enable_nls" = "yes"; then
 		[++_nl_msg_cat_cntr;],
 		AC_MSG_RESULT([yes]); AC_DEFINE(HAVE_NL_MSG_CAT_CNTR),
 		AC_MSG_RESULT([no]))
+      AC_MSG_CHECKING([if msgfmt supports --desktop])
+      MSGFMT_DESKTOP=
+      if "$MSGFMT" --help | grep -e '--desktop' >/dev/null; then
+	if "$MSGFMT" --version | grep '0.19.[[3-7]]$' >/dev/null; then
+	  dnl GNU gettext 0.19.7's --desktop is broken.  We assume back to
+	  dnl 0.19.3 is also broken.
+	  AC_MSG_RESULT([broken])
+	else
+	  AC_MSG_RESULT([yes])
+	  MSGFMT_DESKTOP="gvim.desktop vim.desktop"
+	fi
+      else
+	AC_MSG_RESULT([no])
+      fi
+      AC_SUBST(MSGFMT_DESKTOP)
     fi
   else
     AC_MSG_RESULT([no "po/Makefile" - disabled]);
@@ -4366,27 +4425,11 @@ if test "$MACOS_X" = "yes"; then
       dnl Since no FEAT_CLIPBOARD, no longer need for os_macosx.m.
       OS_EXTRA_SRC=`echo "$OS_EXTRA_SRC" | sed -e 's+os_macosx.m++'`
       OS_EXTRA_OBJ=`echo "$OS_EXTRA_OBJ" | sed -e 's+objects/os_macosx.o++'`
-      if test "$enable_multibyte" = "yes"; then
-        AC_MSG_RESULT([yes, we need CoreServices])
-        LIBS="$LIBS -framework CoreServices"
-      else
-        dnl Since no FEAT_MBYTE, no longer need for os_mac_conv.c.
-        AC_MSG_RESULT([no])
-        OS_EXTRA_SRC=`echo "$OS_EXTRA_SRC" | sed -e 's+os_mac_conv.c++'`
-        OS_EXTRA_OBJ=`echo "$OS_EXTRA_OBJ" | sed -e 's+objects/os_mac_conv.o++'`
-        CPPFLAGS=`echo "$CPPFLAGS" | sed -e 's+-DMACOS_X_DARWIN++'`
-      fi
+      AC_MSG_RESULT([yes, we need CoreServices])
+      LIBS="$LIBS -framework CoreServices"
     else
       AC_MSG_RESULT([yes, we need AppKit])
       LIBS="$LIBS -framework AppKit"
-      if test "$features" = "small" -a "$enable_multibyte" = "no"; then
-        dnl Since FEAT_CLIPBOARD is to be defined in vim.h for FEAT_SMALL, define
-        dnl FEAT_MBYTE in order not to compromise the interoperability of the
-        dnl clipboard.
-        AC_MSG_NOTICE([+multi_byte will be set in favor of +clipboard])
-        enable_multibyte=yes
-        AC_DEFINE(FEAT_MBYTE)
-      fi
     fi
   else
     AC_MSG_RESULT([no])
@@ -4418,6 +4461,7 @@ if test "$GCC" = yes; then
   AC_MSG_CHECKING(whether we need -D_FORTIFY_SOURCE=1)
   if test "$gccmajor" -gt "3"; then
     CFLAGS=`echo "$CFLAGS" | sed -e 's/ *-Wp,-D_FORTIFY_SOURCE=.//g' -e 's/ *-D_FORTIFY_SOURCE=.//g' -e 's/ *-U_FORTIFY_SOURCE//g' -e 's/$/ -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=1/'`
+    CPPFLAGS=`echo "$CPPFLAGS" | sed -e 's/ *-Wp,-D_FORTIFY_SOURCE=.//g' -e 's/ *-D_FORTIFY_SOURCE=.//g' -e 's/ *-U_FORTIFY_SOURCE//g'`
     AC_MSG_RESULT(yes)
   else
     AC_MSG_RESULT(no)

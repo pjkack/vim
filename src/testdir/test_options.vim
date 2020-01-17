@@ -1,6 +1,8 @@
 " Test for options
 
-function! Test_whichwrap()
+source check.vim
+
+func Test_whichwrap()
   set whichwrap=b,s
   call assert_equal('b,s', &whichwrap)
 
@@ -20,16 +22,16 @@ function! Test_whichwrap()
   call assert_equal('h', &whichwrap)
 
   set whichwrap&
-endfunction
+endfunc
 
-function! Test_isfname()
+func Test_isfname()
   " This used to cause Vim to access uninitialized memory.
   set isfname=
   call assert_equal("~X", expand("~X"))
   set isfname&
-endfunction
+endfunc
 
-function Test_wildchar()
+func Test_wildchar()
   " Empty 'wildchar' used to access invalid memory.
   call assert_fails('set wildchar=', 'E521:')
   call assert_fails('set wildchar=abc', 'E521:')
@@ -40,9 +42,9 @@ function Test_wildchar()
   let a=execute('set wildchar?')
   call assert_equal("\n  wildchar=<Esc>", a)
   set wildchar&
-endfunction
+endfunc
 
-function Test_options()
+func Test_options()
   let caught = 'ok'
   try
     options
@@ -51,11 +53,37 @@ function Test_options()
   endtry
   call assert_equal('ok', caught)
 
+  " Check if the option-window is opened horizontally.
+  wincmd j
+  call assert_notequal('option-window', bufname(''))
+  wincmd k
+  call assert_equal('option-window', bufname(''))
   " close option-window
   close
-endfunction
 
-function Test_path_keep_commas()
+  " Open the option-window vertically.
+  vert options
+  " Check if the option-window is opened vertically.
+  wincmd l
+  call assert_notequal('option-window', bufname(''))
+  wincmd h
+  call assert_equal('option-window', bufname(''))
+  " close option-window
+  close
+
+  " Open the option-window in a new tab.
+  tab options
+  " Check if the option-window is opened in a tab.
+  normal gT
+  call assert_notequal('option-window', bufname(''))
+  normal gt
+  call assert_equal('option-window', bufname(''))
+
+  " close option-window
+  close
+endfunc
+
+func Test_path_keep_commas()
   " Test that changing 'path' keeps two commas.
   set path=foo,,bar
   set path-=bar
@@ -63,7 +91,7 @@ function Test_path_keep_commas()
   call assert_equal('foo,,bar', &path)
 
   set path&
-endfunction
+endfunc
 
 func Test_signcolumn()
   if has('signs')
@@ -75,9 +103,6 @@ func Test_signcolumn()
 endfunc
 
 func Test_filetype_valid()
-  if !has('autocmd')
-    return
-  endif
   set ft=valid_name
   call assert_equal("valid_name", &filetype)
   set ft=valid-name
@@ -176,6 +201,12 @@ func Test_set_completion()
   call feedkeys(":set di\<C-A>\<C-B>\"\<CR>", 'tx')
   call assert_equal('"set dictionary diff diffexpr diffopt digraph directory display', @:)
 
+  call feedkeys(":setlocal di\<C-A>\<C-B>\"\<CR>", 'tx')
+  call assert_equal('"setlocal dictionary diff diffexpr diffopt digraph directory display', @:)
+
+  call feedkeys(":setglobal di\<C-A>\<C-B>\"\<CR>", 'tx')
+  call assert_equal('"setglobal dictionary diff diffexpr diffopt digraph directory display', @:)
+
   " Expand boolan options. When doing :set no<Tab>
   " vim displays the options names without "no" but completion uses "no...".
   call feedkeys(":set nodi\<C-A>\<C-B>\"\<CR>", 'tx')
@@ -214,6 +245,8 @@ func Test_set_completion()
 
   call feedkeys(":set tags=./\\\\ dif\<C-A>\<C-B>\"\<CR>", 'tx')
   call assert_equal('"set tags=./\\ diff diffexpr diffopt', @:)
+
+  set tags&
 endfunc
 
 func Test_set_errors()
@@ -221,7 +254,7 @@ func Test_set_errors()
   call assert_fails('set backupcopy=', 'E474:')
   call assert_fails('set regexpengine=3', 'E474:')
   call assert_fails('set history=10001', 'E474:')
-  call assert_fails('set numberwidth=11', 'E474:')
+  call assert_fails('set numberwidth=21', 'E474:')
   call assert_fails('set colorcolumn=-a')
   call assert_fails('set colorcolumn=a')
   call assert_fails('set colorcolumn=1,')
@@ -270,50 +303,78 @@ func Test_set_errors()
   call assert_fails('set t_foo=', 'E846:')
 endfunc
 
+func CheckWasSet(name)
+  let verb_cm = execute('verbose set ' .. a:name .. '?')
+  call assert_match('Last set from.*test_options.vim', verb_cm)
+endfunc
+func CheckWasNotSet(name)
+  let verb_cm = execute('verbose set ' .. a:name .. '?')
+  call assert_notmatch('Last set from', verb_cm)
+endfunc
+
 " Must be executed before other tests that set 'term'.
 func Test_000_term_option_verbose()
-  if has('gui_running')
-    return
-  endif
-  let verb_cm = execute('verbose set t_cm')
-  call assert_notmatch('Last set from', verb_cm)
+  CheckNotGui
+
+  call CheckWasNotSet('t_cm')
 
   let term_save = &term
   set term=ansi
-  let verb_cm = execute('verbose set t_cm')
-  call assert_match('Last set from.*test_options.vim', verb_cm)
+  call CheckWasSet('t_cm')
   let &term = term_save
 endfunc
 
+func Test_copy_context()
+  setlocal list
+  call CheckWasSet('list')
+  split
+  call CheckWasSet('list')
+  quit
+  setlocal nolist
+
+  set ai
+  call CheckWasSet('ai')
+  set filetype=perl
+  call CheckWasSet('filetype')
+  set fo=tcroq
+  call CheckWasSet('fo')
+
+  split Xsomebuf
+  call CheckWasSet('ai')
+  call CheckWasNotSet('filetype')
+  call CheckWasSet('fo')
+endfunc
+
 func Test_set_ttytype()
-  if !has('gui_running') && has('unix')
-    " Setting 'ttytype' used to cause a double-free when exiting vim and
-    " when vim is compiled with -DEXITFREE.
-    set ttytype=ansi
-    call assert_equal('ansi', &ttytype)
-    call assert_equal(&ttytype, &term)
-    set ttytype=xterm
-    call assert_equal('xterm', &ttytype)
-    call assert_equal(&ttytype, &term)
-    " "set ttytype=" gives E522 instead of E529
-    " in travis on some builds. Why?  Catch both for now
-    try
-      set ttytype=
-      call assert_report('set ttytype= did not fail')
-    catch /E529\|E522/
-    endtry
+  CheckUnix
+  CheckNotGui
 
-    " Some systems accept any terminal name and return dumb settings,
-    " check for failure of finding the entry and for missing 'cm' entry.
-    try
-      set ttytype=xxx
-      call assert_report('set ttytype=xxx did not fail')
-    catch /E522\|E437/
-    endtry
+  " Setting 'ttytype' used to cause a double-free when exiting vim and
+  " when vim is compiled with -DEXITFREE.
+  set ttytype=ansi
+  call assert_equal('ansi', &ttytype)
+  call assert_equal(&ttytype, &term)
+  set ttytype=xterm
+  call assert_equal('xterm', &ttytype)
+  call assert_equal(&ttytype, &term)
+  " "set ttytype=" gives E522 instead of E529
+  " in travis on some builds. Why?  Catch both for now
+  try
+    set ttytype=
+    call assert_report('set ttytype= did not fail')
+  catch /E529\|E522/
+  endtry
 
-    set ttytype&
-    call assert_equal(&ttytype, &term)
-  endif
+  " Some systems accept any terminal name and return dumb settings,
+  " check for failure of finding the entry and for missing 'cm' entry.
+  try
+    set ttytype=xxx
+    call assert_report('set ttytype=xxx did not fail')
+  catch /E522\|E437/
+  endtry
+
+  set ttytype&
+  call assert_equal(&ttytype, &term)
 endfunc
 
 func Test_set_all()
@@ -335,6 +396,15 @@ func Test_set_values()
   endif
 endfunc
 
+func Test_renderoptions()
+  " Only do this for Windows Vista and later, fails on Windows XP and earlier.
+  " Doesn't hurt to do this on a non-Windows system.
+  if windowsversion() !~ '^[345]\.'
+    set renderoptions=type:directx
+    set rop=type:directx
+  endif
+endfunc
+
 func ResetIndentexpr()
   set indentexpr=
 endfunc
@@ -349,19 +419,62 @@ func Test_set_indentexpr()
 endfunc
 
 func Test_backupskip()
+  " Option 'backupskip' may contain several comma-separated path
+  " specifications if one or more of the environment variables TMPDIR, TMP,
+  " or TEMP is defined.  To simplify testing, convert the string value into a
+  " list.
+  let bsklist = split(&bsk, ',')
+
   if has("mac")
-    call assert_match('/private/tmp/\*', &bsk)
+    let found = (index(bsklist, '/private/tmp/*') >= 0)
+    call assert_true(found, '/private/tmp not in option bsk: ' . &bsk)
   elseif has("unix")
-    call assert_match('/tmp/\*', &bsk)
+    let found = (index(bsklist, '/tmp/*') >= 0)
+    call assert_true(found, '/tmp not in option bsk: ' . &bsk)
   endif
 
-  let bskvalue = substitute(&bsk, '\\', '/', 'g')
-  for var in  ['$TEMPDIR', '$TMP', '$TEMP']
+  " If our test platform is Windows, the path(s) in option bsk will use
+  " backslash for the path separator and the components could be in short
+  " (8.3) format.  As such, we need to replace the backslashes with forward
+  " slashes and convert the path components to long format.  The expand()
+  " function will do this but it cannot handle comma-separated paths.  This is
+  " why bsk was converted from a string into a list of strings above.
+  "
+  " One final complication is that the wildcard "/*" is at the end of each
+  " path and so expand() might return a list of matching files.  To prevent
+  " this, we need to remove the wildcard before calling expand() and then
+  " append it afterwards.
+  if has('win32')
+    let item_nbr = 0
+    while item_nbr < len(bsklist)
+      let path_spec = bsklist[item_nbr]
+      let path_spec = strcharpart(path_spec, 0, strlen(path_spec)-2)
+      let path_spec = substitute(expand(path_spec), '\\', '/', 'g')
+      let bsklist[item_nbr] = path_spec . '/*'
+      let item_nbr += 1
+    endwhile
+  endif
+
+  " Option bsk will also include these environment variables if defined.
+  " If they're defined, verify they appear in the option value.
+  for var in  ['$TMPDIR', '$TMP', '$TEMP']
     if exists(var)
       let varvalue = substitute(expand(var), '\\', '/', 'g')
-      call assert_match(varvalue . '/\=\*', bskvalue)
+      let varvalue = substitute(varvalue, '/$', '', '')
+      let varvalue .= '/*'
+      let found = (index(bsklist, varvalue) >= 0)
+      call assert_true(found, var . ' (' . varvalue . ') not in option bsk: ' . &bsk)
     endif
   endfor
+
+  " Duplicates should be filtered out (option has P_NODUP)
+  let backupskip = &backupskip
+  set backupskip=
+  set backupskip+=/test/dir
+  set backupskip+=/other/dir
+  set backupskip+=/test/dir
+  call assert_equal('/test/dir,/other/dir', &backupskip)
+  let &backupskip = backupskip
 endfunc
 
 func Test_copy_winopt()
@@ -439,16 +552,84 @@ func Test_shortmess_F2()
   call assert_match('file2', execute('bn', ''))
   set shortmess+=F
   call assert_true(empty(execute('bn', '')))
+  call assert_false(test_getvalue('need_fileinfo'))
   call assert_true(empty(execute('bn', '')))
+  call assert_false('need_fileinfo'->test_getvalue())
   set hidden
   call assert_true(empty(execute('bn', '')))
+  call assert_false(test_getvalue('need_fileinfo'))
   call assert_true(empty(execute('bn', '')))
+  call assert_false(test_getvalue('need_fileinfo'))
   set nohidden
   call assert_true(empty(execute('bn', '')))
+  call assert_false(test_getvalue('need_fileinfo'))
   call assert_true(empty(execute('bn', '')))
+  call assert_false(test_getvalue('need_fileinfo'))
   set shortmess&
   call assert_match('file1', execute('bn', ''))
   call assert_match('file2', execute('bn', ''))
   bwipe
   bwipe
+endfunc
+
+func Test_local_scrolloff()
+  set so=5
+  set siso=7
+  split
+  call assert_equal(5, &so)
+  setlocal so=3
+  call assert_equal(3, &so)
+  wincmd w
+  call assert_equal(5, &so)
+  wincmd w
+  setlocal so<
+  call assert_equal(5, &so)
+  setlocal so=0
+  call assert_equal(0, &so)
+  setlocal so=-1
+  call assert_equal(5, &so)
+
+  call assert_equal(7, &siso)
+  setlocal siso=3
+  call assert_equal(3, &siso)
+  wincmd w
+  call assert_equal(7, &siso)
+  wincmd w
+  setlocal siso<
+  call assert_equal(7, &siso)
+  setlocal siso=0
+  call assert_equal(0, &siso)
+  setlocal siso=-1
+  call assert_equal(7, &siso)
+
+  close
+  set so&
+  set siso&
+endfunc
+
+func Test_writedelay()
+  if !has('reltime')
+    return
+  endif
+  new
+  call setline(1, 'empty')
+  redraw
+  set writedelay=10
+  let start = reltime()
+  call setline(1, repeat('x', 70))
+  redraw
+  let elapsed = reltimefloat(reltime(start))
+  set writedelay=0
+  " With 'writedelay' set should take at least 30 * 10 msec
+  call assert_inrange(30 * 0.01, 999.0, elapsed)
+
+  bwipe!
+endfunc
+
+func Test_visualbell()
+  set belloff=
+  set visualbell
+  call assert_beeps('normal 0h')
+  set novisualbell
+  set belloff=all
 endfunc

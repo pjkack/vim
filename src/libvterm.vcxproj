@@ -158,8 +158,8 @@
     <ClCompile Include="libvterm\src\mouse.c" />
     <ClCompile Include="libvterm\src\parser.c" />
     <ClCompile Include="libvterm\src\pen.c" />
+    <ClCompile Include="libvterm\src\screen.c" />
     <ClCompile Include="libvterm\src\state.c" />
-    <ClCompile Include="libvterm\src\termscreen.c" />
     <ClCompile Include="libvterm\src\unicode.c" />
     <ClCompile Include="libvterm\src\vterm.c" />
   </ItemGroup>

@@ -1,6 +1,6 @@
 @echo off
-set PATHDEF_FILE=pathdef.c
-set PATHDEF_TEMP=pathdef.tmp
+set PATHDEF_FILE=auto\pathdef.c
+set PATHDEF_TEMP=auto\pathdef.tmp
 set CONFIGURATION=%1
 set PLATFORMTARGET=%2
 

@@ -2,9 +2,14 @@
 "
 " Current directory must be runtime/indent.
 
+" Only do this with the +eval feature
+if 1
+
 set nocp
 filetype indent on
+syn on
 set nowrapscan
+set report=9999
 
 au! SwapExists * call HandleSwapExists()
 func HandleSwapExists()
@@ -15,6 +20,7 @@ func HandleSwapExists()
   endif
 endfunc
 
+let failed_count = 0
 for fname in glob('testdir/*.in', 1, 1)
   let root = substitute(fname, '\.in', '', '')
 
@@ -105,15 +111,23 @@ for fname in glob('testdir/*.in', 1, 1)
     endif
 
     if failed
+      let failed_count += 1
       exe 'write ' . root . '.fail'
       echoerr 'Test ' . fname . ' FAILED!'
-      sleep 2
     else
       exe 'write ' . root . '.out'
+      echo "Test " . fname . " OK\n"
     endif
 
     quit!  " close the indented file
   endif
 endfor
 
+" Matching "if 1" at the start.
+endif
+
+if failed_count > 0
+  " have make report an error
+  cquit
+endif
 qall!

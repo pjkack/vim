@@ -25,7 +25,7 @@
     vim_snprintf(pmess, 100, "%s %s", profile_msg(&ptime), str); \
     const int p_msg_silent = msg_silent; \
     msg_silent = 0; \
-    MSG(_(pmess)); \
+    msg(_(pmess)); \
     msg_silent = p_msg_silent; \
 } while(0)
 #else
@@ -1087,7 +1087,7 @@ static void bore_load_sln(const char* path)
 
 fail:
     bore_free(b);
-    EMSG2(_("Could not open solution %s"), path);
+    semsg(_("Could not open solution %s"), path);
     return;
 }
 
@@ -1109,7 +1109,7 @@ static void bore_print_sln(DWORD elapsed)
                 g_bore->proj_count,
                 g_bore->file_count);
         }           
-        MSG(IObuff);
+        msg(IObuff);
     }
 }
 
@@ -1224,7 +1224,7 @@ static int bore_find(bore_t* b, const char* arg, bore_search_t* search)
     cf = mch_fopen((char *)tmp, "wb");
     if (cf == NULL)
     {
-        EMSG2(_(e_notopen), tmp);
+        semsg(_(e_notopen), tmp);
         goto fail;
     }
     bore_save_match_to_file(b, cf, match, found);
@@ -1346,7 +1346,7 @@ static void bore_show_borebuf(bore_t* b, const char* filename, int minheight, co
 
     return;
 erret:
-    EMSG(_("Could not open borebuf"));
+    emsg(_("Could not open borebuf"));
 }
 
 static void bore_print_build()
@@ -1359,7 +1359,7 @@ static void bore_print_build()
                 "%s; success; %d seconds",
                 g_bore_async_execute_context.title,
                 g_bore_async_execute_context.duration);
-            MSG_ATTR(IObuff, HL_ATTR(HLF_R));
+            msg_attr(IObuff, HL_ATTR(HLF_R));
         }
         else
         {
@@ -1368,7 +1368,7 @@ static void bore_print_build()
                 g_bore_async_execute_context.title,
                 g_bore_async_execute_context.exit_code,
                 g_bore_async_execute_context.duration);
-            MSG_ATTR(IObuff, HL_ATTR(HLF_E));
+            msg_attr(IObuff, HL_ATTR(HLF_E));
         }
     }
     else if (0 == g_bore_async_execute_context.completed)
@@ -1377,14 +1377,14 @@ static void bore_print_build()
             "%s; running; %d seconds...",
             g_bore_async_execute_context.title,
             g_bore_async_execute_context.duration);
-        MSG(IObuff);
+        msg(IObuff);
     }
     else
     {
         vim_snprintf(IObuff, IOSIZE,
             "%s; failed to launch",
             g_bore_async_execute_context.title);
-        MSG_ATTR(IObuff, HL_ATTR(HLF_E));
+        msg_attr(IObuff, HL_ATTR(HLF_E));
     }
 }
 
@@ -1418,13 +1418,13 @@ void bore_async_execute_update(DWORD flags)
         if (!result)
         {
             if (!completed)
-                MSG_ATTR(_("bore_async_execute_update: Failed to peek pipe"), HL_ATTR(HLF_E));
+                msg_attr(_("bore_async_execute_update: Failed to peek pipe"), HL_ATTR(HLF_E));
             break;
         }
         else if (bytes_avail == 0)
         {
             if (!completed)
-                MSG_ATTR(_("bore_async_execute_update: No available data in pipe"), HL_ATTR(HLF_E));
+                msg_attr(_("bore_async_execute_update: No available data in pipe"), HL_ATTR(HLF_E));
             break;
         }
 
@@ -1437,12 +1437,12 @@ void bore_async_execute_update(DWORD flags)
 
         if (!result)
         {
-            MSG_ATTR(_("bore_async_execute_update: Read file error"), HL_ATTR(HLF_E));
+            msg_attr(_("bore_async_execute_update: Read file error"), HL_ATTR(HLF_E));
             goto done;
         }
         else if (bytes_read == 0)
         {
-            MSG(_("bore_async_execute_update: No bytes read"));
+            msg(_("bore_async_execute_update: No bytes read"));
             goto done;
         }
 
@@ -1555,7 +1555,7 @@ static void bore_async_execute(char* title, const char* cmdline)
 {
     if (g_bore_async_execute_context.wait_thread != INVALID_HANDLE_VALUE)
     {
-        EMSG(_("bore_async_execute: Busy. Cannot launch another process."));
+        emsg(_("bore_async_execute: Busy. Cannot launch another process."));
         return;
     }
     g_bore_async_execute_context.completed = 0;
@@ -1589,7 +1589,7 @@ static void bore_async_execute(char* title, const char* cmdline)
 
     if (!result)
     {
-        EMSG(_("bore_async_execute: Failed to create pipe"));
+        emsg(_("bore_async_execute: Failed to create pipe"));
         goto fail;
     }
 
@@ -1600,7 +1600,7 @@ static void bore_async_execute(char* title, const char* cmdline)
 
     if (!result)
     {
-        EMSG(_("bore_async_execute: Failed to remove inheritable flag for read handle"));
+        emsg(_("bore_async_execute: Failed to remove inheritable flag for read handle"));
         goto fail;
     }
 
@@ -1615,7 +1615,7 @@ static void bore_async_execute(char* title, const char* cmdline)
 
     if (!result)
     {
-        EMSG(_("bore_async_execute: Failed to duplicate stdout write handle for stderr"));
+        emsg(_("bore_async_execute: Failed to duplicate stdout write handle for stderr"));
         goto fail;
     }
 
@@ -1630,7 +1630,7 @@ static void bore_async_execute(char* title, const char* cmdline)
 
     if (-1 == _snprintf_s(cmd, sizeof(cmd), sizeof(cmd), "cmd.exe /c \"%s\"", cmdline))
     {
-        EMSG(_("bore_async_execute: Command line is too long"));
+        emsg(_("bore_async_execute: Command line is too long"));
         goto fail;
     }
 
@@ -1653,7 +1653,7 @@ static void bore_async_execute(char* title, const char* cmdline)
 
     if (!process_created)
     {
-        EMSG(_("bore_async_execute: Failed to spawn process"));
+        emsg(_("bore_async_execute: Failed to spawn process"));
         goto fail;
     }
 
@@ -1672,11 +1672,11 @@ static void bore_async_execute(char* title, const char* cmdline)
 
     if (g_bore_async_execute_context.wait_thread == INVALID_HANDLE_VALUE)
     {
-        EMSG(_("bore_async_execute: Failed to spawn wait thread"));
+        emsg(_("bore_async_execute: Failed to spawn wait thread"));
         goto fail;
     }
 
-    MSG(g_bore_async_execute_context.title);
+    msg(g_bore_async_execute_context.title);
     return;
 
 fail:
@@ -1865,7 +1865,7 @@ void ex_borefind(exarg_T *eap)
 {
     if (!g_bore)
     {
-        EMSG(_("Load a solution first with boresln"));
+        emsg(_("Load a solution first with boresln"));
     }
     else
     {
@@ -1884,9 +1884,9 @@ void ex_borefind(exarg_T *eap)
             found < 0 ? " (truncated)" : "",
             (char*)eap->arg, elapsed);
         if (found)
-            MSG(IObuff);
+            msg(IObuff);
         else
-            EMSG(IObuff);
+            emsg(IObuff);
 
         vim_free(arg);
     }
@@ -1895,7 +1895,7 @@ void ex_borefind(exarg_T *eap)
 void ex_boreopen(exarg_T *eap)
 {
     if (!g_bore)
-        EMSG(_("Load a solution first with boresln"));
+        emsg(_("Load a solution first with boresln"));
     else
     {
         const char* mappings[] =
@@ -1996,7 +1996,7 @@ static bore_print_proj(bore_t* b, int proj_index)
             vim_snprintf(IObuff, IOSIZE, "%s|%s",
                 bore_str(b, projects[i].project_sln_name),
                 bore_str(b, projects[i].project_file_path));
-            MSG(IObuff);
+            msg(IObuff);
         }
     }
     else
@@ -2004,7 +2004,7 @@ static bore_print_proj(bore_t* b, int proj_index)
         vim_snprintf(IObuff, IOSIZE, "%s|%s",
             bore_str(b, projects[proj_index].project_sln_name),
             bore_str(b, projects[proj_index].project_file_path));
-        MSG(IObuff);
+        msg(IObuff);
     }
 }
 
@@ -2012,7 +2012,7 @@ void ex_boreproj(exarg_T *eap)
 {
     if (!g_bore)
     {
-        EMSG(_("boreproj: Load a solution first with boresln"));
+        emsg(_("boreproj: Load a solution first with boresln"));
     }
     else
     {
@@ -2040,7 +2040,7 @@ void ex_boreproj(exarg_T *eap)
             if (proj_index >= 0)
                 bore_set_proj(g_bore, proj_index);
             else
-                EMSG2(_("boreproj: Failed to lookup project: %s"), arg);
+                semsg(_("boreproj: Failed to lookup project: %s"), arg);
         }
         bore_print_proj(g_bore, proj_index);
     }
@@ -2061,9 +2061,9 @@ static bore_print_sln_config(bore_t* b, int print_all)
                 bore_str(g_bore, sln_configs[i].config),
                 bore_str(g_bore, sln_configs[i].platform));
             if (is_active)
-                MSG_ATTR(IObuff, HL_ATTR(HLF_D));
+                msg_attr(IObuff, HL_ATTR(HLF_D));
             else
-                MSG(IObuff);
+                msg(IObuff);
         }
     }
     else
@@ -2071,7 +2071,7 @@ static bore_print_sln_config(bore_t* b, int print_all)
         vim_snprintf(IObuff, IOSIZE, "%s|%s",
             bore_str(g_bore, sln_configs[g_bore->sln_config].config),
             bore_str(g_bore, sln_configs[g_bore->sln_config].platform));
-        MSG(IObuff);
+        msg(IObuff);
     }
 }
 
@@ -2079,11 +2079,11 @@ void ex_boreconfig(exarg_T *eap)
 {
     if (!g_bore)
     {
-        EMSG(_("boreconfig: Load a solution first with boresln"));
+        emsg(_("boreconfig: Load a solution first with boresln"));
     }
     else if (bore_is_sln_directory(g_bore))
     {
-        EMSG(_("boreconfig: Directories are not supported, load an actual solution first with boresln"));
+        emsg(_("boreconfig: Directories are not supported, load an actual solution first with boresln"));
     }
     else
     {
@@ -2097,7 +2097,7 @@ void ex_boreconfig(exarg_T *eap)
             }
             else
             {
-                EMSG2(_("boreconfig: No matching entry for: %s"), eap->arg);
+                semsg(_("boreconfig: No matching entry for: %s"), eap->arg);
                 print_all = 1;
             }
         }
@@ -2108,7 +2108,7 @@ void ex_boreconfig(exarg_T *eap)
 void ex_boretoggle(exarg_T *eap)
 {
     if (!g_bore)
-        EMSG(_("Load a solution first with boresln"));
+        emsg(_("Load a solution first with boresln"));
     else
     {
         char path[BORE_MAX_PATH];
@@ -2202,19 +2202,19 @@ void ex_borebuild(exarg_T *eap)
 {
     if (!g_bore)
     {
-        EMSG(_("borebuild: Load a solution first with boresln"));
+        emsg(_("borebuild: Load a solution first with boresln"));
     }
     else if (bore_is_sln_directory(g_bore))
     {
-        EMSG(_("borebuild: Directories are not supported, load an actual solution first with boresln"));
+        emsg(_("borebuild: Directories are not supported, load an actual solution first with boresln"));
     }
     else if (-1 == g_bore->sln_config)
     {
-        EMSG(_("borebuild: Set a solution configuration first with boreconfig"));
+        emsg(_("borebuild: Set a solution configuration first with boreconfig"));
     }
     else if (!mch_can_exe("msbuild", NULL, TRUE))
     {
-        EMSG(_("borebuild: Failed to find msbuild executable in path"));
+        emsg(_("borebuild: Failed to find msbuild executable in path"));
     }
     else if (eap->cmdidx == CMD_borebuildinfo)
     {
@@ -2248,7 +2248,7 @@ void ex_borebuild(exarg_T *eap)
             }
             if (NULL == file)
             {
-                EMSG2(_("borebuildfile: Failed to lookup file: %s"), arg);
+                semsg(_("borebuildfile: Failed to lookup file: %s"), arg);
                 return;
             }
             proj_index = file->proj_index;
@@ -2271,7 +2271,7 @@ void ex_borebuild(exarg_T *eap)
             }
             if (proj_index < 0)
             {
-                EMSG2(_("borebuildproj: Failed to lookup project: %s"), arg);
+                semsg(_("borebuildproj: Failed to lookup project: %s"), arg);
                 return;
             }
         }

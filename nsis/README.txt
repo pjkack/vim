@@ -14,7 +14,7 @@ To build the installable .exe:
 	gvim.exe (the OLE version),
 	vimrun.exe,
 	install.exe,
-	uninstal.exe,
+	uninstall.exe,
 	tee/tee.exe,
 	xxd/xxd.exe,
 
@@ -67,6 +67,11 @@ To build the installable .exe:
 Install NSIS if you didn't do that already.
 Also install UPX, if you want a compressed file.
 
+Unpack the images:
+	cd nsis
+	unzip icons.zip
+
 To build then, enter:
 
+	cd nsis
 	makensis gvim.nsi

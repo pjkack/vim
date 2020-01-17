@@ -53,7 +53,7 @@ endfunc
 
 func Test_strgetchar()
   call assert_equal(char2nr('a'), strgetchar('axb', 0))
-  call assert_equal(char2nr('x'), strgetchar('axb', 1))
+  call assert_equal(char2nr('x'), 'axb'->strgetchar(1))
   call assert_equal(char2nr('b'), strgetchar('axb', 2))
 
   call assert_equal(-1, strgetchar('axb', -1))
@@ -63,7 +63,7 @@ endfunc
 
 func Test_strcharpart()
   call assert_equal('a', strcharpart('axb', 0, 1))
-  call assert_equal('x', strcharpart('axb', 1, 1))
+  call assert_equal('x', 'axb'->strcharpart(1, 1))
   call assert_equal('b', strcharpart('axb', 2, 1))
   call assert_equal('xb', strcharpart('axb', 1))
 
@@ -142,6 +142,22 @@ function Test_printf_misc()
   call assert_equal('173', printf('%O', 123))
   call assert_equal('7b', printf('%x', 123))
   call assert_equal('7B', printf('%X', 123))
+
+  call assert_equal('123', printf('%hd', 123))
+  call assert_equal('-123', printf('%hd', -123))
+  call assert_equal('-1', printf('%hd', 0xFFFF))
+  call assert_equal('-1', printf('%hd', 0x1FFFFF))
+
+  call assert_equal('123', printf('%hu', 123))
+  call assert_equal('65413', printf('%hu', -123))
+  call assert_equal('65535', printf('%hu', 0xFFFF))
+  call assert_equal('65535', printf('%hu', 0x1FFFFF))
+
+  call assert_equal('123', printf('%ld', 123))
+  call assert_equal('-123', printf('%ld', -123))
+  call assert_equal('65535', printf('%ld', 0xFFFF))
+  call assert_equal('131071', printf('%ld', 0x1FFFF))
+
   if has('ebcdic')
     call assert_equal('#', printf('%c', 123))
   else
@@ -185,6 +201,11 @@ function Test_printf_misc()
   call assert_equal('  123', printf('% *d', 5, 123))
   call assert_equal(' +123', printf('%+ *d', 5, 123))
 
+  call assert_equal('foobar', printf('%.*s',  9, 'foobar'))
+  call assert_equal('foo',    printf('%.*s',  3, 'foobar'))
+  call assert_equal('',       printf('%.*s',  0, 'foobar'))
+  call assert_equal('foobar', printf('%.*s', -1, 'foobar'))
+
   " Simple quote (thousand grouping char) is ignored.
   call assert_equal('+00123456', printf("%+'09d", 123456))
 
@@ -207,6 +228,11 @@ function Test_printf_misc()
   call assert_equal(' 00123', printf('%6.5d', 123))
   call assert_equal(' 0007b', printf('%6.5x', 123))
 
+  call assert_equal('123', printf('%.2d', 123))
+  call assert_equal('0123', printf('%.4d', 123))
+  call assert_equal('0000000123', printf('%.10d', 123))
+  call assert_equal('123', printf('%.0d', 123))
+
   call assert_equal('abc', printf('%2s', 'abc'))
   call assert_equal('abc', printf('%2S', 'abc'))
   call assert_equal('abc', printf('%.4s', 'abc'))
@@ -221,6 +247,9 @@ function Test_printf_misc()
   call assert_equal('0abc', printf('%04S', 'abc'))
   call assert_equal('abc ', printf('%-4s', 'abc'))
   call assert_equal('abc ', printf('%-4S', 'abc'))
+
+  call assert_equal('🐍', printf('%.2S', '🐍🐍'))
+  call assert_equal('', printf('%.1S', '🐍🐍'))
 
   call assert_equal('1%', printf('%d%%', 1))
 endfunc
@@ -305,6 +334,11 @@ function Test_printf_float()
     call assert_equal('inf', printf('%s', 1.0/0.0))
     call assert_equal('-inf', printf('%s', -1.0/0.0))
 
+    " Test special case where max precision is truncated at 340.
+    call assert_equal('1.000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000', printf('%.330f', 1.0))
+    call assert_equal('1.0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000', printf('%.340f', 1.0))
+    call assert_equal('1.0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000', printf('%.350f', 1.0))
+
     " Float nan (not a number) has no sign.
     call assert_equal('nan', printf('%f', sqrt(-1.0)))
     call assert_equal('nan', printf('%f', 0.0/0.0))
@@ -372,7 +406,7 @@ function Test_printf_spec_s()
   call assert_equal(string(value), printf('%s', value))
 
   " funcref
-  call assert_equal('printf', printf('%s', function('printf')))
+  call assert_equal('printf', printf('%s', 'printf'->function()))
 
   " partial
   call assert_equal(string(function('printf', ['%s'])), printf('%s', function('printf', ['%s'])))
@@ -459,9 +493,11 @@ func Test_funcref()
   endfunc
   call assert_equal(2, OneByName())
   call assert_equal(1, OneByRef())
-  let OneByRef = funcref('One')
+  let OneByRef = 'One'->funcref()
   call assert_equal(2, OneByRef())
   call assert_fails('echo funcref("{")', 'E475:')
+  let OneByRef = funcref("One", repeat(["foo"], 20))
+  call assert_fails('let OneByRef = funcref("One", repeat(["foo"], 21))', 'E118:')
 endfunc
 
 func Test_setmatches()
@@ -473,11 +509,22 @@ func Test_setmatches()
     let set[0]['conceal'] = 5
     let exp[0]['conceal'] = '5'
   endif
-  call setmatches(set)
+  eval set->setmatches()
   call assert_equal(exp, getmatches())
 endfunc
 
 func Test_empty_concatenate()
   call assert_equal('b', 'a'[4:0] . 'b')
   call assert_equal('b', 'b' . 'a'[4:0])
+endfunc
+
+func Test_broken_number()
+  let X = 'bad'
+  call assert_fails('echo 1X', 'E15:')
+  call assert_fails('echo 0b1X', 'E15:')
+  call assert_fails('echo 0b12', 'E15:')
+  call assert_fails('echo 0x1X', 'E15:')
+  call assert_fails('echo 011X', 'E15:')
+  call assert_equal(2, str2nr('2a'))
+  call assert_fails('inoremap <Char-0b1z> b', 'E474:')
 endfunc

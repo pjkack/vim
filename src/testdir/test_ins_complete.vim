@@ -1,3 +1,5 @@
+source screendump.vim
+source check.vim
 
 " Test for insert expansion
 func Test_ins_complete()
@@ -142,26 +144,38 @@ func Test_completefunc_args()
   delfunc CompleteFunc
 endfunc
 
-function! s:CompleteDone_CompleteFuncDict( findstart, base )
+func s:CompleteDone_CompleteFuncNone( findstart, base )
+  if a:findstart
+    return 0
+  endif
+
+  return v:none
+endfunc
+
+func s:CompleteDone_CompleteFuncDict( findstart, base )
   if a:findstart
     return 0
   endif
 
   return {
-          \ 'words': [
-            \ {
-              \ 'word': 'aword',
-              \ 'abbr': 'wrd',
-              \ 'menu': 'extra text',
-              \ 'info': 'words are cool',
-              \ 'kind': 'W',
-              \ 'user_data': 'test'
-            \ }
-          \ ]
-        \ }
-endfunction
+	  \ 'words': [
+	    \ {
+	      \ 'word': 'aword',
+	      \ 'abbr': 'wrd',
+	      \ 'menu': 'extra text',
+	      \ 'info': 'words are cool',
+	      \ 'kind': 'W',
+	      \ 'user_data': 'test'
+	    \ }
+	  \ ]
+	\ }
+endfunc
 
-function! s:CompleteDone_CheckCompletedItemDict()
+func s:CompleteDone_CheckCompletedItemNone()
+  let s:called_completedone = 1
+endfunc
+
+func s:CompleteDone_CheckCompletedItemDict()
   call assert_equal( 'aword',          v:completed_item[ 'word' ] )
   call assert_equal( 'wrd',            v:completed_item[ 'abbr' ] )
   call assert_equal( 'extra text',     v:completed_item[ 'menu' ] )
@@ -170,74 +184,91 @@ function! s:CompleteDone_CheckCompletedItemDict()
   call assert_equal( 'test',           v:completed_item[ 'user_data' ] )
 
   let s:called_completedone = 1
-endfunction
+endfunc
 
-function Test_CompleteDoneDict()
+func Test_CompleteDoneNone()
+  au CompleteDone * :call <SID>CompleteDone_CheckCompletedItemNone()
+  let oldline = join(map(range(&columns), 'nr2char(screenchar(&lines-1, v:val+1))'), '')
+
+  set completefunc=<SID>CompleteDone_CompleteFuncNone
+  execute "normal a\<C-X>\<C-U>\<C-Y>"
+  set completefunc&
+  let newline = join(map(range(&columns), 'nr2char(screenchar(&lines-1, v:val+1))'), '')
+
+  call assert_true(s:called_completedone)
+  call assert_equal(oldline, newline)
+
+  let s:called_completedone = 0
+  au! CompleteDone
+endfunc
+
+func Test_CompleteDoneDict()
   au CompleteDone * :call <SID>CompleteDone_CheckCompletedItemDict()
 
   set completefunc=<SID>CompleteDone_CompleteFuncDict
   execute "normal a\<C-X>\<C-U>\<C-Y>"
   set completefunc&
 
-  call assert_equal( 'test', v:completed_item[ 'user_data' ] )
-  call assert_true( s:called_completedone )
+  call assert_equal('test', v:completed_item[ 'user_data' ])
+  call assert_true(s:called_completedone)
 
   let s:called_completedone = 0
   au! CompleteDone
 endfunc
 
-function! s:CompleteDone_CompleteFuncDictNoUserData( findstart, base )
+func s:CompleteDone_CompleteFuncDictNoUserData(findstart, base)
   if a:findstart
     return 0
   endif
 
   return {
-          \ 'words': [
-            \ {
-              \ 'word': 'aword',
-              \ 'abbr': 'wrd',
-              \ 'menu': 'extra text',
-              \ 'info': 'words are cool',
-              \ 'kind': 'W'
-            \ }
-          \ ]
-        \ }
-endfunction
+	  \ 'words': [
+	    \ {
+	      \ 'word': 'aword',
+	      \ 'abbr': 'wrd',
+	      \ 'menu': 'extra text',
+	      \ 'info': 'words are cool',
+	      \ 'kind': 'W',
+	      \ 'user_data': ['one', 'two'],
+	    \ }
+	  \ ]
+	\ }
+endfunc
 
-function! s:CompleteDone_CheckCompletedItemDictNoUserData()
+func s:CompleteDone_CheckCompletedItemDictNoUserData()
   call assert_equal( 'aword',          v:completed_item[ 'word' ] )
   call assert_equal( 'wrd',            v:completed_item[ 'abbr' ] )
   call assert_equal( 'extra text',     v:completed_item[ 'menu' ] )
   call assert_equal( 'words are cool', v:completed_item[ 'info' ] )
   call assert_equal( 'W',              v:completed_item[ 'kind' ] )
-  call assert_equal( '',               v:completed_item[ 'user_data' ] )
+  call assert_equal( ['one', 'two'],   v:completed_item[ 'user_data' ] )
 
   let s:called_completedone = 1
-endfunction
+endfunc
 
-function Test_CompleteDoneDictNoUserData()
+func Test_CompleteDoneDictNoUserData()
   au CompleteDone * :call <SID>CompleteDone_CheckCompletedItemDictNoUserData()
 
   set completefunc=<SID>CompleteDone_CompleteFuncDictNoUserData
   execute "normal a\<C-X>\<C-U>\<C-Y>"
   set completefunc&
 
-  call assert_equal( '', v:completed_item[ 'user_data' ] )
-  call assert_true( s:called_completedone )
+  call assert_equal(['one', 'two'], v:completed_item[ 'user_data' ])
+  call assert_true(s:called_completedone)
 
   let s:called_completedone = 0
   au! CompleteDone
 endfunc
 
-function! s:CompleteDone_CompleteFuncList( findstart, base )
+func s:CompleteDone_CompleteFuncList(findstart, base)
   if a:findstart
     return 0
   endif
 
   return [ 'aword' ]
-endfunction
+endfunc
 
-function! s:CompleteDone_CheckCompletedItemList()
+func s:CompleteDone_CheckCompletedItemList()
   call assert_equal( 'aword', v:completed_item[ 'word' ] )
   call assert_equal( '',      v:completed_item[ 'abbr' ] )
   call assert_equal( '',      v:completed_item[ 'menu' ] )
@@ -246,17 +277,17 @@ function! s:CompleteDone_CheckCompletedItemList()
   call assert_equal( '',      v:completed_item[ 'user_data' ] )
 
   let s:called_completedone = 1
-endfunction
+endfunc
 
-function Test_CompleteDoneList()
+func Test_CompleteDoneList()
   au CompleteDone * :call <SID>CompleteDone_CheckCompletedItemList()
 
   set completefunc=<SID>CompleteDone_CompleteFuncList
   execute "normal a\<C-X>\<C-U>\<C-Y>"
   set completefunc&
 
-  call assert_equal( '', v:completed_item[ 'user_data' ] )
-  call assert_true( s:called_completedone )
+  call assert_equal('', v:completed_item[ 'user_data' ])
+  call assert_true(s:called_completedone)
 
   let s:called_completedone = 0
   au! CompleteDone
@@ -284,4 +315,148 @@ func Test_compl_feedkeys()
   call assert_equal("jump jump", getline(1))
   bwipe!
   set completeopt&
+endfunc
+
+func Test_compl_in_cmdwin()
+  set wildmenu wildchar=<Tab>
+  com! -nargs=1 -complete=command GetInput let input = <q-args>
+  com! -buffer TestCommand echo 'TestCommand'
+
+  let input = ''
+  call feedkeys("q:iGetInput T\<C-x>\<C-v>\<CR>", 'tx!')
+  call assert_equal('TestCommand', input)
+
+  let input = ''
+  call feedkeys("q::GetInput T\<Tab>\<CR>:q\<CR>", 'tx!')
+  call assert_equal('T', input)
+
+  delcom TestCommand
+  delcom GetInput
+  set wildmenu& wildchar&
+endfunc
+
+" Test for insert path completion with completeslash option
+func Test_ins_completeslash()
+  CheckMSWindows
+  
+  call mkdir('Xdir')
+  let orig_shellslash = &shellslash
+  set cpt&
+  new
+  
+  set noshellslash
+
+  set completeslash=
+  exe "normal oXd\<C-X>\<C-F>"
+  call assert_equal('Xdir\', getline('.'))
+
+  set completeslash=backslash
+  exe "normal oXd\<C-X>\<C-F>"
+  call assert_equal('Xdir\', getline('.'))
+
+  set completeslash=slash
+  exe "normal oXd\<C-X>\<C-F>"
+  call assert_equal('Xdir/', getline('.'))
+
+  set shellslash
+
+  set completeslash=
+  exe "normal oXd\<C-X>\<C-F>"
+  call assert_equal('Xdir/', getline('.'))
+
+  set completeslash=backslash
+  exe "normal oXd\<C-X>\<C-F>"
+  call assert_equal('Xdir\', getline('.'))
+
+  set completeslash=slash
+  exe "normal oXd\<C-X>\<C-F>"
+  call assert_equal('Xdir/', getline('.'))
+  %bw!
+  call delete('Xdir', 'rf')
+
+  set noshellslash
+  set completeslash=slash
+  call assert_true(stridx(globpath(&rtp, 'syntax/*.vim', 1, 1)[0], '\') != -1)
+
+  let &shellslash = orig_shellslash
+  set completeslash=
+endfunc
+
+func Test_pum_with_folds_two_tabs()
+  CheckScreendump
+
+  let lines =<< trim END
+    set fdm=marker
+    call setline(1, ['" x {{{1', '" a some text'])
+    call setline(3, range(&lines)->map({_, val -> '" a' .. val}))
+    norm! zm
+    tab sp
+    call feedkeys('2Gzv', 'xt')
+    call feedkeys("0fa", 'xt')
+  END
+
+  call writefile(lines, 'Xpumscript')
+  let buf = RunVimInTerminal('-S Xpumscript', #{rows: 10})
+  call term_wait(buf, 100)
+  call term_sendkeys(buf, "a\<C-N>")
+  call VerifyScreenDump(buf, 'Test_pum_with_folds_two_tabs', {})
+
+  call term_sendkeys(buf, "\<Esc>")
+  call StopVimInTerminal(buf)
+  call delete('Xpumscript')
+endfunc
+
+func Test_pum_with_preview_win()
+  CheckScreendump
+
+  let lines =<< trim END
+      funct Omni_test(findstart, base)
+	if a:findstart
+	  return col(".") - 1
+	endif
+	return [#{word: "one", info: "1info"}, #{word: "two", info: "2info"}, #{word: "three", info: "3info"}]
+      endfunc
+      set omnifunc=Omni_test
+      set completeopt+=longest
+  END
+
+  call writefile(lines, 'Xpreviewscript')
+  let buf = RunVimInTerminal('-S Xpreviewscript', #{rows: 12})
+  call term_wait(buf, 100)
+  call term_sendkeys(buf, "Gi\<C-X>\<C-O>")
+  call term_wait(buf, 100)
+  call term_sendkeys(buf, "\<C-N>")
+  call VerifyScreenDump(buf, 'Test_pum_with_preview_win', {})
+
+  call term_sendkeys(buf, "\<Esc>")
+  call StopVimInTerminal(buf)
+  call delete('Xpreviewscript')
+endfunc
+
+" Test for inserting the tag search pattern in insert mode
+func Test_ins_compl_tag_sft()
+  call writefile([
+        \ "!_TAG_FILE_ENCODING\tutf-8\t//",
+        \ "first\tXfoo\t/^int first() {}$/",
+        \ "second\tXfoo\t/^int second() {}$/",
+        \ "third\tXfoo\t/^int third() {}$/"],
+        \ 'Xtags')
+  set tags=Xtags
+  let code =<< trim [CODE]
+    int first() {}
+    int second() {}
+    int third() {}
+  [CODE]
+  call writefile(code, 'Xfoo')
+
+  enew
+  set showfulltag
+  exe "normal isec\<C-X>\<C-]>\<C-N>\<CR>"
+  call assert_equal('int second() {}', getline(1))
+  set noshowfulltag
+
+  call delete('Xtags')
+  call delete('Xfoo')
+  set tags&
+  %bwipe!
 endfunc

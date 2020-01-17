@@ -129,9 +129,6 @@
     <ClCompile Include="os_win32.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="popupmnu.c">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="quickfix.c">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -195,9 +192,6 @@
     <ClCompile Include="evalfunc.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="farsi.c">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="dict.c">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -216,17 +210,140 @@
     <ClCompile Include="channel.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="pathdef.c">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="beval.c">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="terminal.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="evalbuffer.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="arglist.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="autocmd.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="blob.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="bufwrite.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="change.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="cindent.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="cmdexpand.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="cmdhist.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="debugger.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="drawline.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="drawscreen.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="evalvars.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="evalwindow.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="filepath.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="findfile.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="glbl_ime.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="highlight.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="if_cscope.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="indent.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="insexpand.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="iscygpty.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="map.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="mouse.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="nbdebug.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="optionstr.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="os_w32dll.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="popupmenu.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="popupwin.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="profiler.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="register.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="scriptfile.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="session.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="sign.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="sound.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="spellsuggest.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="testing.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="textprop.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="usercmd.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="viminfo.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="auto\pathdef.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
+    <ResourceCompile Include="bvim.rc">
+      <Filter>Resource Files</Filter>
+    </ResourceCompile>
     <ResourceCompile Include="vim.rc">
       <Filter>Resource Files</Filter>
     </ResourceCompile>
@@ -514,6 +631,18 @@
     <None Include="proto\workshop.pro">
       <Filter>Proto Files</Filter>
     </None>
+    <None Include="proto\evalvars.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\evalwindow.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="bvim.exe.mnf">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="gvim.exe.mnf">
+      <Filter>Resource Files</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="arabic.h">
@@ -526,9 +655,6 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="ex_cmds.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="farsi.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="feature.h">

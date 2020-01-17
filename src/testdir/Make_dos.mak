@@ -66,12 +66,17 @@ $(TEST_OUTFILES): $(DOSTMP)\$(*B).in
 # Must run test1 first to create small.vim.
 # This rule must come after the one that copies the input files to dostmp to
 # allow for running an individual test.
-$(SCRIPTS) $(SCRIPTS_GUI) $(SCRIPTS_WIN32) $(NEW_TESTS): $(SCRIPTS_FIRST)
+$(SCRIPTS) $(SCRIPTS_GUI) $(SCRIPTS_WIN32) $(NEW_TESTS_RES): $(SCRIPTS_FIRST)
 
 report:
-	@echo ""
+	@rem without the +eval feature test_result.log is a copy of test.log
+	@if exist test.log ( copy /y test.log test_result.log > nul ) \
+		else ( echo No failures reported > test_result.log )
+	$(VIMPROG) -u NONE $(NO_INITS) -S summarize.vim messages
+	@echo.
 	@echo Test results:
-	@if exist test.log ( type test.log & echo TEST FAILURE & exit /b 1 ) \
+	@cmd /c type test_result.log
+	@if exist test.log ( echo TEST FAILURE & exit /b 1 ) \
 		else ( echo ALL DONE )
 
 clean:
@@ -92,12 +97,14 @@ clean:
 	-for /d %i in (X*) do @rmdir /s/q %i
 	-if exist viminfo del viminfo
 	-if exist test.log del test.log
+	-if exist test_result.log del test_result.log
 	-if exist messages del messages
 	-if exist benchmark.out del benchmark.out
 	-if exist opt_test.vim del opt_test.vim
 
 nolog:
 	-if exist test.log del test.log
+	-if exist test_result.log del test_result.log
 	-if exist messages del messages
 
 benchmark:
@@ -115,7 +122,7 @@ bench_re_freeze.out: bench_re_freeze.vim
 newtests: newtestssilent
 	@if exist messages (findstr "SKIPPED FAILED" messages > nul) && type messages
 
-newtestssilent: $(NEW_TESTS)
+newtestssilent: $(NEW_TESTS_RES)
 
 .vim.res:
 	@echo $(VIMPROG) > vimcmd
@@ -132,5 +139,7 @@ test_gui_init.res: test_gui_init.vim
 	$(VIMPROG) -u gui_preinit.vim -U gui_init.vim $(NO_PLUGINS) -S runtest.vim $*.vim
 	@del vimcmd
 
-opt_test.vim: ../option.c gen_opt_test.vim
-	$(VIMPROG) -u NONE -S gen_opt_test.vim --noplugin --not-a-term ../option.c
+test_options.res test_alot.res: opt_test.vim
+
+opt_test.vim: ../optiondefs.h gen_opt_test.vim
+	$(VIMPROG) -u NONE -S gen_opt_test.vim --noplugin --not-a-term ../optiondefs.h

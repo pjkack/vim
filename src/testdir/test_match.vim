@@ -1,6 +1,9 @@
 " Test for :match, :2match, :3match, clearmatches(), getmatches(), matchadd(),
 " matchaddpos(), matcharg(), matchdelete(), and setmatches().
 
+source screendump.vim
+source check.vim
+
 function Test_match()
   highlight MyGroup1 term=bold ctermbg=red guibg=red
   highlight MyGroup2 term=italic ctermbg=green guibg=green
@@ -12,7 +15,7 @@ function Test_match()
   2match MyGroup2 /FIXME/
   3match MyGroup3 /XXX/
   call assert_equal(['MyGroup1', 'TODO'], matcharg(1))
-  call assert_equal(['MyGroup2', 'FIXME'], matcharg(2))
+  call assert_equal(['MyGroup2', 'FIXME'], 2->matcharg())
   call assert_equal(['MyGroup3', 'XXX'], matcharg(3))
 
   " --- Check that "matcharg()" returns an empty list if the argument is not 1,
@@ -41,7 +44,7 @@ function Test_match()
   " --- Check that "matchdelete()" deletes the matches defined in the previous
   " --- test correctly.
   call matchdelete(m1)
-  call matchdelete(m2)
+  eval m2->matchdelete()
   call matchdelete(m3)
   call assert_equal([], getmatches())
 
@@ -53,7 +56,7 @@ function Test_match()
   " --- Check that "clearmatches()" clears all matches defined by ":match" and
   " --- "matchadd()".
   let m1 = matchadd("MyGroup1", "TODO")
-  let m2 = matchadd("MyGroup2", "FIXME", 42)
+  let m2 = "MyGroup2"->matchadd("FIXME", 42)
   let m3 = matchadd("MyGroup3", "XXX", 60, 17)
   match MyGroup1 /COFFEE/
   2match MyGroup2 /HUMPPA/
@@ -114,40 +117,52 @@ function Test_match()
   call assert_equal([{'group': 'MyGroup1', 'id': 3, 'priority': 10, 'pos1': [1, 5, 1], 'pos2': [1, 8, 3]}], getmatches())
   call clearmatches()
 
-  "
-  if has('multi_byte')
-    call setline(1, 'abcdΣabcdef')
-    call matchaddpos("MyGroup1", [[1, 4, 2], [1, 9, 2]])
-    1
-    redraw!
-    let v1 = screenattr(1, 1)
-    let v4 = screenattr(1, 4)
-    let v5 = screenattr(1, 5)
-    let v6 = screenattr(1, 6)
-    let v7 = screenattr(1, 7)
-    let v8 = screenattr(1, 8)
-    let v9 = screenattr(1, 9)
-    let v10 = screenattr(1, 10)
-    call assert_equal([{'group': 'MyGroup1', 'id': 11, 'priority': 10, 'pos1': [1, 4, 2], 'pos2': [1, 9, 2]}], getmatches())
-    call assert_notequal(v1, v4)
-    call assert_equal(v5, v4)
-    call assert_equal(v6, v1)
-    call assert_equal(v7, v1)
-    call assert_equal(v8, v4)
-    call assert_equal(v9, v4)
-    call assert_equal(v10, v1)
+  call setline(1, 'abcdΣabcdef')
+  eval "MyGroup1"->matchaddpos([[1, 4, 2], [1, 9, 2]])
+  1
+  redraw!
+  let v1 = screenattr(1, 1)
+  let v4 = screenattr(1, 4)
+  let v5 = screenattr(1, 5)
+  let v6 = screenattr(1, 6)
+  let v7 = screenattr(1, 7)
+  let v8 = screenattr(1, 8)
+  let v9 = screenattr(1, 9)
+  let v10 = screenattr(1, 10)
+  call assert_equal([{'group': 'MyGroup1', 'id': 11, 'priority': 10, 'pos1': [1, 4, 2], 'pos2': [1, 9, 2]}], getmatches())
+  call assert_notequal(v1, v4)
+  call assert_equal(v5, v4)
+  call assert_equal(v6, v1)
+  call assert_equal(v7, v1)
+  call assert_equal(v8, v4)
+  call assert_equal(v9, v4)
+  call assert_equal(v10, v1)
 
-    " Check, that setmatches() can correctly restore the matches from matchaddpos()
-    call matchadd('MyGroup1', '\%2lmatchadd')
-    let m=getmatches()
-    call clearmatches()
-    call setmatches(m)
-    call assert_equal([{'group': 'MyGroup1', 'id': 11, 'priority': 10, 'pos1': [1, 4, 2], 'pos2': [1,9, 2]}, {'group': 'MyGroup1', 'pattern': '\%2lmatchadd', 'priority': 10, 'id': 12}], getmatches())
-  endif
+  " Check, that setmatches() can correctly restore the matches from matchaddpos()
+  call matchadd('MyGroup1', '\%2lmatchadd')
+  let m=getmatches()
+  call clearmatches()
+  call setmatches(m)
+  call assert_equal([{'group': 'MyGroup1', 'id': 11, 'priority': 10, 'pos1': [1, 4, 2], 'pos2': [1,9, 2]}, {'group': 'MyGroup1', 'pattern': '\%2lmatchadd', 'priority': 10, 'id': 12}], getmatches())
 
   highlight MyGroup1 NONE
   highlight MyGroup2 NONE
   highlight MyGroup3 NONE
+endfunc
+
+func Test_match_error()
+  call assert_fails('match Error', 'E475:')
+  call assert_fails('match Error /', 'E475:')
+  call assert_fails('4match Error /x/', 'E476:')
+  call assert_fails('match Error /x/ x', 'E488:')
+endfunc
+
+func Test_matchadd_error()
+  call assert_fails("call matchadd('GroupDoesNotExist', 'X')", 'E28:')
+  call assert_fails("call matchadd('Search', '\\(')", 'E475:')
+  call assert_fails("call matchadd('Search', 'XXX', 1, 123, 1)", 'E715:')
+  call assert_fails("call matchadd('Error', 'XXX', 1, 3)", 'E798:')
+  call assert_fails("call matchadd('Error', 'XXX', 1, 0)", 'E799:')
 endfunc
 
 func Test_matchaddpos()
@@ -208,6 +223,19 @@ func Test_matchaddpos_otherwin()
   call assert_equal(screenattr(1,2), screenattr(2,2))
   call assert_notequal(screenattr(1,2), screenattr(1,4))
 
+  let savematches = getmatches(winid)
+  let expect = [
+        \ {'group': 'Search', 'pattern': '4', 'priority': 10, 'id': 4},
+        \ {'group': 'Error', 'id': 5, 'priority': 10, 'pos1': [1, 2, 1], 'pos2': [2, 2, 1]},
+        \]
+  call assert_equal(expect, savematches)
+
+  eval winid->clearmatches()
+  call assert_equal([], getmatches(winid))
+
+  call setmatches(savematches, winid)
+  call assert_equal(expect, savematches)
+
   wincmd w
   bwipe!
   call clearmatches()
@@ -240,5 +268,71 @@ func Test_matchaddpos_using_negative_priority()
   nohl
   set hlsearch&
 endfunc
+
+func Test_matchaddpos_error()
+  call assert_fails("call matchaddpos('Error', 1)", 'E686:')
+  call assert_fails("call matchaddpos('Error', [1], 1, 1)", 'E798:')
+  call assert_fails("call matchaddpos('Error', [1], 1, 2)", 'E798:')
+  call assert_fails("call matchaddpos('Error', [1], 1, 0)", 'E799:')
+  call assert_fails("call matchaddpos('Error', [1], 1, 123, 1)", 'E715:')
+  call assert_fails("call matchaddpos('Error', [1], 1, 5, {'window':12345})", 'E957:')
+  " Why doesn't the following error have an error code E...?
+  call assert_fails("call matchaddpos('Error', [{}])", 'E290:')
+endfunc
+
+func OtherWindowCommon()
+  let lines =<< trim END
+    call setline(1, 'Hello Vim world')
+    let mid = matchadd('Error', 'world', 1)
+    let winid = win_getid()
+    new
+  END
+  call writefile(lines, 'XscriptMatchCommon')
+  let buf = RunVimInTerminal('-S XscriptMatchCommon', #{rows: 12})
+  call term_wait(buf)
+  return buf
+endfunc
+
+func Test_matchdelete_other_window()
+  CheckScreendump
+
+  let buf = OtherWindowCommon()
+  call term_sendkeys(buf, ":call matchdelete(mid, winid)\<CR>")
+  call VerifyScreenDump(buf, 'Test_matchdelete_1', {})
+
+  call StopVimInTerminal(buf)
+  call delete('XscriptMatchCommon')
+endfunc
+
+func Test_matchdelete_error()
+  call assert_fails("call matchdelete(0)", 'E802:')
+  call assert_fails("call matchdelete(1, -1)", 'E957:')
+endfunc
+
+func Test_matchclear_other_window()
+  if !CanRunVimInTerminal()
+    throw 'Skipped: cannot make screendumps'
+  endif
+  let buf = OtherWindowCommon()
+  call term_sendkeys(buf, ":call clearmatches(winid)\<CR>")
+  call VerifyScreenDump(buf, 'Test_matchclear_1', {})
+
+  call StopVimInTerminal(buf)
+  call delete('XscriptMatchCommon')
+endfunc
+
+func Test_matchadd_other_window()
+  if !CanRunVimInTerminal()
+    throw 'Skipped: cannot make screendumps'
+  endif
+  let buf = OtherWindowCommon()
+  call term_sendkeys(buf, ":call matchadd('Search', 'Hello', 1, -1, #{window: winid})\<CR>")
+  call term_sendkeys(buf, ":\<CR>")
+  call VerifyScreenDump(buf, 'Test_matchadd_1', {})
+
+  call StopVimInTerminal(buf)
+  call delete('XscriptMatchCommon')
+endfunc
+
 
 " vim: shiftwidth=2 sts=2 expandtab

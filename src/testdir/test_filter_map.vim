@@ -53,6 +53,15 @@ func Test_filter_map_list_expr_funcref()
   call assert_equal([0, 2, 4, 6], map([1, 2, 3, 4], function('s:filter4')))
 endfunc
 
+func Test_filter_map_nested()
+  let x = {"x":10}
+  let r = map(range(2), 'filter(copy(x), "1")')
+  call assert_equal([x, x], r)
+
+  let r = map(copy(x), 'filter(copy(x), "1")')
+  call assert_equal({"x": x}, r)
+endfunc
+
 " dict with funcref
 func Test_filter_map_dict_expr_funcref()
   let dict = {"foo": 1, "bar": 2, "baz": 3}
@@ -78,4 +87,9 @@ func Test_filter_map_dict_expr_funcref()
     return a:key[0]
   endfunc
   call assert_equal({"foo": "f", "bar": "b", "baz": "b"}, map(copy(dict), function('s:filter4')))
+endfunc
+
+func Test_map_fails()
+  call assert_fails('call map([1], "42 +")', 'E15:')
+  call assert_fails('call filter([1], "42 +")', 'E15:')
 endfunc

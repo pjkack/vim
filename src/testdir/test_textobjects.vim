@@ -1,8 +1,7 @@
 " Test for textobjects
 
-if !has('textobjects')
-  finish
-endif
+source check.vim
+CheckFeature textobjects
 
 func CpoM(line, useM, expected)
   new
@@ -46,8 +45,43 @@ func Test_quote_selection_selection_exclusive()
   new
   call setline(1, "a 'bcde' f")
   set selection=exclusive
+
   exe "norm! fdvhi'y"
   call assert_equal('bcde', @")
+
+  let @"='dummy'
+  exe "norm! $gevi'y"
+  call assert_equal('bcde', @")
+
+  let @"='dummy'
+  exe "norm! 0fbhvi'y"
+  call assert_equal('bcde', @")
+
+  set selection&vim
+  bw!
+endfunc
+
+func Test_quote_selection_selection_exclusive_abort()
+  new
+  set selection=exclusive
+  call setline(1, "'abzzc'")
+  let exp_curs = [0, 1, 6, 0]
+  call cursor(1,1)
+  exe 'norm! fcdvi"'
+  " make sure to end visual mode to have a clear state
+  exe "norm! \<esc>"
+  call assert_equal(exp_curs, getpos('.'))
+  call cursor(1,1)
+  exe 'norm! fcvi"'
+  exe "norm! \<esc>"
+  call assert_equal(exp_curs, getpos('.'))
+  call cursor(1,2)
+  exe 'norm! vfcoi"'
+  exe "norm! \<esc>"
+  let exp_curs = [0, 1, 2, 0]
+  let exp_visu = [0, 1, 7, 0]
+  call assert_equal(exp_curs, getpos('.'))
+  call assert_equal(exp_visu, getpos("'>"))
   set selection&vim
   bw!
 endfunc
@@ -236,7 +270,7 @@ func Test_sentence_with_quotes()
   %delete _
 endfunc
 
-func! Test_sentence_with_cursor_on_delimiter()
+func Test_sentence_with_cursor_on_delimiter()
   enew!
   call setline(1, "A '([sentence.])'  A sentence.")
 
