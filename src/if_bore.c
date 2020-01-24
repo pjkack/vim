@@ -157,15 +157,17 @@ static int bore_is_excluded_file(const char* path)
     const char* ext = (char*)vim_strrchr((char_u*)path, '.');
     if (ext)
     {
-        if (0 == STRICMP((char*)ext, ".bin") ||
-            0 == STRICMP((char*)ext, ".dll") ||
-            0 == STRICMP((char*)ext, ".exe") ||
-            0 == STRICMP((char*)ext, ".pdb") ||
-            0 == STRICMP((char*)ext, ".zip") ||
-            0 == STRICMP((char*)ext, ".bmp") ||
-            0 == STRICMP((char*)ext, ".gif") ||
-            0 == STRICMP((char*)ext, ".jpg") ||
-            0 == STRICMP((char*)ext, ".png"))
+        ++ext;
+        if (0 == STRICMP((char*)ext, "bin") ||
+            0 == STRICMP((char*)ext, "dll") ||
+            0 == STRICMP((char*)ext, "exe") ||
+            0 == STRICMP((char*)ext, "pdb") ||
+            0 == STRICMP((char*)ext, "zip") ||
+            0 == STRICMP((char*)ext, "bmp") ||
+            0 == STRICMP((char*)ext, "gif") ||
+            0 == STRICMP((char*)ext, "jpg") ||
+            0 == STRICMP((char*)ext, "psd") ||
+            0 == STRICMP((char*)ext, "png"))
             return 1;
     }
 
@@ -1770,15 +1772,18 @@ void borefind_parse_options(bore_t* b, char* arg, bore_search_t* search)
                     what_ext = &opt[2];
                     arg += 2;
                 }
+                else if (*arg == 'h' && arg[1] == ' ')
+                {
+                    options |= BS_HUGEFILES;
+                    ++arg;
+                }
                 else if (*arg == 'i' && arg[1] == ' ')
                 {
-                    // found ignore case option
                     options |= BS_IGNORECASE;
                     ++arg;
                 }
                 else if (*arg == 'p' && arg[1] == ' ')
                 {
-                    // found project option
                     options |= BS_PROJECT;
                     ++arg;
                 }

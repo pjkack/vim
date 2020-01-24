@@ -13,8 +13,8 @@ extern "C" {
 
 #ifdef BORE_CVPROFILE
 #pragma comment(lib, "Advapi32.lib")
-#include <cvmarkers.h>
-//#include <C:\vs2013\Common7\IDE\Extensions\iq325bsi.llt\SDK\Native\Inc\cvmarkers.h>
+#include "C:\Program Files (x86)\Microsoft Visual Studio\2019\Preview\Common7\IDE\Extensions\4hhyuhoo.ghy\SDK\Native\Inc\cvmarkers.h"
+// Add {551695CB-80AC-4C14-9858-ECB94348D43E} in ConcurrencyVisualizer / Advanced Settings / Markers
 PCV_PROVIDER g_provider;
 PCV_MARKERSERIES g_series1;
 int g_cv_initialized;
@@ -185,7 +185,7 @@ static void search_one_file(struct search_context_t* search_context, const char*
     int size = 0;
 
     {
-        BORE_CVBEGINSPAN("opn");
+        BORE_CVBEGINSPAN("opn"); // CvEnterSpanA(g_series1, &span, "op %s", filename);
         WCHAR fn[BORE_MAX_PATH];
         int result = MultiByteToWideChar(CP_UTF8, 0, filename, -1, fn, BORE_MAX_PATH);
         if (result == 0)
@@ -202,10 +202,14 @@ static void search_one_file(struct search_context_t* search_context, const char*
     }
 
     {
-        BORE_CVBEGINSPAN("rd");
+        BORE_CVBEGINSPAN("rd"); // CvEnterSpanA(g_series1, &span, "rd %s", filename);
+        
 
         DWORD filesize = GetFileSize(file_handle, 0);
         if (filesize == INVALID_FILE_SIZE)
+            goto skip;
+
+        if (!(search_context->search->options & BS_HUGEFILES) && (filesize > BORE_HUGEFILE_SIZE))
             goto skip;
 
         search_context->filedata.cursor = search_context->filedata.base;
@@ -335,9 +339,6 @@ static DWORD WINAPI search_worker(struct search_context_t* search_context)
             if (files[file_index].proj_index != files[search_context->search->file_index].proj_index)
                 continue;
         }
-
-        if (strstr(bore_str(search_context->b, files[file_index].file), "\\__Generated"))
-            continue;
 
         search_one_file(search_context, bore_str(search_context->b, files[file_index].file), file_index);
 

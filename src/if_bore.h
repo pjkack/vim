@@ -9,6 +9,7 @@
 #define BORE_CACHELINE 64 
 #define BORE_MAXMATCHPERFILE 100
 #define BORE_MAX_SEARCH_EXTENSIONS 9
+#define BORE_HUGEFILE_SIZE 16 * 1024 * 1024
 
 typedef unsigned char u8;
 typedef unsigned int u32;
@@ -39,8 +40,9 @@ typedef enum
 {
     BS_NONE = 0,
     BS_IGNORECASE = 1,
-    BS_PROJECT = 2,
-    BS_SORTRESULT = 4,
+    BS_HUGEFILES = 2,
+    BS_PROJECT = 4,
+    BS_SORTRESULT = 8,
 } bore_search_option_t;
 
 typedef struct bore_search_t
