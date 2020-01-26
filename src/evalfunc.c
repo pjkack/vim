@@ -346,7 +346,7 @@ static funcentry_T global_functions[] =
 # endif
 #endif
 #ifdef FEAT_BORE
-    {"bore_ctrlpmatch",	2, 8, 0, f_bore_ctrlpmatch},
+    {"bore_ctrlpmatch",	1, 8, FEARG_LAST, f_bore_ctrlpmatch},
     {"bore_statusline",	0, 1, 0, f_bore_statusline},
 #endif
     {"browse",		4, 4, 0,	  f_browse},
@@ -1393,30 +1393,64 @@ f_bore_ctrlpmatch(typval_T *argvars, typval_T *rettv)
     char_u mmodebuf[NUMBUFLEN];
     char_u crfilebuf[NUMBUFLEN];
 
-    // check input list
     rettv->vval.v_number = -1;
-    if (argvars[0].v_type != VAR_LIST || argvars[0].vval.v_list == NULL)
+
+    // :help g:ctrlp_match_func
+    list_T* list_items = NULL;	    // The full list of items to search in.
+    char_u* input_str = NULL;	    // The string entered by the user.
+    int match_limit = 1000;	    // The max height of the match window.
+    char_u* mmode = "full-line";    // full-line, filname-only, first-non-tab, until-last-tab
+    int ispath = 0;		    // Is 1 when searching in file, buffer, mru, mixed, dir
+    char_u* crfile = NULL;	    // The file in the current window.
+    int regex = 0;		    // In regex mode: 1 or 0.
+    int nosort = 0;		    // No sort: 1 or 0. Sort can be disabled by ctrlp or by plugin
+
+    if (argvars[0].v_type == VAR_LIST && argvars[0].vval.v_list != NULL)
     {
-	emsg(_(e_listreq));
+	list_items = argvars[0].vval.v_list; // The full list of items to search in.
+	input_str = tv_get_string_buf(&argvars[1], strbuf);
+	match_limit = tv_get_number(&argvars[2]);
+	mmode = tv_get_string_buf(&argvars[3], mmodebuf);
+	ispath = tv_get_number(&argvars[4]);
+	crfile = tv_get_string_buf(&argvars[5], crfilebuf);
+	regex = tv_get_number(&argvars[6]);
+	nosort = 0; // not available as a list argument
+    }
+    else if (argvars[0].v_type == VAR_DICT && argvars[0].vval.v_dict != NULL)
+    {
+	dict_T *dict = argvars[0].vval.v_dict;
+	dictitem_T *dict_item;
+
+	if (dict_item = dict_find(dict, "items", -1))
+	    list_items = dict_item->di_tv.vval.v_list;
+	if (dict_item = dict_find(dict, "str", -1))
+	    input_str = tv_get_string_buf(&dict_item->di_tv, strbuf);
+	if (dict_item = dict_find(dict, "limit", -1))
+	    match_limit = tv_get_number(&dict_item->di_tv);
+	if (dict_item = dict_find(dict, "mmode", -1))
+	    mmode = tv_get_string_buf(&dict_item->di_tv, mmodebuf);
+	if (dict_item = dict_find(dict, "ispath", -1))
+	    ispath = tv_get_number(&dict_item->di_tv);
+	if (dict_item = dict_find(dict, "crfile", -1))
+	    crfile = tv_get_string_buf(&dict_item->di_tv, crfilebuf);
+	if (dict_item = dict_find(dict, "regex", -1))
+	    regex = tv_get_number(&dict_item->di_tv);
+	if (dict_item = dict_find(dict, "nosort", -1))
+	    nosort = tv_get_number(&dict_item->di_tv);
+    }
+    else
+    {
+	emsg(_(e_dictreq));
 	return;
     }
 
-    // check output list
+    // allocate output list
     if (rettv_list_alloc(rettv) == FAIL)
     {
 	emsg("list alloc fail");
 	return;
     }
 
-    // :help g:ctrlp_match_func
-    list_T* list_items = argvars[0].vval.v_list;			// The full list of items to search in.
-    char_u* input_str = tv_get_string_buf(&argvars[1], strbuf);		// The string entered by the user.
-    const int match_limit = tv_get_number(&argvars[2]);			// The max height of the match window.
-    const char_u* mmode = tv_get_string_buf(&argvars[3], mmodebuf);	// full-line, filname-only, first-non-tab, until-last-tab
-    const int ispath = tv_get_number(&argvars[4]);			// Is 1 when searching in file, buffer, mru, mixed, dir
-    char_u* crfile = tv_get_string_buf(&argvars[5], crfilebuf);		// The file in the current window.
-    const int regex = tv_get_number(&argvars[6]);			// In regex mode: 1 or 0.
-    const int nosort = tv_get_number(&argvars[7]);			// No sort: 1 or 0. Sort can be disabled by ctrlp or by plugin
     const int search_item_count = list_items->lv_len;
     buf_T* crfile_buf = ispath && crfile ? buflist_findname_exp(crfile) : NULL;
     int search_mode = 0;
