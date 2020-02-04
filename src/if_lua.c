@@ -535,6 +535,7 @@ luaV_pushtypval(lua_State *L, typval_T *tv)
 	case VAR_DICT:
 	    luaV_pushdict(L, tv->vval.v_dict);
 	    break;
+	case VAR_BOOL:
 	case VAR_SPECIAL:
 	    if (tv->vval.v_number <= VVAL_TRUE)
 		lua_pushinteger(L, (int) tv->vval.v_number);
@@ -564,7 +565,7 @@ luaV_totypval(lua_State *L, int pos, typval_T *tv)
     switch (lua_type(L, pos))
     {
 	case LUA_TBOOLEAN:
-	    tv->v_type = VAR_SPECIAL;
+	    tv->v_type = VAR_BOOL;
 	    tv->vval.v_number = (varnumber_T) lua_toboolean(L, pos);
 	    break;
 	case LUA_TNIL:
@@ -840,8 +841,7 @@ luaV_list_newindex(lua_State *L)
     if (lua_isnil(L, 3)) // remove?
     {
 	vimlist_remove(l, li, li);
-	clear_tv(&li->li_tv);
-	vim_free(li);
+	listitem_free(l, li);
     }
     else
     {

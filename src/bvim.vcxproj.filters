@@ -339,6 +339,15 @@
     <ClCompile Include="auto\pathdef.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="vim9compile.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="vim9execute.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="vim9script.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="bvim.rc">
@@ -643,6 +652,15 @@
     <None Include="gvim.exe.mnf">
       <Filter>Resource Files</Filter>
     </None>
+    <None Include="proto\vim9compile.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\vim9execute.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\vim9script.pro">
+      <Filter>Proto Files</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="arabic.h">
@@ -808,6 +826,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="beval.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="vim9.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

@@ -815,7 +815,7 @@ func Test_cindent_1()
         }
      }
 
-  public: // <-- this was incorectly indented before!!
+  public: // <-- this was incorrectly indented before!!
      void testfall();
   protected:
      void testfall();
@@ -1780,7 +1780,7 @@ func Test_cindent_1()
   		}
   	}
 
-  	public: // <-- this was incorectly indented before!!
+  	public: // <-- this was incorrectly indented before!!
   	void testfall();
   	protected:
   	void testfall();
@@ -5249,6 +5249,18 @@ func Test_cindent_56()
 
   call assert_equal(expected, getline(1, '$'))
   enew! | close
+endfunc
+
+" this was going beyond the end of the line.
+func Test_cindent_case()
+  new
+  call setline(1, 'case x: // x')
+  set cindent
+  norm! f:a:
+  call assert_equal('case x:: // x', getline(1))
+
+  set cindent&
+  bwipe!
 endfunc
 
 " vim: shiftwidth=2 sts=2 expandtab

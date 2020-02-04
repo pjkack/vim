@@ -345,14 +345,14 @@ dict_add(dict_T *d, dictitem_T *item)
  * Returns FAIL when out of memory and when key already exists.
  */
     static int
-dict_add_number_special(dict_T *d, char *key, varnumber_T nr, int special)
+dict_add_number_special(dict_T *d, char *key, varnumber_T nr, vartype_T vartype)
 {
     dictitem_T	*item;
 
     item = dictitem_alloc((char_u *)key);
     if (item == NULL)
 	return FAIL;
-    item->di_tv.v_type = special ? VAR_SPECIAL : VAR_NUMBER;
+    item->di_tv.v_type = vartype;
     item->di_tv.vval.v_number = nr;
     if (dict_add(d, item) == FAIL)
     {
@@ -369,7 +369,7 @@ dict_add_number_special(dict_T *d, char *key, varnumber_T nr, int special)
     int
 dict_add_number(dict_T *d, char *key, varnumber_T nr)
 {
-    return dict_add_number_special(d, key, nr, FALSE);
+    return dict_add_number_special(d, key, nr, VAR_NUMBER);
 }
 
 /*
@@ -377,9 +377,9 @@ dict_add_number(dict_T *d, char *key, varnumber_T nr)
  * Returns FAIL when out of memory and when key already exists.
  */
     int
-dict_add_special(dict_T *d, char *key, varnumber_T nr)
+dict_add_bool(dict_T *d, char *key, varnumber_T nr)
 {
-    return dict_add_number_special(d, key, nr, TRUE);
+    return dict_add_number_special(d, key, nr, VAR_BOOL);
 }
 
 /*
@@ -826,7 +826,7 @@ eval_dict(char_u **arg, typval_T *rettv, int evaluate, int literal)
 
 	if (**arg != ':')
 	{
-	    semsg(_("E720: Missing colon in Dictionary: %s"), *arg);
+	    semsg(_(e_missing_dict_colon), *arg);
 	    clear_tv(&tvkey);
 	    goto failret;
 	}
@@ -853,7 +853,7 @@ eval_dict(char_u **arg, typval_T *rettv, int evaluate, int literal)
 	    item = dict_find(d, key, -1);
 	    if (item != NULL)
 	    {
-		semsg(_("E721: Duplicate key in Dictionary: \"%s\""), key);
+		semsg(_(e_duplicate_key), key);
 		clear_tv(&tvkey);
 		clear_tv(&tv);
 		goto failret;
@@ -873,7 +873,7 @@ eval_dict(char_u **arg, typval_T *rettv, int evaluate, int literal)
 	    break;
 	if (**arg != ',')
 	{
-	    semsg(_("E722: Missing comma in Dictionary: %s"), *arg);
+	    semsg(_(e_missing_dict_comma), *arg);
 	    goto failret;
 	}
 	*arg = skipwhite(*arg + 1);
@@ -881,7 +881,7 @@ eval_dict(char_u **arg, typval_T *rettv, int evaluate, int literal)
 
     if (**arg != '}')
     {
-	semsg(_("E723: Missing end of Dictionary '}': %s"), *arg);
+	semsg(_(e_missing_dict_end), *arg);
 failret:
 	if (d != NULL)
 	    dict_free(d);

@@ -3044,7 +3044,7 @@ vim_to_mzscheme_impl(typval_T *vim_value, int depth, Scheme_Hash_Table *visited)
 	    MZ_GC_VAR_IN_REG(0, obj);
 	    MZ_GC_REG();
 
-	    curr = list->lv_last;
+	    curr = list->lv_u.mat.lv_last;
 	    obj = vim_to_mzscheme_impl(&curr->li_tv, depth + 1, visited);
 	    result = scheme_make_pair(obj, scheme_null);
 	    MZ_GC_CHECK();
@@ -3136,7 +3136,7 @@ vim_to_mzscheme_impl(typval_T *vim_value, int depth, Scheme_Hash_Table *visited)
 	    MZ_GC_UNREG();
 	}
     }
-    else if (vim_value->v_type == VAR_SPECIAL)
+    else if (vim_value->v_type == VAR_BOOL || vim_value->v_type == VAR_SPECIAL)
     {
 	if (vim_value->vval.v_number <= VVAL_TRUE)
 	    result = scheme_make_integer((long)vim_value->vval.v_number);
@@ -3218,7 +3218,7 @@ mzscheme_to_vim_impl(Scheme_Object *obj, typval_T *tv, int depth,
     }
     else if (SCHEME_BOOLP(obj))
     {
-	tv->v_type = VAR_SPECIAL;
+	tv->v_type = VAR_BOOL;
 	tv->vval.v_number = SCHEME_TRUEP(obj);
     }
 # ifdef FEAT_FLOAT

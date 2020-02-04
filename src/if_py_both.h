@@ -785,6 +785,7 @@ VimToPython(typval_T *our_tv, int depth, PyObject *lookup_dict)
 	    return NULL;
 	}
 
+	range_list_materialize(list);
 	for (curr = list->lv_first; curr != NULL; curr = curr->li_next)
 	{
 	    if (!(newObj = VimToPython(&curr->li_tv, depth + 1, lookup_dict)))
@@ -844,23 +845,24 @@ VimToPython(typval_T *our_tv, int depth, PyObject *lookup_dict)
 	    }
 	}
     }
-    else if (our_tv->v_type == VAR_SPECIAL)
+    else if (our_tv->v_type == VAR_BOOL)
     {
 	if (our_tv->vval.v_number == VVAL_FALSE)
 	{
 	    ret = Py_False;
 	    Py_INCREF(ret);
 	}
-	else if (our_tv->vval.v_number == VVAL_TRUE)
+	else
 	{
 	    ret = Py_True;
 	    Py_INCREF(ret);
 	}
-	else
-	{
-	    Py_INCREF(Py_None);
-	    ret = Py_None;
-	}
+	return ret;
+    }
+    else if (our_tv->v_type == VAR_SPECIAL)
+    {
+	Py_INCREF(Py_None);
+	ret = Py_None;
 	return ret;
     }
     else if (our_tv->v_type == VAR_BLOB)
@@ -2254,6 +2256,7 @@ ListNew(PyTypeObject *subtype, list_T *list)
 	return NULL;
     self->list = list;
     ++list->lv_refcount;
+    range_list_materialize(list);
 
     pyll_add((PyObject *)(self), &self->ref, &lastlist);
 
@@ -2301,7 +2304,7 @@ list_py_concat(list_T *l, PyObject *obj, PyObject *lookup_dict)
 	{
 	    Py_DECREF(item);
 	    Py_DECREF(iterator);
-	    listitem_free(li);
+	    listitem_free(l, li);
 	    return -1;
 	}
 
@@ -2625,7 +2628,7 @@ ListAssSlice(ListObject *self, Py_ssize_t first,
 	    if (li)
 		lastaddedli = li->li_prev;
 	    else
-		lastaddedli = l->lv_last;
+		lastaddedli = l->lv_u.mat.lv_last;
 	    numadded++;
 	}
 	clear_tv(&v);
@@ -2661,7 +2664,7 @@ ListAssSlice(ListObject *self, Py_ssize_t first,
     }
 
     for (i = 0; i < numreplaced; i++)
-	listitem_free(lis[i]);
+	listitem_free(l, lis[i]);
     if (step == 1)
 	for (i = numreplaced; i < slicelen; i++)
 	    listitem_remove(l, lis[i]);
@@ -2821,6 +2824,7 @@ ListIter(ListObject *self)
 	return NULL;
     }
 
+    range_list_materialize(l);
     list_add_watch(l, &lii->lw);
     lii->lw.lw_item = l->lv_first;
     lii->list = l;
@@ -3017,6 +3021,7 @@ FunctionConstructor(PyTypeObject *subtype, PyObject *args, PyObject *kwargs)
 		return NULL;
 	    }
 	    argslist = argstv.vval.v_list;
+	    range_list_materialize(argslist);
 
 	    argc = argslist->lv_len;
 	    if (argc != 0)
@@ -6352,8 +6357,8 @@ ConvertToPyObject(typval_T *tv)
 					    ? "" : (char *)tv->vval.v_string);
 	case VAR_NUMBER:
 	    return PyLong_FromLong((long) tv->vval.v_number);
-#ifdef FEAT_FLOAT
 	case VAR_FLOAT:
+#ifdef FEAT_FLOAT
 	    return PyFloat_FromDouble((double) tv->vval.v_float);
 #endif
 	case VAR_LIST:
@@ -6385,10 +6390,12 @@ ConvertToPyObject(typval_T *tv)
 		(char*) tv->vval.v_blob->bv_ga.ga_data,
 		(Py_ssize_t) tv->vval.v_blob->bv_ga.ga_len);
 	case VAR_UNKNOWN:
+	case VAR_VOID:
 	case VAR_CHANNEL:
 	case VAR_JOB:
 	    Py_INCREF(Py_None);
 	    return Py_None;
+	case VAR_BOOL:
 	case VAR_SPECIAL:
 	    switch (tv->vval.v_number)
 	    {

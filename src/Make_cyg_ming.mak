@@ -788,6 +788,9 @@ OBJ = \
 	$(OUTDIR)/usercmd.o \
 	$(OUTDIR)/userfunc.o \
 	$(OUTDIR)/version.o \
+	$(OUTDIR)/vim9compile.o \
+	$(OUTDIR)/vim9execute.o \
+	$(OUTDIR)/vim9script.o \
 	$(OUTDIR)/viminfo.o \
 	$(OUTDIR)/winclip.o \
 	$(OUTDIR)/window.o
@@ -1085,7 +1088,7 @@ endif
 # If this fails because you don't have Vim yet, first build and install Vim
 # without changes.
 cmdidxs: ex_cmds.h
-	vim --clean -X -u create_cmdidxs.vim
+	vim --clean -X --not-a-term -u create_cmdidxs.vim
 
 ###########################################################################
 INCL =	vim.h alloc.h ascii.h ex_cmds.h feature.h globals.h \
@@ -1152,6 +1155,12 @@ $(OUTDIR)/misc1.o: misc1.c $(INCL) version.h
 $(OUTDIR)/netbeans.o: netbeans.c $(INCL) version.h
 
 $(OUTDIR)/version.o: version.c $(INCL) version.h
+
+$(OUTDIR)/vim9compile.o: vim9compile.c $(INCL) version.h
+
+$(OUTDIR)/vim9execute.o: vim9execute.c $(INCL) version.h
+
+$(OUTDIR)/vim9script.o: vim9script.c $(INCL) version.h
 
 $(OUTDIR)/viminfo.o: viminfo.c $(INCL) version.h
 

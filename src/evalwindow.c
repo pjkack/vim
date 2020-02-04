@@ -183,7 +183,8 @@ find_win_by_nr(
     {
 #ifdef FEAT_PROP_POPUP
 	// check tab-local popup windows
-	for (wp = tp->tp_first_popupwin; wp != NULL; wp = wp->w_next)
+	for (wp = (tp == NULL ? curtab : tp)->tp_first_popupwin;
+						   wp != NULL; wp = wp->w_next)
 	    if (wp->w_id == nr)
 		return wp;
 	// check global popup windows
@@ -331,8 +332,6 @@ get_winnr(tabpage_T *tp, typval_T *argvar)
 	else if (STRCMP(arg, "#") == 0)
 	{
 	    twin = (tp == curtab) ? prevwin : tp->tp_prevwin;
-	    if (twin == NULL)
-		nr = 0;
 	}
 	else
 	{
@@ -359,6 +358,8 @@ get_winnr(tabpage_T *tp, typval_T *argvar)
 	    else
 		invalid_arg = TRUE;
 	}
+	if (twin == NULL)
+	    nr = 0;
 
 	if (invalid_arg)
 	{

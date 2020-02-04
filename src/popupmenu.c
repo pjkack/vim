@@ -1076,7 +1076,7 @@ pum_set_event_info(dict_T *dict)
     dict_add_number(dict, "row", pum_row);
     dict_add_number(dict, "col", pum_col);
     dict_add_number(dict, "size", pum_size);
-    dict_add_special(dict, "scrollbar", pum_scrollbar ? VVAL_TRUE : VVAL_FALSE);
+    dict_add_bool(dict, "scrollbar", pum_scrollbar ? VVAL_TRUE : VVAL_FALSE);
 }
 #endif
 
@@ -1314,6 +1314,7 @@ ui_post_balloon(char_u *mesg, list_T *list)
 	balloon_array = ALLOC_CLEAR_MULT(pumitem_T, list->lv_len);
 	if (balloon_array == NULL)
 	    return;
+	range_list_materialize(list);
 	for (idx = 0, li = list->lv_first; li != NULL; li = li->li_next, ++idx)
 	{
 	    char_u *text = tv_get_string_chk(&li->li_tv);

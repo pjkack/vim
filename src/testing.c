@@ -222,7 +222,7 @@ assert_bool(typval_T *argvars, int isTrue)
     int		error = FALSE;
     garray_T	ga;
 
-    if (argvars[0].v_type == VAR_SPECIAL
+    if (argvars[0].v_type == VAR_BOOL
 	    && argvars[0].vval.v_number == (isTrue ? VVAL_TRUE : VVAL_FALSE))
 	return 0;
     if (argvars[0].v_type != VAR_NUMBER
@@ -640,6 +640,12 @@ f_test_feedinput(typval_T *argvars, typval_T *rettv UNUSED)
 #ifdef USE_INPUT_BUF
     char_u	*val = tv_get_string_chk(&argvars[0]);
 
+# ifdef VIMDLL
+    // this doesn't work in the console
+    if (!gui.in_use)
+	return;
+# endif
+
     if (val != NULL)
     {
 	trash_input_buf();
@@ -758,7 +764,9 @@ f_test_refcount(typval_T *argvars, typval_T *rettv)
     switch (argvars[0].v_type)
     {
 	case VAR_UNKNOWN:
+	case VAR_VOID:
 	case VAR_NUMBER:
+	case VAR_BOOL:
 	case VAR_FLOAT:
 	case VAR_SPECIAL:
 	case VAR_STRING:
@@ -780,7 +788,7 @@ f_test_refcount(typval_T *argvars, typval_T *rettv)
 	    {
 		ufunc_T *fp;
 
-		fp = find_func(argvars[0].vval.v_string);
+		fp = find_func(argvars[0].vval.v_string, NULL);
 		if (fp != NULL)
 		    retval = fp->uf_refcount;
 	    }

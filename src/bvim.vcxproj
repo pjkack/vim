@@ -320,6 +320,9 @@
     <ClCompile Include="usercmd.c" />
     <ClCompile Include="userfunc.c" />
     <ClCompile Include="version.c" />
+    <ClCompile Include="vim9compile.c" />
+    <ClCompile Include="vim9execute.c" />
+    <ClCompile Include="vim9script.c" />
     <ClCompile Include="viminfo.c" />
     <ClCompile Include="winclip.c" />
     <ClCompile Include="window.c" />
@@ -439,6 +442,9 @@
     <None Include="proto\undo.pro" />
     <None Include="proto\userfunc.pro" />
     <None Include="proto\version.pro" />
+    <None Include="proto\vim9compile.pro" />
+    <None Include="proto\vim9execute.pro" />
+    <None Include="proto\vim9script.pro" />
     <None Include="proto\window.pro" />
     <None Include="proto\workshop.pro" />
   </ItemGroup>
@@ -493,6 +499,7 @@
     <ClInclude Include="term.h" />
     <ClInclude Include="version.h" />
     <ClInclude Include="vim.h" />
+    <ClInclude Include="vim9.h" />
     <ClInclude Include="vimio.h" />
     <ClInclude Include="vimtbar.h" />
     <ClInclude Include="workshop.h" />
