@@ -1493,6 +1493,7 @@ f_bore_ctrlpmatch(typval_T *argvars, typval_T *rettv)
     char_u* input_str_case_prefix = input_str_ignorecase ? "\\c" : "\\C";
 
     do_cmdline_cmd("sy clear CtrlPMatch");
+    do_cmdline_cmd("call clearmatches()");
 
     // no search
     if (input_str[0] == '\0')
@@ -1552,7 +1553,7 @@ f_bore_ctrlpmatch(typval_T *argvars, typval_T *rettv)
 		// ctrlp vimscript reference: substitute(a:input, '\\\@<!\^', '^> \\zs', 'g')
 		pattern = do_string_sub(input_str, "\\\\@<!\\^", "^> \\\\zs", NULL, "g");
 	    }
-	    vim_snprintf((char*)IObuff, IOSIZE, "sy match CtrlPMatch `%s`", input_str_with_case);
+	    vim_snprintf((char*)IObuff, IOSIZE, "call matchadd('CtrlPMatch', '%s')", input_str_with_case);
 	    do_cmdline_cmd(IObuff);
 	    vim_free(pattern);
 	}
@@ -1587,7 +1588,7 @@ f_bore_ctrlpmatch(typval_T *argvars, typval_T *rettv)
 		    if (1 == search_mode) // only-filename, don't match anything in path
 			vim_strcat(syntax_pattern, "\\([^\\/\\\\]*$\\)\\@=", MAXPATHL);
 		    vim_strcat(syntax_pattern, pattern, MAXPATHL);
-		    vim_snprintf((char*)IObuff, IOSIZE, "sy match CtrlPMatch `%s`", syntax_pattern);
+		    vim_snprintf((char*)IObuff, IOSIZE, "call matchadd('CtrlPMatch', '%s')", syntax_pattern);
 		    do_cmdline_cmd(IObuff);
 		    vim_free(pattern);
 		}
@@ -1644,6 +1645,8 @@ f_bore_ctrlpmatch(typval_T *argvars, typval_T *rettv)
     // append result items
     if (match_count > 0)
     {
+	do_cmdline_cmd("cal matchadd('CtrlPLinePre', '^>')");
+
 	if (crfile_buf != NULL)
 	{
 	    int match_idx = 0;
