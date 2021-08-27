@@ -21,7 +21,7 @@ static char *(p_bo_values[]) = {"all", "backspace", "cursor", "complete",
 				 "hangul", "insertmode", "lang", "mess",
 				 "showmatch", "operator", "register", "shell",
 				 "spell", "wildmode", NULL};
-static char *(p_nf_values[]) = {"bin", "octal", "hex", "alpha", NULL};
+static char *(p_nf_values[]) = {"bin", "octal", "hex", "alpha", "unsigned", NULL};
 static char *(p_ff_values[]) = {FF_UNIX, FF_DOS, FF_MAC, NULL};
 #ifdef FEAT_CRYPT
 static char *(p_cm_values[]) = {"zip", "blowfish", "blowfish2", NULL};
@@ -68,7 +68,7 @@ static char *(p_debug_values[]) = {"msg", "throw", "beep", NULL};
 static char *(p_ead_values[]) = {"both", "ver", "hor", NULL};
 static char *(p_buftype_values[]) = {"nofile", "nowrite", "quickfix", "help", "terminal", "acwrite", "prompt", "popup", NULL};
 static char *(p_bufhidden_values[]) = {"hide", "unload", "delete", "wipe", NULL};
-static char *(p_bs_values[]) = {"indent", "eol", "start", NULL};
+static char *(p_bs_values[]) = {"indent", "eol", "start", "nostop", NULL};
 #ifdef FEAT_FOLDING
 static char *(p_fdm_values[]) = {"manual", "expr", "marker", "indent", "syntax",
 # ifdef FEAT_DIFF
@@ -248,6 +248,7 @@ check_buf_options(buf_T *buf)
     check_string_option(&buf->b_s.b_p_spc);
     check_string_option(&buf->b_s.b_p_spf);
     check_string_option(&buf->b_s.b_p_spl);
+    check_string_option(&buf->b_s.b_p_spo);
 #endif
 #ifdef FEAT_SEARCHPATH
     check_string_option(&buf->b_p_sua);
@@ -500,7 +501,7 @@ set_string_option(
     if (is_hidden_option(opt_idx))	// don't set hidden option
 	return NULL;
 
-    s = vim_strsave(value);
+    s = vim_strsave(value == NULL ? (char_u *)"" : value);
     if (s != NULL)
     {
 	varp = (char_u **)get_option_varp_scope(opt_idx,
@@ -570,11 +571,10 @@ valid_filetype(char_u *val)
     static char *
 check_stl_option(char_u *s)
 {
-    int		itemcnt = 0;
     int		groupdepth = 0;
     static char errbuf[80];
 
-    while (*s && itemcnt < STL_MAX_ITEM)
+    while (*s)
     {
 	// Check for valid keys after % sequences
 	while (*s && *s != '%')
@@ -582,8 +582,6 @@ check_stl_option(char_u *s)
 	if (!*s)
 	    break;
 	s++;
-	if (*s != '%' && *s != ')')
-	    ++itemcnt;
 	if (*s == '%' || *s == STL_TRUNCMARK || *s == STL_MIDDLEMARK)
 	{
 	    s++;
@@ -626,8 +624,6 @@ check_stl_option(char_u *s)
 		return N_("E540: Unclosed expression sequence");
 	}
     }
-    if (itemcnt >= STL_MAX_ITEM)
-	return N_("E541: too many items");
     if (groupdepth != 0)
 	return N_("E542: unbalanced groups");
     return NULL;
@@ -1157,8 +1153,11 @@ did_set_string_option(
 
 	if (STRCMP(curbuf->b_p_key, oldval) != 0)
 	    // Need to update the swapfile.
+	{
 	    ml_set_crypt_key(curbuf, oldval,
 			      *curbuf->b_p_cm == NUL ? p_cm : curbuf->b_p_cm);
+	    changed_internal();
+	}
     }
 
     else if (gvarp == &p_cm)
@@ -1430,6 +1429,9 @@ did_set_string_option(
 	}
 	if (varp == &T_BE && termcap_active)
 	{
+#ifdef FEAT_JOB_CHANNEL
+	    ch_log_output = TRUE;
+#endif
 	    if (*T_BE == NUL)
 		// When clearing t_BE we assume the user no longer wants
 		// bracketed paste, thus disable it by writing t_BD.
@@ -1701,7 +1703,7 @@ did_set_string_option(
 	int	is_spellfile = varp == &(curwin->w_s->b_p_spf);
 
 	if ((is_spellfile && !valid_spellfile(*varp))
-	    || (!is_spellfile && !valid_spellang(*varp)))
+	    || (!is_spellfile && !valid_spelllang(*varp)))
 	    errmsg = e_invarg;
 	else
 	    errmsg = did_set_spell_option(is_spellfile);
@@ -1710,6 +1712,12 @@ did_set_string_option(
     else if (varp == &(curwin->w_s->b_p_spc))
     {
 	errmsg = compile_cap_prog(curwin->w_s);
+    }
+    // 'spelloptions'
+    else if (varp == &(curwin->w_s->b_p_spo))
+    {
+	if (**varp != NUL && STRCMP("camel", *varp) != 0)
+	    errmsg = e_invarg;
     }
     // 'spellsuggest'
     else if (varp == &p_sps)
@@ -1910,7 +1918,7 @@ did_set_string_option(
     {
 	if (VIM_ISDIGIT(*p_bs))
 	{
-	    if (*p_bs > '2' || p_bs[1] != NUL)
+	    if (*p_bs > '3' || p_bs[1] != NUL)
 		errmsg = e_invarg;
 	}
 	else if (check_opt_strings(p_bs, p_bs_values, TRUE) != OK)
@@ -2239,8 +2247,18 @@ did_set_string_option(
     {
 	if (parse_completepopup(NULL) == FAIL)
 	    errmsg = e_invarg;
+	else
+	    popup_close_info();
     }
 # endif
+#endif
+
+#ifdef FEAT_QUICKFIX
+    else if (varp == &p_qftf)
+    {
+	if (qf_process_qftf_option() == FALSE)
+	    errmsg = e_invarg;
+    }
 #endif
 
     // Options that are a list of flags.
@@ -2398,6 +2416,11 @@ did_set_string_option(
 	else
 	    setmouse();		    // in case 'mouse' changed
     }
+
+#if defined(FEAT_LUA) || defined(PROTO)
+    if (varp == &p_rtp)
+	update_package_paths_in_lua();
+#endif
 
     if (curwin->w_curswant != MAXCOL
 		   && (get_option_flags(opt_idx) & (P_CURSWANT | P_RALL)) != 0)

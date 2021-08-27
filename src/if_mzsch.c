@@ -812,10 +812,6 @@ static guint timer_id = 0;
 #elif defined(FEAT_GUI_MOTIF) || defined(FEAT_GUI_ATHENA)
 static void timer_proc(XtPointer, XtIntervalId *);
 static XtIntervalId timer_id = (XtIntervalId)0;
-#elif defined(FEAT_GUI_MAC)
-pascal void timer_proc(EventLoopTimerRef, void *);
-static EventLoopTimerRef timer_id = NULL;
-static EventLoopTimerUPP timerUPP;
 #endif
 
 #if !defined(FEAT_GUI_MSWIN) || defined(VIMDLL) // Win32 console and Unix
@@ -852,9 +848,6 @@ timer_proc(gpointer data UNUSED)
 # elif defined(FEAT_GUI_MOTIF) || defined(FEAT_GUI_ATHENA)
     static void
 timer_proc(XtPointer timed_out UNUSED, XtIntervalId *interval_id UNUSED)
-# elif defined(FEAT_GUI_MAC)
-    pascal void
-timer_proc(EventLoopTimerRef theTimer UNUSED, void *userData UNUSED)
 # endif
 {
     scheme_check_threads();
@@ -877,10 +870,6 @@ setup_timer(void)
     timer_id = g_timeout_add((guint)p_mzq, (GSourceFunc)timer_proc, NULL);
 # elif defined(FEAT_GUI_MOTIF) || defined(FEAT_GUI_ATHENA)
     timer_id = XtAppAddTimeOut(app_context, p_mzq, timer_proc, NULL);
-# elif defined(FEAT_GUI_MAC)
-    timerUPP = NewEventLoopTimerUPP(timer_proc);
-    InstallEventLoopTimer(GetMainEventLoop(), p_mzq * kEventDurationMillisecond,
-		p_mzq * kEventDurationMillisecond, timerUPP, NULL, &timer_id);
 # endif
 }
 
@@ -893,9 +882,6 @@ remove_timer(void)
     g_source_remove(timer_id);
 # elif defined(FEAT_GUI_MOTIF) || defined(FEAT_GUI_ATHENA)
     XtRemoveTimeOut(timer_id);
-# elif defined(FEAT_GUI_MAC)
-    RemoveEventLoopTimer(timer_id);
-    DisposeEventLoopTimerUPP(timerUPP);
 # endif
     timer_id = 0;
 }
@@ -1726,7 +1712,7 @@ get_option(void *data, int argc, Scheme_Object **argv)
     Vim_Prim	    *prim = (Vim_Prim *)data;
     long	    value;
     char	    *strval;
-    int		    rc;
+    getoption_T	    rc;
     Scheme_Object   *rval = NULL;
     Scheme_Object   *name = NULL;
     int		    opt_flags = 0;
@@ -1768,27 +1754,30 @@ get_option(void *data, int argc, Scheme_Object **argv)
 	    scheme_wrong_type(prim->name, "vim-buffer/window", 1, argc, argv);
     }
 
-    rc = get_option_value(BYTE_STRING_VALUE(name), &value, (char_u **)&strval, opt_flags);
+    rc = get_option_value(BYTE_STRING_VALUE(name), &value, (char_u **)&strval,
+								    opt_flags);
     curbuf = save_curb;
     curwin = save_curw;
 
     switch (rc)
     {
-    case 1:
+    case gov_bool:
+    case gov_number:
 	MZ_GC_UNREG();
 	return scheme_make_integer_value(value);
-    case 0:
+    case gov_string:
 	rval = scheme_make_byte_string(strval);
 	MZ_GC_CHECK();
 	vim_free(strval);
 	MZ_GC_UNREG();
 	return rval;
-    case -1:
-    case -2:
+    case gov_hidden_bool:
+    case gov_hidden_number:
+    case gov_hidden_string:
 	MZ_GC_UNREG();
 	raise_vim_exn(_("hidden option"));
 	//NOTREACHED
-    case -3:
+    case gov_unknown:
 	MZ_GC_UNREG();
 	raise_vim_exn(_("unknown option"));
 	//NOTREACHED
@@ -1927,7 +1916,7 @@ window_new(win_T *win)
 
     MZ_GC_REG();
     self = scheme_malloc_fail_ok(scheme_malloc_tagged, sizeof(vim_mz_window));
-    vim_memset(self, 0, sizeof(vim_mz_window));
+    CLEAR_POINTER(self);
 #ifndef MZ_PRECISE_GC
     scheme_dont_gc_ptr(self);	// because win isn't visible to GC
 #else
@@ -2311,7 +2300,7 @@ buffer_new(buf_T *buf)
 
     MZ_GC_REG();
     self = scheme_malloc_fail_ok(scheme_malloc_tagged, sizeof(vim_mz_buffer));
-    vim_memset(self, 0, sizeof(vim_mz_buffer));
+    CLEAR_POINTER(self);
 #ifndef MZ_PRECISE_GC
     scheme_dont_gc_ptr(self);	// because buf isn't visible to GC
 #else
@@ -2468,7 +2457,7 @@ set_buffer_line(void *data, int argc, Scheme_Object **argv)
 	    curbuf = savebuf;
 	    raise_vim_exn(_("cannot save undo information"));
 	}
-	else if (ml_delete((linenr_T)n, FALSE) == FAIL)
+	else if (ml_delete((linenr_T)n) == FAIL)
 	{
 	    curbuf = savebuf;
 	    raise_vim_exn(_("cannot delete line"));
@@ -2597,7 +2586,7 @@ set_buffer_line_list(void *data, int argc, Scheme_Object **argv)
 	else
 	{
 	    for (i = 0; i < old_len; i++)
-		if (ml_delete((linenr_T)lo, FALSE) == FAIL)
+		if (ml_delete((linenr_T)lo) == FAIL)
 		{
 		    curbuf = savebuf;
 		    raise_vim_exn(_("cannot delete line"));
@@ -2634,8 +2623,7 @@ set_buffer_line_list(void *data, int argc, Scheme_Object **argv)
 	    MZ_GC_VAR_IN_REG(1, rest);
 	    MZ_GC_REG();
 
-	    array = ALLOC_MULT(char *, new_len + 1);
-	    vim_memset(array, 0, (new_len+1) * sizeof(char *));
+	    array = ALLOC_CLEAR_MULT(char *, new_len + 1);
 
 	    rest = line_list;
 	    for (i = 0; i < new_len; ++i)
@@ -2666,7 +2654,7 @@ set_buffer_line_list(void *data, int argc, Scheme_Object **argv)
 	     */
 	    for (i = 0; i < old_len - new_len; ++i)
 	    {
-		if (ml_delete((linenr_T)lo, FALSE) == FAIL)
+		if (ml_delete((linenr_T)lo) == FAIL)
 		{
 		    curbuf = savebuf;
 		    free_array(array);
@@ -2818,8 +2806,7 @@ insert_buffer_line_list(void *data, int argc, Scheme_Object **argv)
 	MZ_GC_VAR_IN_REG(1, rest);
 	MZ_GC_REG();
 
-	array = ALLOC_MULT(char *, size + 1);
-	vim_memset(array, 0, (size+1) * sizeof(char *));
+	array = ALLOC_CLEAR_MULT(char *, size + 1);
 
 	rest = list;
 	for (i = 0; i < size; ++i)

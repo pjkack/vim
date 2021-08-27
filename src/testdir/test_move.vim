@@ -33,11 +33,12 @@ func Test_move()
   call assert_true(&modified)
   set nomodified
 
-  call assert_fails('1,2move 1', 'E134')
-  call assert_fails('2,3move 2', 'E134')
+  call assert_fails('1,2move 1', 'E134:')
+  call assert_fails('2,3move 2', 'E134:')
   call assert_fails("move -100", 'E16:')
   call assert_fails("move +100", 'E16:')
   call assert_fails('move', 'E16:')
+  call assert_fails("move 'r", 'E20:')
 
   %bwipeout!
 endfunc

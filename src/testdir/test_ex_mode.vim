@@ -1,6 +1,7 @@
 " Test editing line in Ex mode (see :help Q and :help gQ).
 
 source check.vim
+source shared.vim
 
 " Helper function to test editing line in Q Ex mode
 func Ex_Q(cmd)
@@ -49,13 +50,20 @@ func Test_ex_mode()
     call assert_equal(['  foo', '    foo'],       Ex("    foo\<C-d>"), e)
     call assert_equal(['foo', '    foo0'],        Ex("    foo0\<C-d>"), e)
     call assert_equal(['foo', '    foo^'],        Ex("    foo^\<C-d>"), e)
+    call assert_equal(['foo', 'foo'],
+          \ Ex("\<BS>\<C-H>\<Del>\<kDel>foo"), e)
+    " default wildchar <Tab> interferes with this test
+    set wildchar=<c-e>
+    call assert_equal(["a\tb", "a\tb"],           Ex("a\t\t\<C-H>b"), e)
+    call assert_equal(["\t  mn", "\tm\<C-T>n"],        Ex("\tm\<C-T>n"), e)
+    set wildchar&
   endfor
 
   set sw&
   let &encoding = encoding_save
 endfunc
 
-" Test subsittute confirmation prompt :%s/pat/str/c in Ex mode
+" Test substitute confirmation prompt :%s/pat/str/c in Ex mode
 func Test_Ex_substitute()
   CheckRunVimInTerminal
   let buf = RunVimInTerminal('', {'rows': 6})
@@ -77,11 +85,125 @@ func Test_Ex_substitute()
   call term_sendkeys(buf, "q\<CR>")
   call WaitForAssert({-> assert_match(':', term_getline(buf, 6))}, 1000)
 
+  " Pressing enter in ex mode should print the current line
+  call term_sendkeys(buf, "\<CR>")
+  call WaitForAssert({-> assert_match('  3 foo foo',
+        \ term_getline(buf, 5))}, 1000)
+
   call term_sendkeys(buf, ":vi\<CR>")
   call WaitForAssert({-> assert_match('foo bar', term_getline(buf, 1))}, 1000)
 
-  call term_sendkeys(buf, ":q!\n")
   call StopVimInTerminal(buf)
+endfunc
+
+" Test for displaying lines from an empty buffer in Ex mode
+func Test_Ex_emptybuf()
+  new
+  call assert_fails('call feedkeys("Q\<CR>", "xt")', 'E749:')
+  call setline(1, "abc")
+  call assert_fails('call feedkeys("Q\<CR>", "xt")', 'E501:')
+  call assert_fails('call feedkeys("Q%d\<CR>", "xt")', 'E749:')
+  close!
+endfunc
+
+" Test for the :open command
+func Test_open_command()
+  new
+  call setline(1, ['foo foo', 'foo bar', 'foo baz'])
+  call feedkeys("Qopen\<CR>j", 'xt')
+  call assert_equal('foo bar', getline('.'))
+  call feedkeys("Qopen /bar/\<CR>", 'xt')
+  call assert_equal(5, col('.'))
+  call assert_fails('call feedkeys("Qopen /baz/\<CR>", "xt")', 'E479:')
+  close!
+endfunc
+
+" Test for :g/pat/visual to run vi commands in Ex mode
+" This used to hang Vim before 8.2.0274.
+func Test_Ex_global()
+  new
+  call setline(1, ['', 'foo', 'bar', 'foo', 'bar', 'foo'])
+  call feedkeys("Q\<bs>g/bar/visual\<CR>$rxQ$ryQvisual\<CR>j", "xt")
+  call assert_equal('bax', getline(3))
+  call assert_equal('bay', getline(5))
+  bwipe!
+endfunc
+
+" In Ex-mode, a backslash escapes a newline
+func Test_Ex_escape_enter()
+  call feedkeys("gQlet l = \"a\\\<kEnter>b\"\<cr>vi\<cr>", 'xt')
+  call assert_equal("a\rb", l)
+endfunc
+
+" Test for :append! command in Ex mode
+func Test_Ex_append()
+  new
+  call setline(1, "\t   abc")
+  call feedkeys("Qappend!\npqr\nxyz\n.\nvisual\n", 'xt')
+  call assert_equal(["\t   abc", "\t   pqr", "\t   xyz"], getline(1, '$'))
+  close!
+endfunc
+
+" In Ex-mode, backslashes at the end of a command should be halved.
+func Test_Ex_echo_backslash()
+  " This test works only when the language is English
+  CheckEnglish
+  let bsl = '\\\\'
+  let bsl2 = '\\\'
+  call assert_fails('call feedkeys("Qecho " .. bsl .. "\nvisual\n", "xt")',
+        \ "E15: Invalid expression: \\\\")
+  call assert_fails('call feedkeys("Qecho " .. bsl2 .. "\nm\nvisual\n", "xt")',
+        \ "E15: Invalid expression: \\\nm")
+endfunc
+
+func Test_ex_mode_errors()
+  " Not allowed to enter ex mode when text is locked
+  au InsertCharPre <buffer> normal! gQ<CR>
+  let caught_e565 = 0
+  try
+    call feedkeys("ix\<esc>", 'xt')
+  catch /^Vim\%((\a\+)\)\=:E565/ " catch E565
+    let caught_e565 = 1
+  endtry
+  call assert_equal(1, caught_e565)
+  au! InsertCharPre
+
+  new
+  au CmdLineEnter * call ExEnterFunc()
+  func ExEnterFunc()
+
+  endfunc
+  call feedkeys("gQvi\r", 'xt')
+
+  au! CmdLineEnter
+  delfunc ExEnterFunc
+  quit
+endfunc
+
+func Test_ex_mode_with_global()
+  CheckNotGui
+  CheckFeature timers
+
+  " This will get stuck in Normal mode after the failed "J", use a timer to
+  " get going again.
+  let lines =<< trim END
+    call ch_logfile('logfile', 'w')
+    pedit
+    func FeedQ(id)
+      call feedkeys('Q', 't')
+    endfunc
+    call timer_start(10, 'FeedQ')
+    g/^/vi|HJ
+    call writefile(['done'], 'Xdidexmode')
+    qall!
+  END
+  call writefile(lines, 'Xexmodescript')
+  call assert_equal(1, RunVim([], [], '-e -s -S Xexmodescript'))
+  call assert_equal(['done'], readfile('Xdidexmode'))
+
+  call delete('logfile')
+  call delete('Xdidexmode')
+  call delete('Xexmodescript')
 endfunc
 
 " vim: shiftwidth=2 sts=2 expandtab

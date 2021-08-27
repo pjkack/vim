@@ -90,6 +90,9 @@ static int parse_diff_ed(char_u *line, linenr_T *lnum_orig, long *count_orig, li
 static int parse_diff_unified(char_u *line, linenr_T *lnum_orig, long *count_orig, linenr_T *lnum_new, long *count_new);
 static int xdiff_out(void *priv, mmbuffer_t *mb, int nbuf);
 
+#define FOR_ALL_DIFFBLOCKS_IN_TAB(tp, dp) \
+    for ((dp) = (tp)->tp_first_diff; (dp) != NULL; (dp) = (dp)->df_next)
+
 /*
  * Called when deleting or unloading a buffer: No longer make a diff with it.
  */
@@ -744,7 +747,7 @@ diff_write_buffer(buf_T *buf, diffin_T *din)
 
 		// xdiff doesn't support ignoring case, fold-case the text.
 		c = PTR2CHAR(s);
-		c = enc_utf8 ? utf_fold(c) : MB_TOLOWER(c);
+		c = MB_CASEFOLD(c);
 		orig_len = mb_ptr2len(s);
 		if (mb_char2bytes(c, cbuf) != orig_len)
 		    // TODO: handle byte length difference
@@ -772,7 +775,7 @@ diff_write(buf_T *buf, diffin_T *din)
 {
     int		r;
     char_u	*save_ff;
-    int		save_lockmarks;
+    int		save_cmod_flags;
 
     if (din->din_fname == NULL)
 	return diff_write_buffer(buf, din);
@@ -780,14 +783,14 @@ diff_write(buf_T *buf, diffin_T *din)
     // Always use 'fileformat' set to "unix".
     save_ff = buf->b_p_ff;
     buf->b_p_ff = vim_strsave((char_u *)FF_UNIX);
-    save_lockmarks = cmdmod.lockmarks;
+    save_cmod_flags = cmdmod.cmod_flags;
     // Writing the buffer is an implementation detail of performing the diff,
     // so it shouldn't update the '[ and '] marks.
-    cmdmod.lockmarks = TRUE;
+    cmdmod.cmod_flags |= CMOD_LOCKMARKS;
     r = buf_write(buf, din->din_fname, NULL,
 			(linenr_T)1, buf->b_ml.ml_line_count,
 			NULL, FALSE, FALSE, FALSE, TRUE);
-    cmdmod.lockmarks = save_lockmarks;
+    cmdmod.cmod_flags = save_cmod_flags;
     free_string_option(buf->b_p_ff);
     buf->b_p_ff = save_ff;
     return r;
@@ -936,14 +939,14 @@ ex_diffupdate(exarg_T *eap)	// "eap" can be NULL
 	goto theend;
 
     // Only use the internal method if it did not fail for one of the buffers.
-    vim_memset(&diffio, 0, sizeof(diffio));
+    CLEAR_FIELD(diffio);
     diffio.dio_internal = diff_internal() && !diff_internal_failed();
 
     diff_try_update(&diffio, idx_orig, eap);
     if (diffio.dio_internal && diff_internal_failed())
     {
 	// Internal diff failed, use external diff instead.
-	vim_memset(&diffio, 0, sizeof(diffio));
+	CLEAR_FIELD(diffio);
 	diff_try_update(&diffio, idx_orig, eap);
     }
 
@@ -1072,9 +1075,9 @@ diff_file_internal(diffio_T *diffio)
     xdemitconf_t    emit_cfg;
     xdemitcb_t	    emit_cb;
 
-    vim_memset(&param, 0, sizeof(param));
-    vim_memset(&emit_cfg, 0, sizeof(emit_cfg));
-    vim_memset(&emit_cb, 0, sizeof(emit_cb));
+    CLEAR_FIELD(param);
+    CLEAR_FIELD(emit_cfg);
+    CLEAR_FIELD(emit_cb);
 
     param.flags = diff_algorithm;
 
@@ -1184,13 +1187,13 @@ ex_diffpatch(exarg_T *eap)
 #endif
 #ifdef FEAT_BROWSE
     char_u	*browseFile = NULL;
-    int		browse_flag = cmdmod.browse;
+    int		save_cmod_flags = cmdmod.cmod_flags;
 #endif
     stat_T	st;
     char_u	*esc_name = NULL;
 
 #ifdef FEAT_BROWSE
-    if (cmdmod.browse)
+    if (cmdmod.cmod_flags & CMOD_BROWSE)
     {
 	browseFile = do_browse(0, (char_u *)_("Patch file"),
 			 eap->arg, NULL, NULL,
@@ -1198,7 +1201,7 @@ ex_diffpatch(exarg_T *eap)
 	if (browseFile == NULL)
 	    return;		// operation cancelled
 	eap->arg = browseFile;
-	cmdmod.browse = FALSE;	// don't let do_ecmd() browse again
+	cmdmod.cmod_flags &= ~CMOD_BROWSE; // don't let do_ecmd() browse again
     }
 #endif
 
@@ -1298,7 +1301,7 @@ ex_diffpatch(exarg_T *eap)
 	if (curbuf->b_fname != NULL)
 	{
 	    newname = vim_strnsave(curbuf->b_fname,
-					  (int)(STRLEN(curbuf->b_fname) + 4));
+						  STRLEN(curbuf->b_fname) + 4);
 	    if (newname != NULL)
 		STRCAT(newname, ".new");
 	}
@@ -1307,7 +1310,7 @@ ex_diffpatch(exarg_T *eap)
 	need_mouse_correct = TRUE;
 #endif
 	// don't use a new tab page, each tab page has its own diffs
-	cmdmod.tab = 0;
+	cmdmod.cmod_tab = 0;
 
 	if (win_split(0, (diff_flags & DIFF_VERTICAL) ? WSP_VERT : 0) != FAIL)
 	{
@@ -1352,7 +1355,7 @@ theend:
     vim_free(esc_name);
 #ifdef FEAT_BROWSE
     vim_free(browseFile);
-    cmdmod.browse = browse_flag;
+    cmdmod.cmod_flags = save_cmod_flags;
 #endif
 }
 
@@ -1374,7 +1377,7 @@ ex_diffsplit(exarg_T *eap)
     set_fraction(curwin);
 
     // don't use a new tab page, each tab page has its own diffs
-    cmdmod.tab = 0;
+    cmdmod.cmod_tab = 0;
 
     if (win_split(0, (diff_flags & DIFF_VERTICAL) ? WSP_VERT : 0) != FAIL)
     {
@@ -1857,7 +1860,7 @@ diff_check(win_T *wp, linenr_T lnum)
 #endif
 
     // search for a change that includes "lnum" in the list of diffblocks.
-    for (dp = curtab->tp_first_diff; dp != NULL; dp = dp->df_next)
+    FOR_ALL_DIFFBLOCKS_IN_TAB(curtab, dp)
 	if (lnum <= dp->df_lnum[idx] + dp->df_count[idx])
 	    break;
     if (dp == NULL || lnum < dp->df_lnum[idx])
@@ -2069,7 +2072,7 @@ diff_set_topline(win_T *fromwin, win_T *towin)
     towin->w_topfill = 0;
 
     // search for a change that includes "lnum" in the list of diffblocks.
-    for (dp = curtab->tp_first_diff; dp != NULL; dp = dp->df_next)
+    FOR_ALL_DIFFBLOCKS_IN_TAB(curtab, dp)
 	if (lnum <= dp->df_lnum[fromidx] + dp->df_count[fromidx])
 	    break;
     if (dp == NULL)
@@ -2374,7 +2377,7 @@ diff_find_change(
     }
 
     // search for a change that includes "lnum" in the list of diffblocks.
-    for (dp = curtab->tp_first_diff; dp != NULL; dp = dp->df_next)
+    FOR_ALL_DIFFBLOCKS_IN_TAB(curtab, dp)
 	if (lnum <= dp->df_lnum[idx] + dp->df_count[idx])
 	    break;
     if (dp == NULL || diff_check_sanity(curtab, dp) == FAIL)
@@ -2508,7 +2511,7 @@ diff_infold(win_T *wp, linenr_T lnum)
     if (curtab->tp_first_diff == NULL)
 	return TRUE;
 
-    for (dp = curtab->tp_first_diff; dp != NULL; dp = dp->df_next)
+    FOR_ALL_DIFFBLOCKS_IN_TAB(curtab, dp)
     {
 	// If this change is below the line there can't be any further match.
 	if (dp->df_lnum[idx] - diff_context > lnum)
@@ -2761,7 +2764,7 @@ ex_diffgetput(exarg_T *eap)
 	    {
 		// remember deleting the last line of the buffer
 		buf_empty = curbuf->b_ml.ml_line_count == 1;
-		ml_delete(lnum, FALSE);
+		ml_delete(lnum);
 		--added;
 	    }
 	    for (i = 0; i < dp->df_count[idx_from] - start_skip - end_skip; ++i)
@@ -2783,7 +2786,7 @@ ex_diffgetput(exarg_T *eap)
 			// Added the first line into an empty buffer, need to
 			// delete the dummy empty line.
 			buf_empty = FALSE;
-			ml_delete((linenr_T)2, FALSE);
+			ml_delete((linenr_T)2);
 		    }
 		}
 	    }
@@ -3001,7 +3004,7 @@ diff_get_corresponding_line_int(
     if (curtab->tp_first_diff == NULL)		// no diffs today
 	return lnum1;
 
-    for (dp = curtab->tp_first_diff; dp != NULL; dp = dp->df_next)
+    FOR_ALL_DIFFBLOCKS_IN_TAB(curtab, dp)
     {
 	if (dp->df_lnum[idx1] > lnum1)
 	    return lnum1 - baseline;
@@ -3070,7 +3073,7 @@ diff_lnum_win(linenr_T lnum, win_T *wp)
 	ex_diffupdate(NULL);		// update after a big change
 
     // search for a change that includes "lnum" in the list of diffblocks.
-    for (dp = curtab->tp_first_diff; dp != NULL; dp = dp->df_next)
+    FOR_ALL_DIFFBLOCKS_IN_TAB(curtab, dp)
 	if (lnum <= dp->df_lnum[idx] + dp->df_count[idx])
 	    break;
 

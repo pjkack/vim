@@ -572,7 +572,7 @@ nb_free(void)
 	buf = buf_list[i];
 	vim_free(buf.displayname);
 	vim_free(buf.signmap);
-	if (buf.bufp != NULL)
+	if (buf.bufp != NULL && buf_valid(buf.bufp))
 	{
 	    buf.bufp->b_netbeans_file = FALSE;
 	    buf.bufp->b_was_netbeans_file = FALSE;
@@ -674,11 +674,19 @@ nb_get_buf(int bufno)
     {
 	if (bufno >= buf_list_size) // grow list
 	{
-	    nbbuf_T *t_buf_list = buf_list;
+	    nbbuf_T	*t_buf_list = buf_list;
+	    size_t	bufsize;
 
 	    incr = bufno - buf_list_size + 90;
 	    buf_list_size += incr;
-	    buf_list = vim_realloc(buf_list, buf_list_size * sizeof(nbbuf_T));
+	    bufsize = buf_list_size * sizeof(nbbuf_T);
+	    if (bufsize == 0 || bufsize / sizeof(nbbuf_T)
+						      != (size_t)buf_list_size)
+	    {
+		// list size overflow, bail out
+		return NULL;
+	    }
+	    buf_list = vim_realloc(buf_list, bufsize);
 	    if (buf_list == NULL)
 	    {
 		vim_free(t_buf_list);
@@ -743,6 +751,7 @@ netbeans_end(void)
 	nbdebug(("EVT: %s", buf));
 	// nb_send(buf, "netbeans_end");    avoid "write failed" messages
 	nb_send(buf, NULL);
+	buf_list[i].bufp = NULL;
     }
 }
 
@@ -1547,7 +1556,7 @@ nb_do_cmd(
 		    // disappear.
 		    do_bufdel(DOBUF_DEL, (char_u *)"", 1,
 				  buf->bufp->b_fnum, buf->bufp->b_fnum, TRUE);
-		    vim_memset(buf, 0, sizeof(nbbuf_T));
+		    CLEAR_POINTER(buf);
 		}
 	    }
 // =====================================================================
@@ -1934,15 +1943,13 @@ nb_do_cmd(
 	    if (STRLEN(fg) > MAX_COLOR_LENGTH || STRLEN(bg) > MAX_COLOR_LENGTH)
 	    {
 		emsg("E532: highlighting color name too long in defineAnnoType");
-		vim_free(typeName);
+		VIM_CLEAR(typeName);
 		parse_error = TRUE;
 	    }
 	    else if (typeName != NULL && tooltip != NULL && glyphFile != NULL)
 		addsigntype(buf, typeNum, typeName, tooltip, glyphFile, fg, bg);
-	    else
-		vim_free(typeName);
 
-	    // don't free typeName; it's used directly in addsigntype()
+	    vim_free(typeName);
 	    vim_free(fg);
 	    vim_free(bg);
 	    vim_free(tooltip);
@@ -2982,7 +2989,7 @@ netbeans_is_guarded(linenr_T top, linenr_T bot)
     if (!NETBEANS_OPEN)
 	return FALSE;
 
-    for (p = curbuf->b_signlist; p != NULL; p = p->se_next)
+    FOR_ALL_SIGNS_IN_BUF(curbuf, p)
 	if (p->se_id >= GUARDEDOFFSET)
 	    for (lnum = top + 1; lnum < bot; lnum++)
 		if (lnum == p->se_lnum)
@@ -3095,7 +3102,7 @@ netbeans_gutter_click(linenr_T lnum)
     if (!NETBEANS_OPEN)
 	return;
 
-    for (p = curbuf->b_signlist; p != NULL; p = p->se_next)
+    FOR_ALL_SIGNS_IN_BUF(curbuf, p)
     {
 	if (p->se_lnum == lnum && p->se_next && p->se_next->se_lnum == lnum)
 	{
@@ -3231,7 +3238,7 @@ addsigntype(
 	    }
 	}
 
-	globalsignmap[i] = (char *)typeName;
+	globalsignmap[i] = (char *)vim_strsave(typeName);
 	globalsignmapused = i + 1;
     }
 

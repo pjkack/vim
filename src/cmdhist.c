@@ -304,7 +304,7 @@ add_to_history(
     if (hislen == 0)		// no history
 	return;
 
-    if (cmdmod.keeppatterns && histype == HIST_SEARCH)
+    if ((cmdmod.cmod_flags & CMOD_KEEPPATTERNS) && histype == HIST_SEARCH)
 	return;
 
     // Searches inside the same mapping overwrite each other, so that only
@@ -389,7 +389,7 @@ calc_hist_idx(int histype, int num)
 		i += hislen;
 		wrapped = TRUE;
 	    }
-	if (hist[i].hisnum == num && hist[i].hisstr != NULL)
+	if (i >= 0 && hist[i].hisnum == num && hist[i].hisstr != NULL)
 	    return i;
     }
     else if (-num <= hislen)
@@ -705,7 +705,7 @@ ex_history(exarg_T *eap)
 	    else
 	    {
 		*end = i;
-		emsg(_(e_trailing));
+		semsg(_(e_trailing_arg), arg);
 		return;
 	    }
 	}
@@ -717,7 +717,7 @@ ex_history(exarg_T *eap)
 	end = arg;
     if (!get_list_range(&end, &hisidx1, &hisidx2) || *end != NUL)
     {
-	emsg(_(e_trailing));
+	semsg(_(e_trailing_arg), end);
 	return;
     }
 

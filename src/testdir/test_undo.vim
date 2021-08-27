@@ -123,6 +123,11 @@ func Test_global_local_undolevels()
   call assert_equal(50, &g:undolevels)
   call assert_equal(-123456, &l:undolevels)
 
+  " Resetting the local 'undolevels' value to use the global value
+  setlocal undolevels=5
+  setlocal undolevels<
+  call assert_equal(-123456, &l:undolevels)
+
   " Drop created windows
   set ul&
   new
@@ -295,6 +300,8 @@ func Test_undo_write()
   close!
   call delete('Xtest')
   bwipe! Xtest
+
+  call assert_fails('earlier xyz', 'E475:')
 endfunc
 
 func Test_insert_expr()
@@ -387,6 +394,26 @@ func Test_rundo_errors()
   call assert_fails('rundo Xundofile', 'E823:')
 
   call delete('Xundofile')
+endfunc
+
+func Test_undofile_next()
+  set undofile
+  new Xfoo.txt
+  execute "norm ix\<c-g>uy\<c-g>uz\<Esc>"
+  write
+  bwipe
+
+  next Xfoo.txt
+  call assert_equal('xyz', getline(1))
+  silent undo
+  call assert_equal('xy', getline(1))
+  silent undo
+  call assert_equal('x', getline(1))
+  bwipe!
+
+  call delete('Xfoo.txt')
+  call delete('.Xfoo.txt.un~')
+  set undofile&
 endfunc
 
 " Test for undo working properly when executing commands from a register.

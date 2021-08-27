@@ -1018,12 +1018,11 @@ focus_out_event(GtkWidget *widget UNUSED,
  * The output is written to string, which must have room for at least 6 bytes
  * plus the NUL terminator.  Returns the length in bytes.
  *
- * This function is used in the GTK+ 2 GUI only.  The GTK+ 1 code makes use
- * of GdkEventKey::string instead.  But event->string is evil; see here why:
+ * event->string is evil; see here why:
  * http://developer.gnome.org/doc/API/2.0/gdk/gdk-Event-Structures.html#GdkEventKey
  */
     static int
-keyval_to_string(unsigned int keyval, unsigned int state, char_u *string)
+keyval_to_string(unsigned int keyval, char_u *string)
 {
     int	    len;
     guint32 uc;
@@ -1031,33 +1030,9 @@ keyval_to_string(unsigned int keyval, unsigned int state, char_u *string)
     uc = gdk_keyval_to_unicode(keyval);
     if (uc != 0)
     {
-	// Check for CTRL-foo
-	if ((state & GDK_CONTROL_MASK) && uc >= 0x20 && uc < 0x80)
-	{
-	    // These mappings look arbitrary at the first glance, but in fact
-	    // resemble quite exactly the behaviour of the GTK+ 1.2 GUI on my
-	    // machine.  The only difference is BS vs. DEL for CTRL-8 (makes
-	    // more sense and is consistent with usual terminal behaviour).
-	    if (uc >= '@')
-		string[0] = uc & 0x1F;
-	    else if (uc == '2')
-		string[0] = NUL;
-	    else if (uc >= '3' && uc <= '7')
-		string[0] = uc ^ 0x28;
-	    else if (uc == '8')
-		string[0] = BS;
-	    else if (uc == '?')
-		string[0] = DEL;
-	    else
-		string[0] = uc;
-	    len = 1;
-	}
-	else
-	{
-	    // Translate a normal key to UTF-8.  This doesn't work for dead
-	    // keys of course, you _have_ to use an input method for that.
-	    len = utf_char2bytes((int)uc, string);
-	}
+	// Translate a normal key to UTF-8.  This doesn't work for dead
+	// keys of course, you _have_ to use an input method for that.
+	len = utf_char2bytes((int)uc, string);
     }
     else
     {
@@ -1169,7 +1144,7 @@ key_press_event(GtkWidget *widget UNUSED,
     else
 #endif
     {
-	len = keyval_to_string(key_sym, state, string2);
+	len = keyval_to_string(key_sym, string2);
 
 	// Careful: convert_input() doesn't handle the NUL character.
 	// No need to convert pure ASCII anyway, thus the len > 1 check.
@@ -1212,39 +1187,9 @@ key_press_event(GtkWidget *widget UNUSED,
 	return FALSE;
 #endif
 
-    // Check for Alt/Meta key (Mod1Mask), but not for a BS, DEL or character
-    // that already has the 8th bit set.
-    // Don't do this for <S-M-Tab>, that should become K_S_TAB with ALT.
-    // Don't do this for double-byte encodings, it turns the char into a lead
-    // byte.
-    if (len == 1
-	    && ((state & GDK_MOD1_MASK)
-#if GTK_CHECK_VERSION(2,10,0)
-		|| (state & GDK_SUPER_MASK)
-#endif
-		)
-	    && !(key_sym == GDK_BackSpace || key_sym == GDK_Delete)
-	    && (string[0] & 0x80) == 0
-	    && !(key_sym == GDK_Tab && (state & GDK_SHIFT_MASK))
-	    && !enc_dbcs
-	    )
-    {
-	string[0] |= 0x80;
-	state &= ~GDK_MOD1_MASK;	// don't use it again
-	if (enc_utf8) // convert to utf-8
-	{
-	    string[1] = string[0] & 0xbf;
-	    string[0] = ((unsigned)string[0] >> 6) + 0xc0;
-	    if (string[1] == CSI)
-	    {
-		string[2] = KS_EXTRA;
-		string[3] = (int)KE_CSI;
-		len = 4;
-	    }
-	    else
-		len = 2;
-	}
-    }
+    // We used to apply Alt/Meta to the key here (Mod1Mask), but that is now
+    // done later, the same as it happens for the terminal.  Hopefully that
+    // works for everybody...
 
     // Check for special keys.	Also do this when len == 1 (key has an ASCII
     // value) to detect backspace, delete and keypad keys.
@@ -1266,59 +1211,58 @@ key_press_event(GtkWidget *widget UNUSED,
     if (len == 0)   // Unrecognized key
 	return TRUE;
 
-    // Special keys (and a few others) may have modifiers. Also when using a
-    // double-byte encoding (can't set the 8th bit).
-    if (len == -3 || key_sym == GDK_space || key_sym == GDK_Tab
-	    || key_sym == GDK_Return || key_sym == GDK_Linefeed
-	    || key_sym == GDK_Escape || key_sym == GDK_KP_Tab
-	    || key_sym == GDK_ISO_Enter || key_sym == GDK_3270_Enter
-	    || (enc_dbcs && len == 1 && ((state & GDK_MOD1_MASK)
-#if GTK_CHECK_VERSION(2,10,0)
-		    || (state & GDK_SUPER_MASK)
-#endif
-		    )))
+    // For some keys a shift modifier is translated into another key code.
+    if (len == -3)
+	key = TO_SPECIAL(string[1], string[2]);
+    else
     {
-	modifiers = modifiers_gdk2vim(state);
-
-	/*
-	 * For some keys a shift modifier is translated into another key
-	 * code.
-	 */
-	if (len == -3)
-	    key = TO_SPECIAL(string[1], string[2]);
-	else
-	    key = string[0];
-
-	key = simplify_key(key, &modifiers);
-	if (key == CSI)
-	    key = K_CSI;
-	if (IS_SPECIAL(key))
-	{
-	    string[0] = CSI;
-	    string[1] = K_SECOND(key);
-	    string[2] = K_THIRD(key);
-	    len = 3;
-	}
-	else
-	{
-	    string[0] = key;
-	    len = 1;
-	}
-
-	if (modifiers != 0)
-	{
-	    string2[0] = CSI;
-	    string2[1] = KS_MODIFIER;
-	    string2[2] = modifiers;
-	    add_to_input_buf(string2, 3);
-	}
+	string[len] = NUL;
+	key = mb_ptr2char(string);
     }
 
-    if (len == 1 && ((string[0] == Ctrl_C && ctrl_c_interrupts)
-		   || (string[0] == intr_char && intr_char != Ctrl_C)))
+    // Handle modifiers.
+    modifiers = modifiers_gdk2vim(state);
+
+    // Recognize special keys.
+    key = simplify_key(key, &modifiers);
+    if (key == CSI)
+	key = K_CSI;
+    if (IS_SPECIAL(key))
     {
-	trash_input_buf();
-	got_int = TRUE;
+	string[0] = CSI;
+	string[1] = K_SECOND(key);
+	string[2] = K_THIRD(key);
+	len = 3;
+    }
+    else
+    {
+	// Some keys need adjustment when the Ctrl modifier is used.
+	key = may_adjust_key_for_ctrl(modifiers, key);
+
+	// May remove the Shift modifier if it's included in the key.
+	modifiers = may_remove_shift_modifier(modifiers, key);
+
+	len = mb_char2bytes(key, string);
+    }
+
+    if (modifiers != 0)
+    {
+	string2[0] = CSI;
+	string2[1] = KS_MODIFIER;
+	string2[2] = modifiers;
+	add_to_input_buf(string2, 3);
+    }
+
+    // Check if the key interrupts.
+    {
+	int int_ch = check_for_interrupt(key, modifiers);
+
+	if (int_ch != NUL)
+	{
+	    trash_input_buf();
+	    string[0] = int_ch;
+	    len = 1;
+	}
     }
 
     add_to_input_buf(string, len);
@@ -2282,10 +2226,10 @@ sm_client_check_changed_any(GnomeClient	    *client UNUSED,
     save_cmdmod = cmdmod;
 
 # ifdef FEAT_BROWSE
-    cmdmod.browse = TRUE;
+    cmdmod.cmod_flags |= CMOD_BROWSE;
 # endif
 # if defined(FEAT_GUI_DIALOG) || defined(FEAT_CON_DIALOG)
-    cmdmod.confirm = TRUE;
+    cmdmod.cmod_flags |= CMOD_CONFIRM;
 # endif
     /*
      * If there are changed buffers, present the user with
@@ -2610,7 +2554,8 @@ mainwin_realize(GtkWidget *widget UNUSED, gpointer data UNUSED)
 
 	gtk_window_set_icon_list(GTK_WINDOW(gui.mainwin), icons);
 
-	g_list_foreach(icons, (GFunc)&g_object_unref, NULL);
+	// TODO: is this type cast OK?
+	g_list_foreach(icons, (GFunc)(void *)&g_object_unref, NULL);
 	g_list_free(icons);
     }
 
@@ -3147,8 +3092,8 @@ icon_size_changed_foreach(GtkWidget *widget, gpointer user_data)
 	    const gchar *icon_name;
 
 	    gtk_image_get_icon_name(image, &icon_name, NULL);
-
-	    gtk_image_set_from_icon_name(image, icon_name, icon_size);
+	    image = (GtkImage *)gtk_image_new_from_icon_name(
+							 icon_name, icon_size);
 	}
 # else
 	// User-defined icons are stored in a GtkIconSet
@@ -3866,16 +3811,16 @@ gui_mch_init(void)
 	    G_CALLBACK(on_tabline_menu), G_OBJECT(tabline_menu));
 #endif // FEAT_GUI_TABLINE
 
-    gui.formwin = gtk_form_new();
+    gui.formwin = gui_gtk_form_new();
     gtk_container_set_border_width(GTK_CONTAINER(gui.formwin), 0);
 #if !GTK_CHECK_VERSION(3,0,0)
     gtk_widget_set_events(gui.formwin, GDK_EXPOSURE_MASK);
 #endif
+#if GTK_CHECK_VERSION(3,22,2)
+    gtk_widget_set_name(gui.formwin, "vim-gtk-form");
+#endif
 
     gui.drawarea = gtk_drawing_area_new();
-#if GTK_CHECK_VERSION(3,22,2)
-    gtk_widget_set_name(gui.drawarea, "vim-gui-drawarea");
-#endif
 #if GTK_CHECK_VERSION(3,0,0)
     gui.surface = NULL;
     gui.by_signal = FALSE;
@@ -3895,7 +3840,7 @@ gui_mch_init(void)
 			  GDK_POINTER_MOTION_HINT_MASK);
 
     gtk_widget_show(gui.drawarea);
-    gtk_form_put(GTK_FORM(gui.formwin), gui.drawarea, 0, 0);
+    gui_gtk_form_put(GTK_FORM(gui.formwin), gui.drawarea, 0, 0);
     gtk_widget_show(gui.formwin);
     gtk_box_pack_start(GTK_BOX(vbox), gui.formwin, TRUE, TRUE, 0);
 
@@ -4086,18 +4031,21 @@ set_cairo_source_rgba_from_color(cairo_t *cr, guicolor_T color)
     void
 gui_mch_new_colors(void)
 {
-    if (gui.drawarea != NULL && gtk_widget_get_window(gui.drawarea) != NULL)
+    if (gui.drawarea != NULL
+#if GTK_CHECK_VERSION(3,22,2)
+	    && gui.formwin != NULL
+#endif
+	    && gtk_widget_get_window(gui.drawarea) != NULL)
     {
 #if !GTK_CHECK_VERSION(3,22,2)
 	GdkWindow * const da_win = gtk_widget_get_window(gui.drawarea);
 #endif
-
 #if GTK_CHECK_VERSION(3,22,2)
-	GtkStyleContext * const context
-	    = gtk_widget_get_style_context(gui.drawarea);
+	GtkStyleContext * const context =
+				     gtk_widget_get_style_context(gui.formwin);
 	GtkCssProvider * const provider = gtk_css_provider_new();
 	gchar * const css = g_strdup_printf(
-		"widget#vim-gui-drawarea {\n"
+		"widget#vim-gtk-form {\n"
 		"  background-color: #%.2lx%.2lx%.2lx;\n"
 		"}\n",
 		 (gui.back_pixel >> 16) & 0xff,
@@ -4174,9 +4122,9 @@ form_configure_event(GtkWidget *widget UNUSED,
     if (gtk_socket_id != 0)
 	usable_height -= (gui.char_height - (gui.char_height/2)); // sic.
 
-    gtk_form_freeze(GTK_FORM(gui.formwin));
+    gui_gtk_form_freeze(GTK_FORM(gui.formwin));
     gui_resize_shell(event->width, usable_height);
-    gtk_form_thaw(GTK_FORM(gui.formwin));
+    gui_gtk_form_thaw(GTK_FORM(gui.formwin));
 
     return TRUE;
 }
@@ -4435,11 +4383,14 @@ gui_mch_open(void)
     return OK;
 }
 
-
+/*
+ * Clean up for when exiting Vim.
+ */
     void
 gui_mch_exit(int rc UNUSED)
 {
-    if (gui.mainwin != NULL)
+    // Clean up, unless we don't want to invoke free().
+    if (gui.mainwin != NULL && !really_exiting)
 	gtk_widget_destroy(gui.mainwin);
 }
 
@@ -4743,6 +4694,8 @@ is_cjk_font(PangoFontDescription *font_desc)
 	PangoCoverage	*coverage;
 	gunichar	uc;
 
+	// Valgrind reports a leak for pango_language_from_string(), but the
+	// documentation says "This is owned by Pango and should not be freed".
 	coverage = pango_font_get_coverage(
 		font, pango_language_from_string(cjk_langs[i]));
 
@@ -4776,8 +4729,10 @@ gui_mch_adjust_charheight(void)
 
     pango_font_metrics_unref(metrics);
 
-    gui.char_height = (ascent + descent + PANGO_SCALE - 1) / PANGO_SCALE
-								+ p_linespace;
+    // Round up when the value is more than about 1/16 of a pixel above a whole
+    // pixel (12.0624 becomes 12, 12.07 becomes 13).  Then add 'linespace'.
+    gui.char_height = (ascent + descent + (PANGO_SCALE * 15) / 16)
+						   / PANGO_SCALE + p_linespace;
     // LINTED: avoid warning: bitwise operation on signed value
     gui.char_ascent = PANGO_PIXELS(ascent + p_linespace * PANGO_SCALE / 2);
 
@@ -5019,7 +4974,8 @@ ascii_glyph_table_init(void)
 	}
     }
 
-    g_list_foreach(item_list, (GFunc)&pango_item_free, NULL);
+    // TODO: is this type cast OK?
+    g_list_foreach(item_list, (GFunc)(void *)&pango_item_free, NULL);
     g_list_free(item_list);
     pango_attr_list_unref(attr_list);
 }

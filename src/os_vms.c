@@ -112,7 +112,7 @@ vul_item(ITEM *itm, short len, short cod, char *adr, int *ret)
 }
 
     void
-mch_settmode(int tmode)
+mch_settmode(tmode_T tmode)
 {
     int	status;
 
@@ -672,9 +672,18 @@ vms_fixfilename(void *instring)
     else if (strchr(instring,'"') == NULL)	// password in the path?
     {
 	// Seems it is a regular file, let guess that it is pure Unix fspec
-	if (decc$to_vms(instring, vms_fspec_proc, 0, 0) <= 0)
-	    // No... it must be mixed
+        if ( (strchr(instring,'[') == NULL) && (strchr(instring,'<') == NULL) &&
+	     (strchr(instring,']') == NULL) && (strchr(instring,'>') == NULL) &&
+	     (strchr(instring,':') == NULL) )
+	{
+	    // It must be a truly unix fspec
+	    decc$to_vms(instring, vms_fspec_proc, 0, 0);
+	}
+	else
+	{
+	    // It is a mixed fspec
 	    vms_unix_mixed_filespec(instring, buf);
+	}
     }
     else
 	// we have a password in the path

@@ -243,7 +243,6 @@ static void set_b0_dir_flag(ZERO_BL *b0p, buf_T *buf);
 static void add_b0_fenc(ZERO_BL *b0p, buf_T *buf);
 static time_t swapfile_info(char_u *);
 static int recov_file_names(char_u **, char_u *, int prepend_dot);
-static int ml_delete_int(buf_T *, linenr_T, int);
 static char_u *findswapname(buf_T *, char_u **, char_u *);
 static void ml_flush_line(buf_T *);
 static bhdr_T *ml_new_data(memfile_T *, int, int);
@@ -290,7 +289,7 @@ ml_open(buf_T *buf)
     buf->b_ml.ml_chunksize = NULL;
 #endif
 
-    if (cmdmod.noswapfile)
+    if (cmdmod.cmod_flags & CMOD_NOSWAPFILE)
 	buf->b_p_swf = FALSE;
 
     /*
@@ -636,7 +635,7 @@ ml_setname(buf_T *buf)
 	 * When 'updatecount' is 0 and 'noswapfile' there is no swap file.
 	 * For help files we will make a swap file now.
 	 */
-	if (p_uc != 0 && !cmdmod.noswapfile)
+	if (p_uc != 0 && (cmdmod.cmod_flags & CMOD_NOSWAPFILE) == 0)
 	    ml_open_file(buf);	    // create a swap file
 	return;
     }
@@ -748,7 +747,8 @@ ml_open_file(buf_T *buf)
     char_u	*dirp;
 
     mfp = buf->b_ml.ml_mfp;
-    if (mfp == NULL || mfp->mf_fd >= 0 || !buf->b_p_swf || cmdmod.noswapfile)
+    if (mfp == NULL || mfp->mf_fd >= 0 || !buf->b_p_swf
+				      || (cmdmod.cmod_flags & CMOD_NOSWAPFILE))
 	return;		// nothing to do
 
 #ifdef FEAT_SPELL
@@ -1376,7 +1376,7 @@ ml_recover(int checkext)
 #endif
 	for (p = b0p->b0_fname + fnsize; p > b0p->b0_fname && p[-1] != NUL; --p)
 	    ;
-	b0_fenc = vim_strnsave(p, (int)(b0p->b0_fname + fnsize - p));
+	b0_fenc = vim_strnsave(p, b0p->b0_fname + fnsize - p);
     }
 
     mf_put(mfp, hp, FALSE, FALSE);	// release block 0
@@ -1387,7 +1387,7 @@ ml_recover(int checkext)
      * contents of the current buffer.
      */
     while (!(curbuf->b_ml.ml_flags & ML_EMPTY))
-	ml_delete((linenr_T)1, FALSE);
+	ml_delete((linenr_T)1);
 
     /*
      * Try reading the original file to obtain the values of 'fileformat',
@@ -1665,7 +1665,7 @@ ml_recover(int checkext)
      */
     while (curbuf->b_ml.ml_line_count > lnum
 				       && !(curbuf->b_ml.ml_flags & ML_EMPTY))
-	ml_delete(curbuf->b_ml.ml_line_count, FALSE);
+	ml_delete(curbuf->b_ml.ml_line_count);
     curbuf->b_flags |= BF_RECOVERED;
 
     recoverymode = FALSE;
@@ -1690,7 +1690,17 @@ ml_recover(int checkext)
 	}
 	else
 	    msg(_("Recovery completed. Buffer contents equals file contents."));
-	msg_puts(_("\nYou may want to delete the .swp file now.\n\n"));
+	msg_puts(_("\nYou may want to delete the .swp file now."));
+#if defined(UNIX) || defined(MSWIN)
+	if (mch_process_running(char_to_long(b0p->b0_pid)))
+	{
+	    // Warn there could be an active Vim on the same file, the user may
+	    // want to kill it.
+	    msg_puts(_("\nNote: process STILL RUNNING: "));
+	    msg_outnum(char_to_long(b0p->b0_pid));
+	}
+#endif
+	msg_puts("\n\n");
 	cmdline_row = msg_row;
     }
 #ifdef FEAT_CRYPT
@@ -2081,94 +2091,6 @@ get_b0_dict(char_u *fname, dict_T *d)
 #endif
 
 /*
- * Cache of the current timezone name as retrieved from TZ, or an empty string
- * where unset, up to 64 octets long including trailing null byte.
- */
-#if defined(HAVE_LOCALTIME_R) && defined(HAVE_TZSET)
-static char	tz_cache[64];
-#endif
-
-/*
- * Call either localtime(3) or localtime_r(3) from POSIX libc time.h, with the
- * latter version preferred for reentrancy.
- *
- * If we use localtime_r(3) and we have tzset(3) available, check to see if the
- * environment variable TZ has changed since the last run, and call tzset(3) to
- * update the global timezone variables if it has.  This is because the POSIX
- * standard doesn't require localtime_r(3) implementations to do that as it
- * does with localtime(3), and we don't want to call tzset(3) every time.
- */
-    struct tm *
-vim_localtime(
-    const time_t	*timep,		// timestamp for local representation
-    struct tm		*result UNUSED)	// pointer to caller return buffer
-{
-#ifdef HAVE_LOCALTIME_R
-# ifdef HAVE_TZSET
-    char		*tz;		// pointer for TZ environment var
-
-    tz = (char *)mch_getenv((char_u *)"TZ");
-    if (tz == NULL)
-	tz = "";
-    if (STRNCMP(tz_cache, tz, sizeof(tz_cache) - 1) != 0)
-    {
-	tzset();
-	vim_strncpy((char_u *)tz_cache, (char_u *)tz, sizeof(tz_cache) - 1);
-    }
-# endif	// HAVE_TZSET
-    return localtime_r(timep, result);
-#else
-    return localtime(timep);
-#endif	// HAVE_LOCALTIME_R
-}
-
-/*
- * Replacement for ctime(), which is not safe to use.
- * Requires strftime(), otherwise returns "(unknown)".
- * If "thetime" is invalid returns "(invalid)".  Never returns NULL.
- * When "add_newline" is TRUE add a newline like ctime() does.
- * Uses a static buffer.
- */
-    char *
-get_ctime(time_t thetime, int add_newline)
-{
-    static char buf[50];
-#ifdef HAVE_STRFTIME
-    struct tm	tmval;
-    struct tm	*curtime;
-
-    curtime = vim_localtime(&thetime, &tmval);
-    // MSVC returns NULL for an invalid value of seconds.
-    if (curtime == NULL)
-	vim_strncpy((char_u *)buf, (char_u *)_("(Invalid)"), sizeof(buf) - 1);
-    else
-    {
-	(void)strftime(buf, sizeof(buf) - 1, _("%a %b %d %H:%M:%S %Y"),
-								    curtime);
-# ifdef MSWIN
-	if (enc_codepage >= 0 && (int)GetACP() != enc_codepage)
-	{
-	    char_u	*to_free = NULL;
-	    int		len;
-
-	    acp_to_enc((char_u *)buf, (int)strlen(buf), &to_free, &len);
-	    if (to_free != NULL)
-	    {
-		STRCPY(buf, to_free);
-		vim_free(to_free);
-	    }
-	}
-# endif
-    }
-#else
-    STRCPY(buf, "(unknown)");
-#endif
-    if (add_newline)
-	STRCAT(buf, "\n");
-    return buf;
-}
-
-/*
  * Give information about an existing swap file.
  * Returns timestamp (0 when unknown).
  */
@@ -2318,14 +2240,31 @@ swapfile_unchanged(char_u *fname)
 	ret = FALSE;
 
 #if defined(UNIX) || defined(MSWIN)
+    // Host name must be known and must equal the current host name, otherwise
+    // comparing pid is meaningless.
+    if (*(b0.b0_hname) == NUL)
+    {
+	ret = FALSE;
+    }
+    else
+    {
+	char_u	    hostname[B0_HNAME_SIZE];
+
+	mch_get_host_name(hostname, B0_HNAME_SIZE);
+	hostname[B0_HNAME_SIZE - 1] = NUL;
+	b0.b0_hname[B0_HNAME_SIZE - 1] = NUL; // in case of corruption
+	if (STRICMP(b0.b0_hname, hostname) != 0)
+	    ret = FALSE;
+    }
+
     // process must be known and not be running
     pid = char_to_long(b0.b0_pid);
     if (pid == 0L || mch_process_running(pid))
 	ret = FALSE;
 #endif
 
-    // TODO: Should we check if the swap file was created on the current
-    // system?  And the current user?
+    // We do not check the user, it should be irrelevant for whether the swap
+    // file is still useful.
 
     close(fd);
     return ret;
@@ -2706,6 +2645,9 @@ ml_line_alloced(void)
 }
 
 #ifdef FEAT_PROP_POPUP
+/*
+ * Add text properties that continue from the previous line.
+ */
     static void
 add_text_props_for_append(
 	    buf_T	*buf,
@@ -2720,7 +2662,7 @@ add_text_props_for_append(
     int		n;
     char_u	*props;
     int		new_len = 0;  // init for gcc
-    char_u	*new_line;
+    char_u	*new_line = NULL;
     textprop_T	prop;
 
     // Make two rounds:
@@ -2745,15 +2687,17 @@ add_text_props_for_append(
 	count = get_text_props(buf, lnum, &props, FALSE);
 	for (n = 0; n < count; ++n)
 	{
-	    mch_memmove(&prop, props + n * sizeof(textprop_T), sizeof(textprop_T));
+	    mch_memmove(&prop, props + n * sizeof(textprop_T),
+							   sizeof(textprop_T));
 	    if (prop.tp_flags & TP_FLAG_CONT_NEXT)
 	    {
 		if (round == 2)
 		{
 		    prop.tp_flags |= TP_FLAG_CONT_PREV;
 		    prop.tp_col = 1;
-		    prop.tp_len = *len;
-		    mch_memmove(new_line + *len + new_prop_count * sizeof(textprop_T), &prop, sizeof(textprop_T));
+		    prop.tp_len = *len;  // not exactly the right length
+		    mch_memmove(new_line + *len + new_prop_count
+			      * sizeof(textprop_T), &prop, sizeof(textprop_T));
 		}
 		++new_prop_count;
 	    }
@@ -2771,8 +2715,7 @@ ml_append_int(
     linenr_T	lnum,		// append after this line (can be 0)
     char_u	*line_arg,	// text of the new line
     colnr_T	len_arg,	// length of line, including NUL, or 0
-    int		newfile,	// flag, see above
-    int		mark)		// mark the new line
+    int		flags)		// ML_APPEND_ flags
 {
     char_u	*line = line_arg;
     colnr_T	len = len_arg;
@@ -2804,7 +2747,7 @@ ml_append_int(
 	len = (colnr_T)STRLEN(line) + 1;	// space needed for the text
 
 #ifdef FEAT_PROP_POPUP
-    if (curbuf->b_has_textprop && lnum > 0)
+    if (curbuf->b_has_textprop && lnum > 0 && !(flags & ML_APPEND_UNDO))
 	// Add text properties that continue from the previous line.
 	add_text_props_for_append(buf, lnum, &line, &len, &tofree);
 #endif
@@ -2903,14 +2846,14 @@ ml_append_int(
 	 * copy the text into the block
 	 */
 	mch_memmove((char *)dp + dp->db_index[db_idx + 1], line, (size_t)len);
-	if (mark)
+	if (flags & ML_APPEND_MARK)
 	    dp->db_index[db_idx + 1] |= DB_MARKED;
 
 	/*
 	 * Mark the block dirty.
 	 */
 	buf->b_ml.ml_flags |= ML_LOCKED_DIRTY;
-	if (!newfile)
+	if (!(flags & ML_APPEND_NEW))
 	    buf->b_ml.ml_flags |= ML_LOCKED_POS;
     }
     else	    // not enough space in data block
@@ -2979,7 +2922,8 @@ ml_append_int(
 	}
 
 	page_count = ((space_needed + HEADER_SIZE) + page_size - 1) / page_size;
-	if ((hp_new = ml_new_data(mfp, newfile, page_count)) == NULL)
+	if ((hp_new = ml_new_data(mfp, flags & ML_APPEND_NEW, page_count))
+								       == NULL)
 	{
 			// correct line counts in pointer blocks
 	    --(buf->b_ml.ml_locked_lineadd);
@@ -3015,7 +2959,7 @@ ml_append_int(
 	    dp_right->db_txt_start -= len;
 	    dp_right->db_free -= len + INDEX_SIZE;
 	    dp_right->db_index[0] = dp_right->db_txt_start;
-	    if (mark)
+	    if (flags & ML_APPEND_MARK)
 		dp_right->db_index[0] |= DB_MARKED;
 
 	    mch_memmove((char *)dp_right + dp_right->db_txt_start,
@@ -3056,7 +3000,7 @@ ml_append_int(
 	    dp_left->db_txt_start -= len;
 	    dp_left->db_free -= len + INDEX_SIZE;
 	    dp_left->db_index[line_count_left] = dp_left->db_txt_start;
-	    if (mark)
+	    if (flags & ML_APPEND_MARK)
 		dp_left->db_index[line_count_left] |= DB_MARKED;
 	    mch_memmove((char *)dp_left + dp_left->db_txt_start,
 							   line, (size_t)len);
@@ -3087,7 +3031,7 @@ ml_append_int(
 	 */
 	if (lines_moved || in_left)
 	    buf->b_ml.ml_flags |= ML_LOCKED_DIRTY;
-	if (!newfile && db_idx >= 0 && in_left)
+	if (!(flags & ML_APPEND_NEW) && db_idx >= 0 && in_left)
 	    buf->b_ml.ml_flags |= ML_LOCKED_POS;
 	mf_put(mfp, hp_new, TRUE, FALSE);
 
@@ -3295,7 +3239,7 @@ ml_append_flush(
     linenr_T	lnum,		// append after this line (can be 0)
     char_u	*line,		// text of the new line
     colnr_T	len,		// length of line, including NUL, or 0
-    int		newfile)	// flag, see above
+    int		flags)		// ML_APPEND_ flags
 {
     if (lnum > buf->b_ml.ml_line_count)
 	return FAIL;  // lnum out of range
@@ -3312,7 +3256,7 @@ ml_append_flush(
 	ml_flush_line(buf);
 #endif
 
-    return ml_append_int(buf, lnum, line, len, newfile, FALSE);
+    return ml_append_int(buf, lnum, line, len, flags);
 }
 
 /*
@@ -3320,7 +3264,7 @@ ml_append_flush(
  * "line" does not need to be allocated, but can't be another line in a
  * buffer, unlocking may make it invalid.
  *
- *   newfile: TRUE when starting to edit a new file, meaning that pe_old_lnum
+ * "newfile": TRUE when starting to edit a new file, meaning that pe_old_lnum
  *		will be set for recovery
  * Check: The caller of this function should probably also call
  * appended_lines().
@@ -3334,11 +3278,22 @@ ml_append(
     colnr_T	len,		// length of new line, including NUL, or 0
     int		newfile)	// flag, see above
 {
+    return ml_append_flags(lnum, line, len, newfile ? ML_APPEND_NEW : 0);
+}
+
+    int
+ml_append_flags(
+    linenr_T	lnum,		// append after this line (can be 0)
+    char_u	*line,		// text of the new line
+    colnr_T	len,		// length of new line, including NUL, or 0
+    int		flags)		// ML_APPEND_ values
+{
     // When starting up, we might still need to create the memfile
     if (curbuf->b_ml.ml_mfp == NULL && open_buffer(FALSE, NULL, 0) == FAIL)
 	return FAIL;
-    return ml_append_flush(curbuf, lnum, line, len, newfile);
+    return ml_append_flush(curbuf, lnum, line, len, flags);
 }
+
 
 #if defined(FEAT_SPELL) || defined(FEAT_QUICKFIX) || defined(PROTO)
 /*
@@ -3355,15 +3310,17 @@ ml_append_buf(
 {
     if (buf->b_ml.ml_mfp == NULL)
 	return FAIL;
-    return ml_append_flush(buf, lnum, line, len, newfile);
+    return ml_append_flush(buf, lnum, line, len, newfile ? ML_APPEND_NEW : 0);
 }
 #endif
 
 /*
- * Replace line lnum, with buffering, in current buffer.
+ * Replace line "lnum", with buffering, in current buffer.
  *
  * If "copy" is TRUE, make a copy of the line, otherwise the line has been
  * copied to allocated memory already.
+ * If "copy" is FALSE the "line" may be freed to add text properties!
+ * Do not use it after calling ml_replace().
  *
  * Check: The caller of this function should probably also call
  * changed_lines(), unless update_screen(NOT_VALID) is used.
@@ -3493,7 +3450,6 @@ adjust_text_props_for_delete(
     int		done_del;
     int		done_this;
     textprop_T	prop_del;
-    textprop_T	prop_this;
     bhdr_T	*hp;
     DATA_BL	*dp;
     int		idx;
@@ -3524,7 +3480,8 @@ adjust_text_props_for_delete(
 		if (idx == 0)		// first line in block, text at the end
 		    line_size = dp->db_txt_end - line_start;
 		else
-		    line_size = ((dp->db_index[idx - 1]) & DB_INDEX_MASK) - line_start;
+		    line_size = ((dp->db_index[idx - 1]) & DB_INDEX_MASK)
+								  - line_start;
 		text = (char_u *)dp + line_start;
 		textlen = STRLEN(text) + 1;
 		if ((long)textlen >= line_size)
@@ -3539,24 +3496,24 @@ adjust_text_props_for_delete(
 	    }
 
 	    found = FALSE;
-	    for (done_this = 0; done_this < this_props_len; done_this += sizeof(textprop_T))
+	    for (done_this = 0; done_this < this_props_len;
+					       done_this += sizeof(textprop_T))
 	    {
-		mch_memmove(&prop_this, text + textlen + done_del, sizeof(textprop_T));
-		if (prop_del.tp_id == prop_this.tp_id
+		int	    flag = above ? TP_FLAG_CONT_NEXT
+							   : TP_FLAG_CONT_PREV;
+		textprop_T  prop_this;
+
+		mch_memmove(&prop_this, text + textlen + done_del,
+							   sizeof(textprop_T));
+		if ((prop_this.tp_flags & flag)
+			&& prop_del.tp_id == prop_this.tp_id
 			&& prop_del.tp_type == prop_this.tp_type)
 		{
-		    int flag = above ? TP_FLAG_CONT_NEXT : TP_FLAG_CONT_PREV;
-
 		    found = TRUE;
-		    if (prop_this.tp_flags & flag)
-		    {
-			prop_this.tp_flags &= ~flag;
-			mch_memmove(text + textlen + done_del, &prop_this, sizeof(textprop_T));
-		    }
-		    else if (above)
-			internal_error("text property above deleted line does not continue");
-		    else
-			internal_error("text property below deleted line does not continue");
+		    prop_this.tp_flags &= ~flag;
+		    mch_memmove(text + textlen + done_del, &prop_this,
+							   sizeof(textprop_T));
+		    break;
 		}
 	    }
 	    if (!found)
@@ -3575,31 +3532,13 @@ adjust_text_props_for_delete(
 
 /*
  * Delete line "lnum" in the current buffer.
- * When "message" is TRUE may give a "No lines in buffer" message.
- *
- * Check: The caller of this function should probably also call
- * deleted_lines() after this.
+ * When "flags" has ML_DEL_MESSAGE may give a "No lines in buffer" message.
+ * When "flags" has ML_DEL_UNDO this is called from undo.
  *
  * return FAIL for failure, OK otherwise
  */
-    int
-ml_delete(linenr_T lnum, int message)
-{
-    ml_flush_line(curbuf);
-    if (lnum < 1 || lnum > curbuf->b_ml.ml_line_count)
-	return FAIL;
-
-#ifdef FEAT_EVAL
-    // When inserting above recorded changes: flush the changes before changing
-    // the text.
-    may_invoke_listeners(curbuf, lnum, lnum + 1, -1);
-#endif
-
-    return ml_delete_int(curbuf, lnum, message);
-}
-
     static int
-ml_delete_int(buf_T *buf, linenr_T lnum, int message)
+ml_delete_int(buf_T *buf, linenr_T lnum, int flags)
 {
     bhdr_T	*hp;
     memfile_T	*mfp;
@@ -3627,7 +3566,7 @@ ml_delete_int(buf_T *buf, linenr_T lnum, int message)
  */
     if (buf->b_ml.ml_line_count == 1)	    // file becomes empty
     {
-	if (message
+	if ((flags & ML_DEL_MESSAGE)
 #ifdef FEAT_NETBEANS_INTG
 		&& !netbeansSuppressNoLines
 #endif
@@ -3674,7 +3613,7 @@ ml_delete_int(buf_T *buf, linenr_T lnum, int message)
 #ifdef FEAT_PROP_POPUP
     // If there are text properties, make a copy, so that we can update
     // properties in preceding and following lines.
-    if (buf->b_has_textprop)
+    if (buf->b_has_textprop && !(flags & ML_DEL_UNDO))
     {
 	size_t	textlen = STRLEN((char_u *)dp + line_start) + 1;
 
@@ -3784,6 +3723,40 @@ theend:
     vim_free(textprop_save);
 #endif
     return ret;
+}
+
+/*
+ * Delete line "lnum" in the current buffer.
+ * When "message" is TRUE may give a "No lines in buffer" message.
+ *
+ * Check: The caller of this function should probably also call
+ * deleted_lines() after this.
+ *
+ * return FAIL for failure, OK otherwise
+ */
+    int
+ml_delete(linenr_T lnum)
+{
+    return ml_delete_flags(lnum, 0);
+}
+
+/*
+ * Like ml_delete() but using flags (see ml_delete_int()).
+ */
+    int
+ml_delete_flags(linenr_T lnum, int flags)
+{
+    ml_flush_line(curbuf);
+    if (lnum < 1 || lnum > curbuf->b_ml.ml_line_count)
+	return FAIL;
+
+#ifdef FEAT_EVAL
+    // When inserting above recorded changes: flush the changes before changing
+    // the text.
+    may_invoke_listeners(curbuf, lnum, lnum + 1, -1);
+#endif
+
+    return ml_delete_int(curbuf, lnum, flags);
 }
 
 /*
@@ -3993,9 +3966,9 @@ ml_flush_line(buf_T *buf)
 		 * Don't forget to copy the mark!
 		 */
 		// How about handling errors???
-		(void)ml_append_int(buf, lnum, new_line, new_len, FALSE,
-					     (dp->db_index[idx] & DB_MARKED));
-		(void)ml_delete_int(buf, lnum, FALSE);
+		(void)ml_append_int(buf, lnum, new_line, new_len,
+			 (dp->db_index[idx] & DB_MARKED) ? ML_APPEND_MARK : 0);
+		(void)ml_delete_int(buf, lnum, 0);
 	    }
 	}
 	vim_free(new_line);
@@ -4423,6 +4396,11 @@ makeswapname(
     char_u	*fname_res = fname;
 #ifdef HAVE_READLINK
     char_u	fname_buf[MAXPATHL];
+
+    // Expand symlink in the file name, so that we put the swap file with the
+    // actual file instead of with the symlink.
+    if (resolve_symlink(fname, fname_buf) == OK)
+	fname_res = fname_buf;
 #endif
 
 #if defined(UNIX) || defined(MSWIN)  // Need _very_ long file names
@@ -4432,20 +4410,13 @@ makeswapname(
     if (after_pathsep(dir_name, s) && len > 1 && s[-1] == s[-2])
     {			       // Ends with '//', Use Full path
 	r = NULL;
-	if ((s = make_percent_swname(dir_name, fname)) != NULL)
+	if ((s = make_percent_swname(dir_name, fname_res)) != NULL)
 	{
 	    r = modname(s, (char_u *)".swp", FALSE);
 	    vim_free(s);
 	}
 	return r;
     }
-#endif
-
-#ifdef HAVE_READLINK
-    // Expand symlink in the file name, so that we put the swap file with the
-    // actual file instead of with the symlink.
-    if (resolve_symlink(fname, fname_buf) == OK)
-	fname_res = fname_buf;
 #endif
 
     r = buf_modname(
@@ -5505,8 +5476,7 @@ ml_updatechunk(
 	    chunksize_T *t_chunksize = buf->b_ml.ml_chunksize;
 
 	    buf->b_ml.ml_numchunks = buf->b_ml.ml_numchunks * 3 / 2;
-	    buf->b_ml.ml_chunksize = (chunksize_T *)
-		vim_realloc(buf->b_ml.ml_chunksize,
+	    buf->b_ml.ml_chunksize = vim_realloc(buf->b_ml.ml_chunksize,
 			    sizeof(chunksize_T) * buf->b_ml.ml_numchunks);
 	    if (buf->b_ml.ml_chunksize == NULL)
 	    {
@@ -5592,7 +5562,7 @@ ml_updatechunk(
 		     && buf->b_ml.ml_line_count - line <= 1)
 	{
 	    /*
-	     * We are in the last chunk and it is cheap to crate a new one
+	     * We are in the last chunk and it is cheap to create a new one
 	     * after this. Do it now to avoid the loop above later on
 	     */
 	    curchnk = buf->b_ml.ml_chunksize + curix + 1;

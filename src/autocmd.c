@@ -55,9 +55,7 @@ typedef struct AutoCmd
     char	    once;		// "One shot": removed after execution
     char	    nested;		// If autocommands nest here.
     char	    last;		// last command in list
-#ifdef FEAT_EVAL
     sctx_T	    script_ctx;		// script context where defined
-#endif
     struct AutoCmd  *next;		// next AutoCmd in list
 } AutoCmd;
 
@@ -149,6 +147,7 @@ static struct event_name
     {"InsertChange",	EVENT_INSERTCHANGE},
     {"InsertEnter",	EVENT_INSERTENTER},
     {"InsertLeave",	EVENT_INSERTLEAVE},
+    {"InsertLeavePre",	EVENT_INSERTLEAVEPRE},
     {"InsertCharPre",	EVENT_INSERTCHARPRE},
     {"MenuPopup",	EVENT_MENUPOPUP},
     {"OptionSet",	EVENT_OPTIONSET},
@@ -161,6 +160,7 @@ static struct event_name
     {"SessionLoadPost",	EVENT_SESSIONLOADPOST},
     {"ShellCmdPost",	EVENT_SHELLCMDPOST},
     {"ShellFilterPost",	EVENT_SHELLFILTERPOST},
+    {"SigUSR1",		EVENT_SIGUSR1},
     {"SourceCmd",	EVENT_SOURCECMD},
     {"SourcePre",	EVENT_SOURCEPRE},
     {"SourcePost",	EVENT_SOURCEPOST},
@@ -189,6 +189,8 @@ static struct event_name
     {"WinLeave",	EVENT_WINLEAVE},
     {"VimResized",	EVENT_VIMRESIZED},
     {"TextYankPost",	EVENT_TEXTYANKPOST},
+    {"VimSuspend",	EVENT_VIMSUSPEND},
+    {"VimResume",	EVENT_VIMRESUME},
     {NULL,		(event_T)0}
 };
 
@@ -234,6 +236,10 @@ struct AutoPatCmd_S
 };
 
 static AutoPatCmd *active_apc_list = NULL; // stack of active autocommands
+
+// Macro to loop over all the patterns for an autocmd event
+#define FOR_ALL_AUTOCMD_PATTERNS(event, ap) \
+    for ((ap) = first_autopat[(int)(event)]; (ap) != NULL; (ap) = (ap)->next)
 
 /*
  * augroups stores a list of autocmd group names.
@@ -456,7 +462,7 @@ aubuflocal_remove(buf_T *buf)
     for (event = (event_T)0; (int)event < (int)NUM_EVENTS;
 					    event = (event_T)((int)event + 1))
 	// loop over all autocommand patterns
-	for (ap = first_autopat[(int)event]; ap != NULL; ap = ap->next)
+	FOR_ALL_AUTOCMD_PATTERNS(event, ap)
 	    if (ap->buflocal_nr == buf->b_fnum)
 	    {
 		au_remove_pat(ap);
@@ -519,7 +525,7 @@ au_del_group(char_u *name)
 	for (event = (event_T)0; (int)event < (int)NUM_EVENTS;
 					    event = (event_T)((int)event + 1))
 	{
-	    for (ap = first_autopat[(int)event]; ap != NULL; ap = ap->next)
+	    FOR_ALL_AUTOCMD_PATTERNS(event, ap)
 		if (ap->group == i && ap->pat != NULL)
 		{
 		    give_warning((char_u *)_("W19: Deleting augroup that is still in use"), TRUE);
@@ -759,7 +765,7 @@ au_event_disable(char *what)
     save_ei = vim_strsave(p_ei);
     if (save_ei != NULL)
     {
-	new_ei = vim_strnsave(p_ei, (int)(STRLEN(p_ei) + STRLEN(what)));
+	new_ei = vim_strnsave(p_ei, STRLEN(p_ei) + STRLEN(what));
 	if (new_ei != NULL)
 	{
 	    if (*what == ',' && *p_ei == NUL)
@@ -987,7 +993,7 @@ au_get_grouparg(char_u **argp)
 	;
     if (p > arg)
     {
-	group_name = vim_strnsave(arg, (int)(p - arg));
+	group_name = vim_strnsave(arg, p - arg);
 	if (group_name == NULL)		// out of memory
 	    return AUGROUP_ERROR;
 	group = au_find_group(group_name);
@@ -1041,7 +1047,7 @@ do_autocmd_event(
      */
     if (*pat == NUL)
     {
-	for (ap = first_autopat[(int)event]; ap != NULL; ap = ap->next)
+	FOR_ALL_AUTOCMD_PATTERNS(event, ap)
 	{
 	    if (forceit)  // delete the AutoPat, if it's in the current group
 	    {
@@ -1241,8 +1247,8 @@ do_autocmd_event(
 	    if (ac == NULL)
 		return FAIL;
 	    ac->cmd = vim_strsave(cmd);
-#ifdef FEAT_EVAL
 	    ac->script_ctx = current_sctx;
+#ifdef FEAT_EVAL
 	    ac->script_ctx.sc_lnum += SOURCING_LNUM;
 #endif
 	    if (ac->cmd == NULL)
@@ -1427,9 +1433,9 @@ aucmd_prepbuf(
 	// window.  Expect a few side effects...
 	win = curwin;
 
-    aco->save_curwin = curwin;
+    aco->save_curwin_id = curwin->w_id;
     aco->save_curbuf = curbuf;
-    aco->save_prevwin = prevwin;
+    aco->save_prevwin_id = prevwin == NULL ? 0 : prevwin->w_id;
     if (win != NULL)
     {
 	// There is a window for "buf" in the current tab page, make it the
@@ -1475,7 +1481,7 @@ aucmd_prepbuf(
 	curwin = aucmd_win;
     }
     curbuf = buf;
-    aco->new_curwin = curwin;
+    aco->new_curwin_id = curwin->w_id;
     set_bufref(&aco->new_curbuf, curbuf);
 }
 
@@ -1487,7 +1493,8 @@ aucmd_prepbuf(
 aucmd_restbuf(
     aco_save_T	*aco)		// structure holding saved values
 {
-    int dummy;
+    int	    dummy;
+    win_T   *save_curwin;
 
     if (aco->use_aucmd_win)
     {
@@ -1527,19 +1534,22 @@ win_found:
 	(void)win_comp_pos();   // recompute window positions
 	unblock_autocmds();
 
-	if (win_valid(aco->save_curwin))
-	    curwin = aco->save_curwin;
+	save_curwin = win_find_by_id(aco->save_curwin_id);
+	if (save_curwin != NULL)
+	    curwin = save_curwin;
 	else
 	    // Hmm, original window disappeared.  Just use the first one.
 	    curwin = firstwin;
-	if (win_valid(aco->save_prevwin))
-	    prevwin = aco->save_prevwin;
+	curbuf = curwin->w_buffer;
+#ifdef FEAT_JOB_CHANNEL
+	// May need to restore insert mode for a prompt buffer.
+	entering_window(curwin);
+#endif
+	prevwin = win_find_by_id(aco->save_prevwin_id);
 #ifdef FEAT_EVAL
 	vars_clear(&aucmd_win->w_vars->dv_hashtab);  // free all w: variables
 	hash_init(&aucmd_win->w_vars->dv_hashtab);   // re-use the hashtab
 #endif
-	curbuf = curwin->w_buffer;
-
 	vim_free(globaldir);
 	globaldir = aco->globaldir;
 
@@ -1561,13 +1571,15 @@ win_found:
     }
     else
     {
-	// restore curwin
-	if (win_valid(aco->save_curwin))
+	// Restore curwin.  Use the window ID, a window may have been closed
+	// and the memory re-used for another one.
+	save_curwin = win_find_by_id(aco->save_curwin_id);
+	if (save_curwin != NULL)
 	{
 	    // Restore the buffer which was previously edited by curwin, if
 	    // it was changed, we are still the same window and the buffer is
 	    // valid.
-	    if (curwin == aco->new_curwin
+	    if (curwin->w_id == aco->new_curwin_id
 		    && curbuf != aco->new_curbuf.br_buf
 		    && bufref_valid(&aco->new_curbuf)
 		    && aco->new_curbuf.br_buf->b_ml.ml_mfp != NULL)
@@ -1582,10 +1594,9 @@ win_found:
 		++curbuf->b_nwindows;
 	    }
 
-	    curwin = aco->save_curwin;
+	    curwin = save_curwin;
 	    curbuf = curwin->w_buffer;
-	    if (win_valid(aco->save_prevwin))
-		prevwin = aco->save_prevwin;
+	    prevwin = win_find_by_id(aco->save_prevwin_id);
 	    // In case the autocommand moves the cursor to a position that
 	    // does not exist in curbuf.
 	    check_cursor();
@@ -1755,15 +1766,6 @@ has_cmdundefined(void)
     return (first_autopat[(int)EVENT_CMDUNDEFINED] != NULL);
 }
 
-/*
- * Return TRUE when there is an FuncUndefined autocommand defined.
- */
-    int
-has_funcundefined(void)
-{
-    return (first_autopat[(int)EVENT_FUNCUNDEFINED] != NULL);
-}
-
 #if defined(FEAT_EVAL) || defined(PROTO)
 /*
  * Return TRUE when there is a TextYankPost autocommand defined.
@@ -1815,8 +1817,8 @@ apply_autocmds_group(
     static int	nesting = 0;
     AutoPatCmd	patcmd;
     AutoPat	*ap;
-#ifdef FEAT_EVAL
     sctx_T	save_current_sctx;
+#ifdef FEAT_EVAL
     funccal_entry_T funccal_entry;
     char_u	*save_cmdarg;
     long	save_cmdbang;
@@ -2025,9 +2027,9 @@ apply_autocmds_group(
     estack_push(ETYPE_AUCMD, NULL, 0);
     ESTACK_CHECK_SETUP
 
-#ifdef FEAT_EVAL
     save_current_sctx = current_sctx;
 
+#ifdef FEAT_EVAL
 # ifdef FEAT_PROFILE
     if (do_profiling == PROF_YES)
 	prof_child_enter(&wait_time); // doesn't count for the caller itself
@@ -2134,8 +2136,8 @@ apply_autocmds_group(
     autocmd_fname_full = save_autocmd_fname_full;
     autocmd_bufnr = save_autocmd_bufnr;
     autocmd_match = save_autocmd_match;
-#ifdef FEAT_EVAL
     current_sctx = save_current_sctx;
+#ifdef FEAT_EVAL
     restore_funccal();
 # ifdef FEAT_PROFILE
     if (do_profiling == PROF_YES)
@@ -2314,7 +2316,11 @@ auto_next_pat(
  * Returns allocated string, or NULL for end of autocommands.
  */
     char_u *
-getnextac(int c UNUSED, void *cookie, int indent UNUSED, int do_concat UNUSED)
+getnextac(
+	int c UNUSED,
+	void *cookie,
+	int indent UNUSED,
+	getline_opt_T options UNUSED)
 {
     AutoPatCmd	    *acp = (AutoPatCmd *)cookie;
     char_u	    *retval;
@@ -2362,9 +2368,7 @@ getnextac(int c UNUSED, void *cookie, int indent UNUSED, int do_concat UNUSED)
     if (ac->once)
 	au_del_cmd(ac);
     autocmd_nested = ac->nested;
-#ifdef FEAT_EVAL
     current_sctx = ac->script_ctx;
-#endif
     if (ac->last)
 	acp->nextcmd = NULL;
     else
@@ -2400,7 +2404,7 @@ has_autocmd(event_T event, char_u *sfname, buf_T *buf)
     forward_slash(fname);
 #endif
 
-    for (ap = first_autopat[(int)event]; ap != NULL; ap = ap->next)
+    FOR_ALL_AUTOCMD_PATTERNS(event, ap)
 	if (ap->pat != NULL && ap->cmds != NULL
 	      && (ap->buflocal_nr == 0
 		? match_file_pat(NULL, &ap->reg_prog,

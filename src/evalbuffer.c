@@ -68,7 +68,7 @@ buflist_find_by_name(char_u *name, int curtab_only)
     save_magic = p_magic;
     p_magic = TRUE;
     save_cpo = p_cpo;
-    p_cpo = (char_u *)"";
+    p_cpo = empty_option;
 
     buf = buflist_findnr(buflist_findpat(name, name + STRLEN(name),
 						    TRUE, FALSE, curtab_only));
@@ -117,7 +117,7 @@ find_win_for_curbuf(void)
 {
     wininfo_T *wip;
 
-    for (wip = curbuf->b_wininfo; wip != NULL; wip = wip->wi_next)
+    FOR_ALL_BUF_WININFO(curbuf, wip)
     {
 	if (wip->wi_win != NULL)
 	{
@@ -176,7 +176,14 @@ set_buffer_lines(
     if (lines->v_type == VAR_LIST)
     {
 	l = lines->vval.v_list;
-	range_list_materialize(l);
+	if (l == NULL || list_len(l) == 0)
+	{
+	    // set proper return code
+	    if (lnum > curbuf->b_ml.ml_line_count)
+		rettv->vval.v_number = 1;	// FAIL
+	    goto done;
+	}
+	CHECK_LIST_MATERIALIZE(l);
 	li = l->lv_first;
     }
     else
@@ -251,6 +258,7 @@ set_buffer_lines(
 	update_topline();
     }
 
+done:
     if (!is_curbuf)
     {
 	curbuf = curbuf_save;
@@ -351,16 +359,12 @@ f_bufloaded(typval_T *argvars, typval_T *rettv)
 f_bufname(typval_T *argvars, typval_T *rettv)
 {
     buf_T	*buf;
+    typval_T	*tv = &argvars[0];
 
-    if (argvars[0].v_type == VAR_UNKNOWN)
+    if (tv->v_type == VAR_UNKNOWN)
 	buf = curbuf;
     else
-    {
-	(void)tv_get_number(&argvars[0]);	// issue errmsg if type error
-	++emsg_off;
-	buf = tv_get_buf(&argvars[0], FALSE);
-	--emsg_off;
-    }
+	buf = tv_get_buf_from_arg(tv);
     rettv->v_type = VAR_STRING;
     if (buf != NULL && buf->b_fname != NULL)
 	rettv->vval.v_string = vim_strsave(buf->b_fname);
@@ -381,18 +385,13 @@ f_bufnr(typval_T *argvars, typval_T *rettv)
     if (argvars[0].v_type == VAR_UNKNOWN)
 	buf = curbuf;
     else
-    {
-	(void)tv_get_number(&argvars[0]);    // issue errmsg if type error
-	++emsg_off;
-	buf = tv_get_buf(&argvars[0], FALSE);
-	--emsg_off;
-    }
+	buf = tv_get_buf_from_arg(&argvars[0]);
 
     // If the buffer isn't found and the second argument is not zero create a
     // new buffer.
     if (buf == NULL
 	    && argvars[1].v_type != VAR_UNKNOWN
-	    && tv_get_number_chk(&argvars[1], &error) != 0
+	    && tv_get_bool_chk(&argvars[1], &error) != 0
 	    && !error
 	    && (name = tv_get_string_chk(&argvars[0])) != NULL
 	    && !error)
@@ -411,9 +410,7 @@ buf_win_common(typval_T *argvars, typval_T *rettv, int get_nr)
     int		winnr = 0;
     buf_T	*buf;
 
-    (void)tv_get_number(&argvars[0]);	    // issue errmsg if type error
-    ++emsg_off;
-    buf = tv_get_buf(&argvars[0], TRUE);
+    buf = tv_get_buf_from_arg(&argvars[0]);
     FOR_ALL_WINDOWS(wp)
     {
 	++winnr;
@@ -421,7 +418,6 @@ buf_win_common(typval_T *argvars, typval_T *rettv, int get_nr)
 	    break;
     }
     rettv->vval.v_number = (wp != NULL ? (get_nr ? winnr : wp->w_id) : -1);
-    --emsg_off;
 }
 
 /*
@@ -505,7 +501,7 @@ f_deletebufline(typval_T *argvars, typval_T *rettv)
     }
 
     for (lnum = first; lnum <= last; ++lnum)
-	ml_delete(first, TRUE);
+	ml_delete_flags(first, ML_DEL_MESSAGE);
 
     FOR_ALL_TAB_WINDOWS(tp, wp)
 	if (wp->w_buffer == buf)
@@ -572,11 +568,11 @@ get_buffer_info(buf_T *buf)
     windows = list_alloc();
     if (windows != NULL)
     {
-	for (wp = first_popupwin; wp != NULL; wp = wp->w_next)
+	FOR_ALL_POPUPWINS(wp)
 	    if (wp->w_buffer == buf)
 		list_append_number(windows, (varnumber_T)wp->w_id);
 	FOR_ALL_TABPAGES(tp)
-	    for (wp = tp->tp_first_popupwin; wp != NULL; wp = wp->w_next)
+	    FOR_ALL_POPUPWINS_IN_TAB(tp, wp)
 		if (wp->w_buffer == buf)
 		    list_append_number(windows, (varnumber_T)wp->w_id);
 
@@ -628,30 +624,17 @@ f_getbufinfo(typval_T *argvars, typval_T *rettv)
 
 	if (sel_d != NULL)
 	{
-	    dictitem_T	*di;
-
 	    filtered = TRUE;
-
-	    di = dict_find(sel_d, (char_u *)"buflisted", -1);
-	    if (di != NULL && tv_get_number(&di->di_tv))
-		sel_buflisted = TRUE;
-
-	    di = dict_find(sel_d, (char_u *)"bufloaded", -1);
-	    if (di != NULL && tv_get_number(&di->di_tv))
-		sel_bufloaded = TRUE;
-
-	    di = dict_find(sel_d, (char_u *)"bufmodified", -1);
-	    if (di != NULL && tv_get_number(&di->di_tv))
-		sel_bufmodified = TRUE;
+	    sel_buflisted = dict_get_bool(sel_d, (char_u *)"buflisted", FALSE);
+	    sel_bufloaded = dict_get_bool(sel_d, (char_u *)"bufloaded", FALSE);
+	    sel_bufmodified = dict_get_bool(sel_d, (char_u *)"bufmodified",
+									FALSE);
 	}
     }
     else if (argvars[0].v_type != VAR_UNKNOWN)
     {
 	// Information about one buffer.  Argument specifies the buffer
-	(void)tv_get_number(&argvars[0]);   // issue errmsg if type error
-	++emsg_off;
-	argbuf = tv_get_buf(&argvars[0], FALSE);
-	--emsg_off;
+	argbuf = tv_get_buf_from_arg(&argvars[0]);
 	if (argbuf == NULL)
 	    return;
     }
@@ -734,22 +717,27 @@ get_buffer_lines(
     void
 f_getbufline(typval_T *argvars, typval_T *rettv)
 {
-    linenr_T	lnum;
-    linenr_T	end;
+    linenr_T	lnum = 1;
+    linenr_T	end = 1;
     buf_T	*buf;
 
-    (void)tv_get_number(&argvars[0]);	    // issue errmsg if type error
-    ++emsg_off;
-    buf = tv_get_buf(&argvars[0], FALSE);
-    --emsg_off;
-
-    lnum = tv_get_lnum_buf(&argvars[1], buf);
-    if (argvars[2].v_type == VAR_UNKNOWN)
-	end = lnum;
-    else
-	end = tv_get_lnum_buf(&argvars[2], buf);
+    buf = tv_get_buf_from_arg(&argvars[0]);
+    if (buf != NULL)
+    {
+	lnum = tv_get_lnum_buf(&argvars[1], buf);
+	if (argvars[2].v_type == VAR_UNKNOWN)
+	    end = lnum;
+	else
+	    end = tv_get_lnum_buf(&argvars[2], buf);
+    }
 
     get_buffer_lines(buf, lnum, end, TRUE, rettv);
+}
+
+    type_T *
+ret_f_getline(int argcount, type_T **argtypes UNUSED)
+{
+    return argcount == 1 ? &t_string : &t_list_string;
 }
 
 /*
@@ -819,6 +807,9 @@ f_setline(typval_T *argvars, typval_T *rettv)
 switch_buffer(bufref_T *save_curbuf, buf_T *buf)
 {
     block_autocmds();
+#ifdef FEAT_FOLDING
+    ++disable_fold_update;
+#endif
     set_bufref(save_curbuf, curbuf);
     --curbuf->b_nwindows;
     curbuf = buf;
@@ -833,6 +824,9 @@ switch_buffer(bufref_T *save_curbuf, buf_T *buf)
 restore_buffer(bufref_T *save_curbuf)
 {
     unblock_autocmds();
+#ifdef FEAT_FOLDING
+    --disable_fold_update;
+#endif
     // Check for valid buffer, just in case.
     if (bufref_valid(save_curbuf))
     {

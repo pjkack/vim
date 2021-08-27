@@ -132,6 +132,18 @@ static u32 bore_strndup(bore_t* b, const char* s, size_t len)
     return p - (char*)b->data_alloc.base;
 }
 
+static int bore_str_match_len(const char* target, const char* candidate)
+{
+    int len = 0;
+    while (*target && *candidate && (TOLOWER_LOC(*target) == TOLOWER_LOC(*candidate)))
+    {
+        ++target;
+        ++candidate;
+        ++len;
+    }
+    return len;
+}
+
 static int bore_str_match_score(const char* target, const char* candidate)
 {
     int score = 0;
@@ -573,9 +585,9 @@ static int bore_find_filename(void* ctx, const void* vx, const void* vy)
     char* x_path = (char*)vx;
     bore_file_t* y = (bore_file_t*)vy;
     const char* y_path = bore_str(b, y->file);
-    const int i = bore_str_match_score(x_path, y_path);
-    BOOL xi_is_file = !strchr(x_path + i, '\\');
-    BOOL yi_is_file = !strchr(y_path + i, '\\');
+    const int i = bore_str_match_len(x_path, y_path);
+    BOOL xi_is_file = x_path[i] == '\0' || !strchr(x_path + i, '\\');
+    BOOL yi_is_file = y_path[i] == '\0' || !strchr(y_path + i, '\\');
     // group-directories-first
     if (xi_is_file ^ yi_is_file)
         return yi_is_file - xi_is_file;
@@ -1001,9 +1013,6 @@ static void bore_load_sln(const char* path)
     bore_t* b = (bore_t*)alloc(sizeof(bore_t));
     memset(b, 0, sizeof(bore_t));
 
-    bore_free(g_bore);
-    g_bore = 0;
-
     bore_prealloc(&b->data_alloc, 8*1024*1024);
     bore_prealloc(&b->file_alloc, sizeof(bore_file_t)*64*1024);
     bore_prealloc(&b->proj_alloc, sizeof(bore_proj_t)*256);
@@ -1026,7 +1035,10 @@ static void bore_load_sln(const char* path)
     do_cmdline_cmd(buf);
     --msg_silent;
 
-    serverSetName(bore_str(b, b->sln_name));
+    if (!g_bore || STRICMP(bore_str(g_bore, g_bore->sln_name), bore_str(b, b->sln_name)))
+    {
+        serverSetName(bore_str(b, b->sln_name));
+    }
 
     bore_load_ini(&b->ini);
 
@@ -1084,6 +1096,7 @@ static void bore_load_sln(const char* path)
 
     bore_set_proj(b, -1);
 
+    bore_free(g_bore);
     g_bore = b;
     return;
 
@@ -1311,7 +1324,7 @@ static void bore_show_borebuf(bore_t* b, const char* filename, int minheight, co
 #endif
                     );
 
-            if (!cmdmod.keepalt)
+            if ((cmdmod.cmod_flags & CMOD_KEEPALT) == 0)
                 curwin->w_alt_fnum = alt_fnum;
             empty_fnum = curbuf->b_fnum;
 
@@ -1343,7 +1356,7 @@ static void bore_show_borebuf(bore_t* b, const char* filename, int minheight, co
     }
 
     /* keep the previous alternate file */
-    if (alt_fnum != 0 && curwin->w_alt_fnum == empty_fnum && !cmdmod.keepalt)
+    if (alt_fnum != 0 && curwin->w_alt_fnum == empty_fnum && ((cmdmod.cmod_flags & CMOD_KEEPALT) == 0))
         curwin->w_alt_fnum = alt_fnum;
 
     return;

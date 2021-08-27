@@ -348,6 +348,39 @@
     <ClCompile Include="vim9script.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="typval.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="time.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="help.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="textformat.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="job.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="locale.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="match.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="clientserver.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="vim9type.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="clipboard.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="textobject.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="bvim.rc">
@@ -661,6 +694,162 @@
     <None Include="proto\vim9script.pro">
       <Filter>Proto Files</Filter>
     </None>
+    <None Include="proto\arglist.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\change.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\typval.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\time.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\help.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\textformat.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\job.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\locale.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\match.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\clientserver.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\vim9type.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\clipboard.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\textobject.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\autocmd.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\blob.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\bufwrite.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\cindent.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\cmdexpand.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\cmdhist.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\crypt.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\crypt_zip.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\debugger.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\drawline.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\drawscreen.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\evalbuffer.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\evalfunc.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\filepath.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\findfile.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\gui_gtk_gresources.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\gui_haiku.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\gui_xim.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\highlight.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\indent.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\insexpand.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\map.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\mouse.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\optionstr.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\popupmenu.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\popupwin.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\profiler.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\quickfix.pro.orig">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\register.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\scriptfile.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\session.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\sign.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\sound.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\spellsuggest.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\testing.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\textprop.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\usercmd.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\viminfo.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\winclip.pro">
+      <Filter>Proto Files</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="arabic.h">
@@ -829,6 +1018,24 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="vim9.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="alloc.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="errors.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="iscygpty.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="optiondefs.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="protodef.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="spell.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

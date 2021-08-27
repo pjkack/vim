@@ -1,5 +1,7 @@
 " Tests for multi-line regexps with ":s".
 
+source shared.vim
+
 func Test_multiline_subst()
   enew!
   call append(0, ["1 aa",
@@ -233,12 +235,18 @@ func Test_substitute_errors()
 
   call assert_fails('s/FOO/bar/', 'E486:')
   call assert_fails('s/foo/bar/@', 'E488:')
-  call assert_fails('s/\(/bar/', 'E476:')
+  call assert_fails('s/\(/bar/', 'E54:')
   call assert_fails('s afooabara', 'E146:')
   call assert_fails('s\\a', 'E10:')
 
   setl nomodifiable
   call assert_fails('s/foo/bar/', 'E21:')
+
+  call assert_fails("let s=substitute([], 'a', 'A', 'g')", 'E730:')
+  call assert_fails("let s=substitute('abcda', [], 'A', 'g')", 'E730:')
+  call assert_fails("let s=substitute('abcda', 'a', [], 'g')", 'E730:')
+  call assert_fails("let s=substitute('abcda', 'a', 'A', [])", 'E730:')
+  call assert_fails("let s=substitute('abc', '\\%(', 'A', 'g')", 'E53:')
 
   bwipe!
 endfunc
@@ -275,6 +283,9 @@ func Test_sub_replace_1()
   call assert_equal("x\<C-M>x", substitute('xXx', 'X', "\r", ''))
   call assert_equal("YyyY", substitute('Y', 'Y', '\L\uyYy\l\EY', ''))
   call assert_equal("zZZz", substitute('Z', 'Z', '\U\lZzZ\u\Ez', ''))
+  " \v or \V after $
+  call assert_equal('abxx', substitute('abcd', 'xy$\v|cd$', 'xx', ''))
+  call assert_equal('abxx', substitute('abcd', 'xy$\V\|cd\$', 'xx', ''))
 endfunc
 
 func Test_sub_replace_2()
@@ -439,7 +450,7 @@ func Test_substitute_partial()
 
    " 20 arguments plus one is too many
    let Replacer = function('SubReplacer20', repeat(['foo'], 20))
-   call assert_fails("call substitute('123', '2', Replacer, 'g')", 'E118')
+   call assert_fails("call substitute('123', '2', Replacer, 'g')", 'E118:')
 endfunc
 
 " Tests for *sub-replace-special* and *sub-replace-expression* on :substitute.
@@ -622,7 +633,7 @@ func Test_sub_cmd_7()
   call Run_SubCmd_Tests(tests)
 
   exe "normal oQ\nQ\<Esc>k"
-  call assert_fails('s/Q[^\n]Q/\=submatch(0)."foobar"/', 'E486')
+  call assert_fails('s/Q[^\n]Q/\=submatch(0)."foobar"/', 'E486:')
   enew!
 endfunc
 
@@ -800,6 +811,118 @@ func Test_sub_expand_text()
   call setline(1, 'abcabcabcabcabcabcabcabc')
   s/b/\=repeat('B', 10)/g
   call assert_equal(repeat('aBBBBBBBBBBc', 8), getline(1))
+  close!
+endfunc
+
+" Test for command failures when the last substitute pattern is not set.
+func Test_sub_with_no_last_pat()
+  let lines =<< trim [SCRIPT]
+    call assert_fails('~', 'E33:')
+    call assert_fails('s//abc/g', 'E35:')
+    call assert_fails('s\/bar', 'E35:')
+    call assert_fails('s\&bar&', 'E33:')
+    call writefile(v:errors, 'Xresult')
+    qall!
+  [SCRIPT]
+  call writefile(lines, 'Xscript')
+  if RunVim([], [], '--clean -S Xscript')
+    call assert_equal([], readfile('Xresult'))
+  endif
+
+  let lines =<< trim [SCRIPT]
+    set cpo+=/
+    call assert_fails('s/abc/%/', 'E33:')
+    call writefile(v:errors, 'Xresult')
+    qall!
+  [SCRIPT]
+  call writefile(lines, 'Xscript')
+  if RunVim([], [], '--clean -S Xscript')
+    call assert_equal([], readfile('Xresult'))
+  endif
+
+  call delete('Xscript')
+  call delete('Xresult')
+endfunc
+
+func Test_substitute()
+  call assert_equal('a１a２a３a', substitute('１２３', '\zs', 'a', 'g'))
+  " Substitute with special keys
+  call assert_equal("a\<End>c", substitute('abc', "a.c", "a\<End>c", ''))
+endfunc
+
+func Test_substitute_expr()
+  let g:val = 'XXX'
+  call assert_equal('XXX', substitute('yyy', 'y*', '\=g:val', ''))
+  call assert_equal('XXX', substitute('yyy', 'y*', {-> g:val}, ''))
+  call assert_equal("-\u1b \uf2-", substitute("-%1b %f2-", '%\(\x\x\)',
+			   \ '\=nr2char("0x" . submatch(1))', 'g'))
+  call assert_equal("-\u1b \uf2-", substitute("-%1b %f2-", '%\(\x\x\)',
+			   \ {-> nr2char("0x" . submatch(1))}, 'g'))
+
+  call assert_equal('231', substitute('123', '\(.\)\(.\)\(.\)',
+	\ {-> submatch(2) . submatch(3) . submatch(1)}, ''))
+
+  func Recurse()
+    return substitute('yyy', 'y\(.\)y', {-> submatch(1)}, '')
+  endfunc
+  " recursive call works
+  call assert_equal('-y-x-', substitute('xxx', 'x\(.\)x', {-> '-' . Recurse() . '-' . submatch(1) . '-'}, ''))
+
+  call assert_fails("let s=submatch([])", 'E745:')
+  call assert_fails("let s=submatch(2, [])", 'E745:')
+endfunc
+
+func Test_invalid_submatch()
+  " This was causing invalid memory access in Vim-7.4.2232 and older
+  call assert_fails("call substitute('x', '.', {-> submatch(10)}, '')", 'E935:')
+  call assert_fails('eval submatch(-1)', 'E935:')
+  call assert_equal('', submatch(0))
+  call assert_equal('', submatch(1))
+  call assert_equal([], submatch(0, 1))
+  call assert_equal([], submatch(1, 1))
+endfunc
+
+func Test_submatch_list_concatenate()
+  let pat = 'A\(.\)'
+  let Rep = {-> string([submatch(0, 1)] + [[submatch(1)]])}
+  call substitute('A1', pat, Rep, '')->assert_equal("[['A1'], ['1']]")
+endfunc
+
+func Test_substitute_expr_arg()
+  call assert_equal('123456789-123456789=', substitute('123456789',
+	\ '\(.\)\(.\)\(.\)\(.\)\(.\)\(.\)\(.\)\(.\)\(.\)',
+	\ {m -> m[0] . '-' . m[1] . m[2] . m[3] . m[4] . m[5] . m[6] . m[7] . m[8] . m[9] . '='}, ''))
+
+  call assert_equal('123456-123456=789', substitute('123456789',
+	\ '\(.\)\(.\)\(.\)\(a*\)\(n*\)\(.\)\(.\)\(.\)\(x*\)',
+	\ {m -> m[0] . '-' . m[1] . m[2] . m[3] . m[4] . m[5] . m[6] . m[7] . m[8] . m[9] . '='}, ''))
+
+  call assert_equal('123456789-123456789x=', substitute('123456789',
+	\ '\(.\)\(.\)\(.*\)',
+	\ {m -> m[0] . '-' . m[1] . m[2] . m[3] . 'x' . m[4] . m[5] . m[6] . m[7] . m[8] . m[9] . '='}, ''))
+
+  call assert_fails("call substitute('xxx', '.', {m -> string(add(m, 'x'))}, '')", 'E742:')
+  call assert_fails("call substitute('xxx', '.', {m -> string(insert(m, 'x'))}, '')", 'E742:')
+  call assert_fails("call substitute('xxx', '.', {m -> string(extend(m, ['x']))}, '')", 'E742:')
+  call assert_fails("call substitute('xxx', '.', {m -> string(remove(m, 1))}, '')", 'E742:')
+endfunc
+
+" Test for using a function to supply the substitute string
+func Test_substitute_using_func()
+  func Xfunc()
+    return '1234'
+  endfunc
+  call assert_equal('a1234f', substitute('abcdef', 'b..e',
+        \ function("Xfunc"), ''))
+  delfunc Xfunc
+endfunc
+
+" Test for using submatch() with a multiline match
+func Test_substitute_multiline_submatch()
+  new
+  call setline(1, ['line1', 'line2', 'line3', 'line4'])
+  %s/^line1\(\_.\+\)line4$/\=submatch(1)/
+  call assert_equal(['', 'line2', 'line3', ''], getline(1, '$'))
   close!
 endfunc
 

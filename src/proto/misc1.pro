@@ -40,6 +40,7 @@ char_u *concat_str(char_u *str1, char_u *str2);
 void preserve_exit(void);
 void line_breakcheck(void);
 void fast_breakcheck(void);
+void veryfast_breakcheck(void);
 char_u *get_cmd_output(char_u *cmd, char_u *infile, int flags, int *ret_len);
 void f_system(typval_T *argvars, typval_T *rettv);
 void f_systemlist(typval_T *argvars, typval_T *rettv);
@@ -47,5 +48,4 @@ int goto_im(void);
 char_u *get_isolated_shell_name(void);
 int path_is_url(char_u *p);
 int path_with_url(char_u *fname);
-void add_time(char_u *buf, size_t buflen, time_t tt);
 /* vim: set ft=c : */

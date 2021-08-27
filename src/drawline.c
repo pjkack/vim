@@ -270,7 +270,6 @@ win_line(
     int		tocol = MAXCOL;		// end of inverting
     int		fromcol_prev = -2;	// start of inverting after cursor
     int		noinvcur = FALSE;	// don't invert the cursor
-    pos_T	*top, *bot;
     int		lnum_in_visual_area = FALSE;
     pos_T	pos;
     long	v;
@@ -535,6 +534,8 @@ win_line(
 	// handle Visual active in this window
 	if (VIsual_active && wp->w_buffer == curwin->w_buffer)
 	{
+	    pos_T	*top, *bot;
+
 	    if (LTOREQ_POS(curwin->w_cursor, VIsual))
 	    {
 		// Visual is after curwin->w_cursor
@@ -640,7 +641,7 @@ win_line(
 	    else
 		tocol = MAXCOL;
 	    // do at least one character; happens when past end of line
-	    if (fromcol == tocol)
+	    if (fromcol == tocol && search_match_endcol)
 		tocol = fromcol + 1;
 	    area_highlighting = TRUE;
 	    vi_attr = HL_ATTR(HLF_I);
@@ -908,7 +909,19 @@ win_line(
 	    if (!cul_screenline)
 	    {
 		cul_attr = HL_ATTR(HLF_CUL);
-		line_attr = cul_attr;
+# ifdef FEAT_SIGNS
+		// Combine the 'cursorline' and sign highlighting, depending on
+		// the sign priority.
+		if (sign_present && sattr.sat_linehl > 0)
+		{
+		    if (sattr.sat_priority >= 100)
+			line_attr = hl_combine_attr(cul_attr, line_attr);
+		    else
+			line_attr = hl_combine_attr(line_attr, cul_attr);
+		}
+		else
+# endif
+		    line_attr = cul_attr;
 		wp->w_last_cursorline = wp->w_cursor.lnum;
 	    }
 	    else
@@ -966,7 +979,7 @@ win_line(
     for (;;)
     {
 #if defined(FEAT_CONCEAL) || defined(FEAT_SEARCH_EXTRA)
-	int has_match_conc  = 0;	// match wants to conceal
+	int has_match_conc = 0;	// match wants to conceal
 #endif
 #ifdef FEAT_CONCEAL
 	int did_decrement_ptr = FALSE;
@@ -1140,11 +1153,11 @@ win_line(
 	    }
 
 #ifdef FEAT_LINEBREAK
-	    if (wp->w_p_brisbr && draw_state == WL_BRI - 1
+	    if (wp->w_briopt_sbr && draw_state == WL_BRI - 1
 			    && n_extra == 0 && *get_showbreak_value(wp) != NUL)
 		// draw indent after showbreak value
 		draw_state = WL_BRI;
-	    else if (wp->w_p_brisbr && draw_state == WL_SBR && n_extra == 0)
+	    else if (wp->w_briopt_sbr && draw_state == WL_SBR && n_extra == 0)
 		// After the showbreak, draw the breakindent
 		draw_state = WL_BRI - 1;
 
@@ -1176,7 +1189,13 @@ win_line(
 		    c_final = NUL;
 		    n_extra = get_breakindent_win(wp,
 				       ml_get_buf(wp->w_buffer, lnum, FALSE));
-		    if (wp->w_skipcol > 0 && wp->w_p_wrap)
+		    if (row == startrow)
+		    {
+			n_extra -= win_col_off2(wp);
+			if (n_extra < 0)
+			    n_extra = 0;
+		    }
+		    if (wp->w_skipcol > 0 && wp->w_p_wrap && wp->w_briopt_sbr)
 			need_showbreak = FALSE;
 		    // Correct end of highlighted area for 'breakindent',
 		    // required when 'linebreak' is also set.
@@ -1280,13 +1299,13 @@ win_line(
 	// When still displaying '$' of change command, stop at cursor.
 	// When only displaying the (relative) line number and that's done,
 	// stop here.
-	if ((dollar_vcol >= 0 && wp == curwin
-		   && lnum == wp->w_cursor.lnum && vcol >= (long)wp->w_virtcol
+	if (((dollar_vcol >= 0 && wp == curwin
+		   && lnum == wp->w_cursor.lnum && vcol >= (long)wp->w_virtcol)
+		|| (number_only && draw_state > WL_NR))
 #ifdef FEAT_DIFF
 				   && filler_todo <= 0
 #endif
 		)
-		|| (number_only && draw_state > WL_NR))
 	{
 	    screen_line(screen_row, wp->w_wincol, col, -(int)wp->w_width,
 							    screen_line_flags);
@@ -1327,6 +1346,11 @@ win_line(
 				      &screen_search_hl, &has_match_conc,
 				      &match_conc, did_line_attr, lcs_eol_one);
 		ptr = line + v;  // "line" may have been changed
+
+		// Do not allow a conceal over EOL otherwise EOL will be missed
+		// and bad things happen.
+		if (*ptr == NUL)
+		    has_match_conc = 0;
 	    }
 #endif
 
@@ -1757,7 +1781,7 @@ win_line(
 			    {
 				// head byte at end of line
 				mb_l = 1;
-				transchar_nonprint(extra, c);
+				transchar_nonprint(wp->w_buffer, extra, c);
 			    }
 			    else
 			    {
@@ -1849,6 +1873,7 @@ win_line(
 			char_u	*prev_ptr, *p;
 			int	len;
 			hlf_T	spell_hlf = HLF_COUNT;
+
 			if (has_mbyte)
 			{
 			    prev_ptr = ptr - mb_l;
@@ -2217,7 +2242,7 @@ win_line(
 		}
 		else if (c != NUL)
 		{
-		    p_extra = transchar(c);
+		    p_extra = transchar_buf(wp->w_buffer, c);
 		    if (n_extra == 0)
 			n_extra = byte2cells(c) - 1;
 #ifdef FEAT_RIGHTLEFT
@@ -2346,13 +2371,14 @@ win_line(
 	    {
 		char_attr = conceal_attr;
 		if ((prev_syntax_id != syntax_seqnr || has_match_conc > 1)
-			&& (syn_get_sub_char() != NUL || match_conc
-							 || wp->w_p_cole == 1)
+			&& (syn_get_sub_char() != NUL
+				|| (has_match_conc && match_conc)
+				|| wp->w_p_cole == 1)
 			&& wp->w_p_cole != 3)
 		{
 		    // First time at this concealed item: display one
 		    // character.
-		    if (match_conc)
+		    if (has_match_conc && match_conc)
 			c = match_conc;
 		    else if (syn_get_sub_char() != NUL)
 			c = syn_get_sub_char();
@@ -2420,15 +2446,18 @@ win_line(
 		&& conceal_cursor_line(wp)
 		&& (int)wp->w_virtcol <= vcol + n_skip)
 	{
-#  ifdef FEAT_RIGHTLEFT
+# ifdef FEAT_RIGHTLEFT
 	    if (wp->w_p_rl)
 		wp->w_wcol = wp->w_width - col + boguscols - 1;
 	    else
-#  endif
+# endif
 		wp->w_wcol = col - boguscols;
 	    wp->w_wrow = row;
 	    did_wcol = TRUE;
 	    curwin->w_valid |= VALID_WCOL|VALID_WROW|VALID_VIRTCOL;
+# ifdef FEAT_PROP_POPUP
+	    curwin->w_flags &= ~(WFLAG_WCOL_OFF_ADDED | WFLAG_WROW_OFF_ADDED);
+# endif
 	}
 #endif
 
@@ -2750,9 +2779,17 @@ win_line(
 	// highlight the cursor position itself.
 	// Also highlight the 'colorcolumn' if it is different than
 	// 'cursorcolumn'
+	// Also highlight the 'colorcolumn' if 'breakindent' and/or 'showbreak'
+	// options are set
 	vcol_save_attr = -1;
-	if (draw_state == WL_LINE && !lnum_in_visual_area
+	if (((draw_state == WL_LINE ||
+	     draw_state == WL_BRI ||
+	     draw_state == WL_SBR) && !lnum_in_visual_area
 		&& search_attr == 0 && area_attr == 0)
+# ifdef FEAT_DIFF
+			&& filler_todo <= 0
+# endif
+		)
 	{
 	    if (wp->w_p_cuc && VCOL_HLC == (long)wp->w_virtcol
 						 && lnum != wp->w_cursor.lnum)
@@ -3094,9 +3131,9 @@ win_line(
 #ifdef FEAT_SYN_HL
 	    if (!(cul_screenline
 # ifdef FEAT_DIFF
-			&& diff_hlf == (hlf_T)0)
+			&& diff_hlf == (hlf_T)0
 # endif
-		    )
+		    ))
 		saved_char_attr = char_attr;
 	    else
 #endif

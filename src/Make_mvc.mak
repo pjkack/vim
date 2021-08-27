@@ -15,13 +15,11 @@
 # This will build the console version of Vim with no additional interfaces.
 # To add features, define any of the following:
 #
-# 	For MSVC 11, if you want to include Win32.mak, you need to specify
-# 	where the file is, e.g.:
-# 	   SDK_INCLUDE_DIR="C:\Program Files\Microsoft SDKs\Windows\v7.1\Include"
-#
-#	!!!!  After changing features do "nmake clean" first  !!!!
+#	!!!!  After changing any features do "nmake clean" first  !!!!
 #
 #	Feature Set: FEATURES=[TINY, SMALL, NORMAL, BIG, HUGE] (default is HUGE)
+#
+#   	Name to add to the version: MODIFIED_BY=[name of modifier]
 #
 #	GUI interface: GUI=yes (default is no)
 #
@@ -38,7 +36,8 @@
 #	  is yes)
 #	Global IME support: GIME=yes (requires GUI=yes)
 #
-#	Terminal support: TERMINAL=yes (default is yes)
+#	Terminal support: TERMINAL=yes (default is yes if FEATURES is HUGE)
+#	  Will also enable CHANNEL
 #
 #	Sound support: SOUND=yes (default is yes)
 #
@@ -109,13 +108,13 @@
 #	PostScript printing: POSTSCRIPT=yes (default is no)
 #
 #	Netbeans Support: NETBEANS=[yes or no] (default is yes if GUI is yes)
-#	Requires CHANNEL.
+#	  Requires CHANNEL.
 #
 #	Netbeans Debugging Support: NBDEBUG=[yes or no] (should be no, yes
 #	doesn't work)
 #
 #	Inter process communication: CHANNEL=[yes or no] (default is yes if GUI
-#	is yes)
+#	is yes or TERMINAL is yes)
 #
 #	XPM Image Support: XPM=[path to XPM directory]
 #	Default is "xpm", using the files included in the distribution.
@@ -206,9 +205,6 @@ OBJDIR = $(OBJDIR)V
 OBJDIR = $(OBJDIR)d
 !endif
 
-# If you include Win32.mak, it requires that CPU be set appropriately.
-# To cross-compile for Win64, set CPU=AMD64 or CPU=IA64.
-
 !ifdef PROCESSOR_ARCHITECTURE
 # We're on Windows NT or using VC 6+
 ! ifdef CPU
@@ -248,18 +244,7 @@ NODEBUG = 1
 MAKEFLAGS_GVIMEXT = DEBUG=yes
 !endif
 
-
-# Get all sorts of useful, standard macros from the Platform SDK,
-# if SDK_INCLUDE_DIR is set or USE_WIN32MAK is set to "yes".
-
-!ifdef SDK_INCLUDE_DIR
-! include $(SDK_INCLUDE_DIR)\Win32.mak
-!elseif "$(USE_WIN32MAK)"=="yes"
-! include <Win32.mak>
-!else
 link = link
-!endif
-
 
 # Check VC version.
 !if [echo MSVCVER=_MSC_VER> msvcver.c && $(CC) /EP msvcver.c > msvcver.~ 2> nul]
@@ -316,6 +301,10 @@ MSVCRT_NAME = vcruntime$(MSVCRT_VER)
 CPU = ix86
 !endif
 
+### Set the default $(WINVER) to make it work with VC++7.0 (VS.NET)
+!ifndef WINVER
+WINVER = 0x0501
+!endif
 
 # Flag to turn on Win64 compatibility warnings for VC7.x and VC8.
 WP64CHECK = /Wp64
@@ -388,7 +377,7 @@ NETBEANS = $(GUI)
 !endif
 
 !ifndef CHANNEL
-! if "$(FEATURES)"=="HUGE"
+! if "$(FEATURES)"=="HUGE" || "$(TERMINAL)"=="yes"
 CHANNEL = yes
 ! else
 CHANNEL = $(GUI)
@@ -464,11 +453,14 @@ SOUND_LIB	= winmm.lib
 !endif
 
 !if "$(CHANNEL)" == "yes"
-CHANNEL_PRO	= proto/channel.pro
-CHANNEL_OBJ	= $(OBJDIR)/channel.obj
-CHANNEL_DEFS	= -DFEAT_JOB_CHANNEL
+CHANNEL_PRO	= proto/job.pro proto/channel.pro
+CHANNEL_OBJ	= $(OBJDIR)/job.obj $(OBJDIR)/channel.obj
+CHANNEL_DEFS	= -DFEAT_JOB_CHANNEL -DFEAT_IPV6
+! if $(WINVER) >= 0x600
+CHANNEL_DEFS	= $(CHANNEL_DEFS) -DHAVE_INET_NTOP
+! endif
 
-NETBEANS_LIB	= WSock32.lib
+NETBEANS_LIB	= WSock32.lib Ws2_32.lib
 !endif
 
 # Set which version of the CRT to use
@@ -490,11 +482,6 @@ CON_LIB = oldnames.lib kernel32.lib advapi32.lib shell32.lib gdi32.lib \
           comdlg32.lib ole32.lib netapi32.lib uuid.lib /machine:$(CPU)
 !if "$(DELAYLOAD)" == "yes"
 CON_LIB = $(CON_LIB) /DELAYLOAD:comdlg32.dll /DELAYLOAD:ole32.dll DelayImp.lib
-!endif
-
-### Set the default $(WINVER) to make it work with VC++7.0 (VS.NET)
-!ifndef WINVER
-WINVER = 0x0501
 !endif
 
 # If you have a fixed directory for $VIM or $VIMRUNTIME, other than the normal
@@ -626,6 +613,12 @@ NODEFAULTLIB =
 NODEFAULTLIB = /nodefaultlib
 !endif
 
+# Specify source code charset to suppress warning C4819 on non-English
+# environment. Only available from MSVC 14.
+!if $(MSVC_MAJOR) >= 14
+# CFLAGS = $(CFLAGS) /source-charset:utf-8
+!endif
+
 # Use multiprocess build on MSVC 10
 !if ("$(USE_MP)" == "yes") && ($(MSVC_MAJOR) >= 10)
 CFLAGS = $(CFLAGS) /MP
@@ -695,10 +688,20 @@ CFLAGS = $(CFLAGS) /Zl /MTd
 ! endif
 !endif # DEBUG
 
+!if "$(CL)" == "/D_USING_V110_SDK71_"
+RCFLAGS = $(RCFLAGS) /D_USING_V110_SDK71_
+!endif
+
+!if $(MSVC_MAJOR) >= 8
+# Visual Studio 2005 has 'deprecated' many of the standard CRT functions
+CFLAGS_DEPR = /D_CRT_SECURE_NO_DEPRECATE /D_CRT_NONSTDC_NO_DEPRECATE
+CFLAGS = $(CFLAGS) $(CFLAGS_DEPR)
+!endif
+
 !include Make_all.mak
 !include testdir\Make_all.mak
 
-INCL =	vim.h alloc.h ascii.h ex_cmds.h feature.h globals.h \
+INCL =	vim.h alloc.h ascii.h ex_cmds.h feature.h errors.h globals.h \
 	keymap.h macros.h option.h os_dos.h os_win32.h proto.h regexp.h \
 	spell.h structs.h term.h beval.h $(NBDEBUG_INCL)
 
@@ -714,6 +717,8 @@ OBJ = \
 	$(OUTDIR)\change.obj \
 	$(OUTDIR)\charset.obj \
 	$(OUTDIR)\cindent.obj \
+	$(OUTDIR)\clientserver.obj \
+	$(OUTDIR)\clipboard.obj \
 	$(OUTDIR)\cmdexpand.obj \
 	$(OUTDIR)\cmdhist.obj \
 	$(OUTDIR)\crypt.obj \
@@ -740,17 +745,21 @@ OBJ = \
 	$(OUTDIR)\findfile.obj \
 	$(OUTDIR)\fold.obj \
 	$(OUTDIR)\getchar.obj \
+	$(OUTDIR)\gui_xim.obj \
 	$(OUTDIR)\hardcopy.obj \
 	$(OUTDIR)\hashtab.obj \
+	$(OUTDIR)\help.obj \
 	$(OUTDIR)\highlight.obj \
 	$(OBJDIR)\if_cscope.obj \
 	$(OUTDIR)\indent.obj \
 	$(OUTDIR)\insexpand.obj \
 	$(OUTDIR)\json.obj \
 	$(OUTDIR)\list.obj \
+	$(OUTDIR)\locale.obj \
 	$(OUTDIR)\main.obj \
 	$(OUTDIR)\map.obj \
 	$(OUTDIR)\mark.obj \
+	$(OUTDIR)\match.obj \
 	$(OUTDIR)\mbyte.obj \
 	$(OUTDIR)\memfile.obj \
 	$(OUTDIR)\memline.obj \
@@ -786,7 +795,11 @@ OBJ = \
 	$(OUTDIR)\tag.obj \
 	$(OUTDIR)\term.obj \
 	$(OUTDIR)\testing.obj \
+	$(OUTDIR)\textformat.obj \
+	$(OUTDIR)\textobject.obj \
 	$(OUTDIR)\textprop.obj \
+	$(OUTDIR)\time.obj \
+	$(OUTDIR)\typval.obj \
 	$(OUTDIR)\ui.obj \
 	$(OUTDIR)\undo.obj \
 	$(OUTDIR)\usercmd.obj \
@@ -794,6 +807,7 @@ OBJ = \
 	$(OUTDIR)\vim9compile.obj \
 	$(OUTDIR)\vim9execute.obj \
 	$(OUTDIR)\vim9script.obj \
+	$(OUTDIR)\vim9type.obj \
 	$(OUTDIR)\viminfo.obj \
 	$(OUTDIR)\winclip.obj \
 	$(OUTDIR)\window.obj \
@@ -995,6 +1009,9 @@ PYTHON_LIB = $(PYTHON)\libs\python$(PYTHON_VER).lib
 ! ifndef PYTHON3_VER
 PYTHON3_VER = 36
 ! endif
+! ifndef DYNAMIC_PYTHON3_DLL
+DYNAMIC_PYTHON3_DLL = python$(PYTHON3_VER).dll
+! endif
 ! message Python3 requested (version $(PYTHON3_VER)) - root dir is "$(PYTHON3)"
 ! if "$(DYNAMIC_PYTHON3)" == "yes"
 !  message Python3 DLL will be loaded dynamically
@@ -1004,9 +1021,10 @@ PYTHON3_OBJ = $(OUTDIR)\if_python3.obj
 PYTHON3_INC = /I "$(PYTHON3)\Include" /I "$(PYTHON3)\PC"
 ! if "$(DYNAMIC_PYTHON3)" == "yes"
 CFLAGS = $(CFLAGS) -DDYNAMIC_PYTHON3 \
-		-DDYNAMIC_PYTHON3_DLL=\"python$(PYTHON3_VER).dll\"
+		-DDYNAMIC_PYTHON3_DLL=\"$(DYNAMIC_PYTHON3_DLL)\"
 PYTHON3_LIB = /nodefaultlib:python$(PYTHON3_VER).lib
 ! else
+CFLAGS = $(CFLAGS) -DPYTHON3_DLL=\"$(DYNAMIC_PYTHON3_DLL)\"
 PYTHON3_LIB = $(PYTHON3)\libs\python$(PYTHON3_VER).lib
 ! endif
 !endif
@@ -1219,6 +1237,13 @@ CFLAGS = $(CFLAGS) -DMSWINPS
 CFLAGS = $(CFLAGS) -DFEAT_$(FEATURES)
 
 #
+# MODIFIED_BY - Name of who modified a release version
+#
+!if "$(MODIFIED_BY)" != ""
+CFLAGS = $(CFLAGS) -DMODIFIED_BY=\"$(MODIFIED_BY)\"
+!endif
+
+#
 # Always generate the .pdb file, so that we get debug symbols that can be used
 # on a crash (doesn't add overhead to the executable).
 # Generate edit-and-continue debug info when no optimization - allows to
@@ -1283,14 +1308,6 @@ MAIN_TARGET = $(VIM).exe
 # Target to run individual tests.
 VIMTESTTARGET = $(VIM).exe
 
-OLD_TEST_OUTFILES = \
-	$(SCRIPTS_FIRST) \
-	$(SCRIPTS_ALL) \
-	$(SCRIPTS_MORE1) \
-	$(SCRIPTS_MORE4) \
-	$(SCRIPTS_WIN32) \
-	$(SCRIPTS_GUI)
-
 all:	$(MAIN_TARGET) \
 	vimrun.exe \
 	install.exe \
@@ -1346,15 +1363,17 @@ $(VIM): $(VIM).exe
 $(OUTDIR):
 	if not exist $(OUTDIR)/nul  mkdir $(OUTDIR)
 
+CFLAGS_INST = /nologo /O2 -DNDEBUG -DWIN32 -DWINVER=$(WINVER) -D_WIN32_WINNT=$(WINVER) $(CFLAGS_DEPR) -DNTDDI_VERSION=0x06010000
+
 install.exe: dosinst.c dosinst.h version.h
-	$(CC) /nologo -DNDEBUG -DWIN32 dosinst.c kernel32.lib shell32.lib \
+	$(CC) $(CFLAGS_INST) dosinst.c kernel32.lib shell32.lib \
 		user32.lib ole32.lib advapi32.lib uuid.lib \
 		-link -subsystem:$(SUBSYSTEM_TOOLS)
 	- if exist install.exe del install.exe
 	ren dosinst.exe install.exe
 
 uninstall.exe: uninstall.c dosinst.h version.h
-	$(CC) /nologo -DNDEBUG -DWIN32 uninstall.c shell32.lib advapi32.lib \
+	$(CC) $(CFLAGS_INST) uninstall.c shell32.lib advapi32.lib \
 		-link -subsystem:$(SUBSYSTEM_TOOLS)
 
 vimrun.exe: vimrun.c
@@ -1427,12 +1446,22 @@ cmdidxs: ex_cmds.h
 
 test:
 	cd testdir
-	$(MAKE) /NOLOGO -f Make_dos.mak win32
+	$(MAKE) /NOLOGO -f Make_dos.mak
 	cd ..
 
 testgvim:
 	cd testdir
-	$(MAKE) /NOLOGO -f Make_dos.mak VIMPROG=..\gvim win32
+	$(MAKE) /NOLOGO -f Make_dos.mak VIMPROG=..\gvim
+	cd ..
+
+testtiny:
+	cd testdir
+	$(MAKE) /NOLOGO -f Make_dos.mak tiny
+	cd ..
+
+testgvimtiny:
+	cd testdir
+	$(MAKE) /NOLOGO -f Make_dos.mak tiny VIMPROG=..\gvim
 	cd ..
 
 testclean:
@@ -1442,7 +1471,7 @@ testclean:
 
 # Run individual OLD style test.
 # These do not depend on the executable, compile it when needed.
-$(OLD_TEST_OUTFILES:.out=):
+$(SCRIPTS_TINY):
 	cd testdir
 	- if exist $@.out del $@.out
 	$(MAKE) /NOLOGO -f Make_dos.mak VIMPROG=..\$(VIMTESTTARGET) nolog
@@ -1495,6 +1524,10 @@ $(OUTDIR)/change.obj:	$(OUTDIR) change.c  $(INCL)
 $(OUTDIR)/charset.obj:	$(OUTDIR) charset.c  $(INCL)
 
 $(OUTDIR)/cindent.obj:	$(OUTDIR) cindent.c  $(INCL)
+
+$(OUTDIR)/clientserver.obj:	$(OUTDIR) clientserver.c  $(INCL)
+
+$(OUTDIR)/clipboard.obj:	$(OUTDIR) clipboard.c  $(INCL)
 
 $(OUTDIR)/cmdexpand.obj:	$(OUTDIR) cmdexpand.c  $(INCL)
 
@@ -1560,9 +1593,13 @@ $(OUTDIR)/fold.obj:	$(OUTDIR) fold.c  $(INCL)
 
 $(OUTDIR)/getchar.obj:	$(OUTDIR) getchar.c  $(INCL)
 
+$(OUTDIR)/gui_xim.obj:	$(OUTDIR) gui_xim.c  $(INCL)
+
 $(OUTDIR)/hardcopy.obj:	$(OUTDIR) hardcopy.c  $(INCL) version.h
 
 $(OUTDIR)/hashtab.obj:	$(OUTDIR) hashtab.c  $(INCL)
+
+$(OUTDIR)/help.obj:	$(OUTDIR) help.c  $(INCL)
 
 $(OUTDIR)/highlight.obj:	$(OUTDIR) highlight.c  $(INCL)
 
@@ -1584,7 +1621,7 @@ $(OUTDIR)/if_lua.obj: $(OUTDIR) if_lua.c  $(INCL)
 	$(CC) $(CFLAGS_OUTDIR) $(LUA_INC) if_lua.c
 
 auto/if_perl.c : if_perl.xs typemap
-	-mkdir auto
+	-if not exist auto/nul mkdir auto
 	$(XSUBPP) -prototypes -typemap $(XSUBPP_TYPEMAP) \
 		-typemap typemap if_perl.xs -output $@
 
@@ -1618,15 +1655,21 @@ $(OUTDIR)/if_tcl.obj: $(OUTDIR) if_tcl.c  $(INCL)
 $(OUTDIR)/iscygpty.obj:	$(OUTDIR) iscygpty.c $(CUI_INCL)
 	$(CC) $(CFLAGS_OUTDIR) iscygpty.c -D_WIN32_WINNT=0x0600 -DUSE_DYNFILEID -DENABLE_STUB_IMPL
 
+$(OUTDIR)/job.obj:	$(OUTDIR) job.c $(INCL)
+
 $(OUTDIR)/json.obj:	$(OUTDIR) json.c  $(INCL)
 
 $(OUTDIR)/list.obj:	$(OUTDIR) list.c  $(INCL)
+
+$(OUTDIR)/locale.obj:	$(OUTDIR) locale.c  $(INCL)
 
 $(OUTDIR)/main.obj:	$(OUTDIR) main.c  $(INCL) $(CUI_INCL)
 
 $(OUTDIR)/map.obj:	$(OUTDIR) map.c  $(INCL)
 
 $(OUTDIR)/mark.obj:	$(OUTDIR) mark.c  $(INCL)
+
+$(OUTDIR)/match.obj:	$(OUTDIR) match.c  $(INCL)
 
 $(OUTDIR)/memfile.obj:	$(OUTDIR) memfile.c  $(INCL)
 
@@ -1644,11 +1687,11 @@ $(OUTDIR)/mouse.obj:	$(OUTDIR) mouse.c  $(INCL)
 
 $(OUTDIR)/move.obj:	$(OUTDIR) move.c  $(INCL)
 
-$(OUTDIR)/mbyte.obj: $(OUTDIR) mbyte.c  $(INCL)
+$(OUTDIR)/mbyte.obj:	$(OUTDIR) mbyte.c  $(INCL)
 
-$(OUTDIR)/netbeans.obj: $(OUTDIR) netbeans.c $(NBDEBUG_SRC) $(INCL) version.h
+$(OUTDIR)/netbeans.obj:	$(OUTDIR) netbeans.c $(NBDEBUG_SRC) $(INCL) version.h
 
-$(OUTDIR)/channel.obj: $(OUTDIR) channel.c $(INCL)
+$(OUTDIR)/channel.obj:	$(OUTDIR) channel.c $(INCL)
 
 $(OUTDIR)/normal.obj:	$(OUTDIR) normal.c  $(INCL)
 
@@ -1717,7 +1760,15 @@ $(OUTDIR)/term.obj:	$(OUTDIR) term.c  $(INCL)
 
 $(OUTDIR)/term.obj:	$(OUTDIR) testing.c  $(INCL)
 
+$(OUTDIR)/textformat.obj:	$(OUTDIR) textformat.c  $(INCL)
+
+$(OUTDIR)/textobject.obj:	$(OUTDIR) textobject.c  $(INCL)
+
 $(OUTDIR)/textprop.obj:	$(OUTDIR) textprop.c  $(INCL)
+
+$(OUTDIR)/time.obj:	$(OUTDIR) time.c  $(INCL)
+
+$(OUTDIR)/typval.obj:	$(OUTDIR) typval.c  $(INCL)
 
 $(OUTDIR)/ui.obj:	$(OUTDIR) ui.c  $(INCL)
 
@@ -1734,6 +1785,8 @@ $(OUTDIR)/vim9compile.obj:	$(OUTDIR) vim9compile.c  $(INCL)
 $(OUTDIR)/vim9execute.obj:	$(OUTDIR) vim9execute.c  $(INCL)
 
 $(OUTDIR)/vim9script.obj:	$(OUTDIR) vim9script.c  $(INCL)
+
+$(OUTDIR)/vim9type.obj:	$(OUTDIR) vim9type.c  $(INCL)
 
 $(OUTDIR)/viminfo.obj:	$(OUTDIR) viminfo.c  $(INCL) version.h
 
@@ -1776,6 +1829,7 @@ $(OUTDIR)/glbl_ime.obj:	$(OUTDIR) glbl_ime.cpp  dimm.h $(INCL)
 
 CCCTERM = $(CC) $(CFLAGS) -Ilibvterm/include -DINLINE="" \
 	-DVSNPRINTF=vim_vsnprintf \
+	-DSNPRINTF=vim_snprintf \
 	-DIS_COMBINING_FUNCTION=utf_iscomposing_uint \
 	-DWCWIDTH_FUNCTION=utf_uint2cells \
 	-DGET_SPECIAL_PTY_TYPE_FUNCTION=get_special_pty_type \
@@ -1809,14 +1863,18 @@ $(OUTDIR)/vterm_vterm.obj: $(OUTDIR) libvterm/src/vterm.c $(TERM_DEPS)
 	$(CCCTERM) /Fo$@ libvterm/src/vterm.c
 
 
-# $CFLAGS may contain backslashes and double quotes, escape them both.
+# $CFLAGS may contain backslashes, quotes and chevrons, escape them all.
 E0_CFLAGS = $(CFLAGS:\=\\)
-E_CFLAGS = $(E0_CFLAGS:"=\")
+E00_CFLAGS = $(E0_CFLAGS:"=\")
 # ") stop the string
-# $LINKARGS2 may contain backslashes and double quotes, escape them both.
+E000_CFLAGS = $(E00_CFLAGS:<=^^<)
+E_CFLAGS = $(E000_CFLAGS:>=^^>)
+# $LINKARGS2 may contain backslashes, quotes and chevrons, escape them all.
 E0_LINKARGS2 = $(LINKARGS2:\=\\)
-E_LINKARGS2 = $(E0_LINKARGS2:"=\")
+E00_LINKARGS2 = $(E0_LINKARGS2:"=\")
 # ") stop the string
+E000_LINKARGS2 = $(E00_LINKARGS2:<=^^<)
+E_LINKARGS2 = $(E000_LINKARGS2:>=^^>)
 
 $(PATHDEF_SRC): Make_mvc.mak
 	@echo creating $(PATHDEF_SRC)
@@ -1841,6 +1899,8 @@ proto.h: \
 	proto/change.pro \
 	proto/charset.pro \
 	proto/cindent.pro \
+	proto/clientserver.pro \
+	proto/clipboard.pro \
 	proto/cmdexpand.pro \
 	proto/cmdhist.pro \
 	proto/crypt.pro \
@@ -1866,16 +1926,20 @@ proto.h: \
 	proto/filepath.pro \
 	proto/findfile.pro \
 	proto/getchar.pro \
+	proto/gui_xim.pro \
 	proto/hardcopy.pro \
 	proto/hashtab.pro \
+	proto/help.pro \
 	proto/highlight.pro \
 	proto/indent.pro \
 	proto/insexpand.pro \
 	proto/json.pro \
 	proto/list.pro \
+	proto/locale.pro \
 	proto/main.pro \
 	proto/map.pro \
 	proto/mark.pro \
+	proto/match.pro \
 	proto/memfile.pro \
 	proto/memline.pro \
 	proto/menu.pro \
@@ -1911,7 +1975,11 @@ proto.h: \
 	proto/tag.pro \
 	proto/term.pro \
 	proto/testing.pro \
+	proto/textformat.pro \
+	proto/textobject.pro \
 	proto/textprop.pro \
+	proto/time.pro \
+	proto/typval.pro \
 	proto/ui.pro \
 	proto/undo.pro \
 	proto/usercmd.pro \
@@ -1919,6 +1987,7 @@ proto.h: \
 	proto/vim9compile.pro \
 	proto/vim9execute.pro \
 	proto/vim9script.pro \
+	proto/vim9type.pro \
 	proto/viminfo.pro \
 	proto/window.pro \
 	$(SOUND_PRO) \

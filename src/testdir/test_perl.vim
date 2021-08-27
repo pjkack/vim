@@ -182,9 +182,21 @@ func Test_perleval()
 
   call assert_equal('*VIM', perleval('"*VIM"'))
   call assert_true(perleval('\\0') =~ 'SCALAR(0x\x\+)')
+
+  " typeglob
+  call assert_equal('*main::STDOUT', perleval('*STDOUT'))
+'
+  call perleval("++-$foo")
+  let messages = split(execute('message'), "\n")
+  call assert_match("Can't modify negation", messages[-1])
 endfunc
 
 func Test_perldo()
+  new
+  " :perldo in empty buffer does nothing.
+  perldo ++$counter
+  call assert_equal(0, perleval("$counter"))
+
   sp __TEST__
   exe 'read ' g:testname
   perldo s/perl/vieux_chameau/g
@@ -204,8 +216,7 @@ func Test_perldo()
   call setline(1, ['one', 'two', 'three'])
   perldo VIM::DoCommand("new")
   call assert_equal(wincount + 1, winnr('$'))
-  bwipe!
-  bwipe!
+  %bwipe!
 endfunc
 
 func Test_VIM_package()
@@ -219,11 +230,11 @@ endfunc
 
 func Test_stdio()
   redir =>l:out
-  perl <<EOF
+  perl << trim EOF
     VIM::Msg("&VIM::Msg");
     print "STDOUT";
     print STDERR "STDERR";
-EOF
+  EOF
   redir END
   call assert_equal(['&VIM::Msg', 'STDOUT', 'STDERR'], split(l:out, "\n"))
 endfunc
@@ -290,3 +301,31 @@ func Test_set_cursor()
   normal j
   call assert_equal([2, 6], [line('.'), col('.')])
 endfunc
+
+" Test for various heredoc syntax
+func Test_perl_heredoc()
+  perl << END
+VIM::DoCommand('let s = "A"')
+END
+  perl <<
+VIM::DoCommand('let s ..= "B"')
+.
+  perl << trim END
+    VIM::DoCommand('let s ..= "C"')
+  END
+  perl << trim
+    VIM::DoCommand('let s ..= "D"')
+  .
+  perl << trim eof
+    VIM::DoCommand('let s ..= "E"')
+  eof
+  call assert_equal('ABCDE', s)
+endfunc
+
+func Test_perl_in_sandbox()
+  sandbox perl print 'test'
+  let messages = split(execute('message'), "\n")
+  call assert_match("'print' trapped by operation mask", messages[-1])
+endfunc
+
+" vim: shiftwidth=2 sts=2 expandtab

@@ -388,21 +388,13 @@ mch_FullName(
     int
 mch_isFullName(char_u *fname)
 {
-    // WinNT and later can use _MAX_PATH wide characters for a pathname, which
-    // means that the maximum pathname is _MAX_PATH * 3 bytes when 'enc' is
-    // UTF-8.
-    char szName[_MAX_PATH * 3 + 1];
-
-    // A name like "d:/foo" and "//server/share" is absolute
-    if ((fname[0] && fname[1] == ':' && (fname[2] == '/' || fname[2] == '\\'))
-	    || (fname[0] == fname[1] && (fname[0] == '/' || fname[0] == '\\')))
-	return TRUE;
-
-    // A name that can't be made absolute probably isn't absolute.
-    if (mch_FullName(fname, (char_u *)szName, sizeof(szName) - 1, FALSE) == FAIL)
-	return FALSE;
-
-    return pathcmp((const char *)fname, (const char *)szName, -1) == 0;
+    // A name like "d:/foo" and "//server/share" is absolute.  "d:foo" is not.
+    // Another way to check is to use mch_FullName() and see if the result is
+    // the same as the name or mch_FullName() fails.  However, this has quite a
+    // bit of overhead, so let's not do that.
+    return ((ASCII_ISALPHA(fname[0]) && fname[1] == ':'
+				      && (fname[2] == '/' || fname[2] == '\\'))
+	    || (fname[0] == fname[1] && (fname[0] == '/' || fname[0] == '\\')));
 }
 
 /*
@@ -554,7 +546,7 @@ vim_stat(const char *name, stat_T *stp)
 
 #if (defined(FEAT_GUI_MSWIN) && !defined(VIMDLL)) || defined(PROTO)
     void
-mch_settmode(int tmode UNUSED)
+mch_settmode(tmode_T tmode UNUSED)
 {
     // nothing to do
 }
@@ -1339,7 +1331,7 @@ mch_print_init(prt_settings_T *psettings, char_u *jobname, int forceit)
     int			i;
 
     bUserAbort = &(psettings->user_abort);
-    vim_memset(&prt_dlg, 0, sizeof(PRINTDLGW));
+    CLEAR_FIELD(prt_dlg);
     prt_dlg.lStructSize = sizeof(PRINTDLGW);
 # if !defined(FEAT_GUI) || defined(VIMDLL)
 #  ifdef VIMDLL
@@ -1468,7 +1460,7 @@ mch_print_init(prt_settings_T *psettings, char_u *jobname, int forceit)
     /*
      * Initialise the font according to 'printfont'
      */
-    vim_memset(&fLogFont, 0, sizeof(fLogFont));
+    CLEAR_FIELD(fLogFont);
     if (get_logfont(&fLogFont, p_pfn, prt_dlg.hDC, TRUE) == FAIL)
     {
 	semsg(_("E613: Unknown printer font: %s"), p_pfn);
@@ -1563,7 +1555,7 @@ mch_print_begin(prt_settings_T *psettings)
     {
 	DOCINFOW	di;
 
-	vim_memset(&di, 0, sizeof(di));
+	CLEAR_FIELD(di);
 	di.cbSize = sizeof(di);
 	di.lpszDocName = wp;
 	ret = StartDocW(prt_dlg.hDC, &di);
@@ -2882,7 +2874,7 @@ get_logfont(
 # if defined(FEAT_GUI_MSWIN)
 	CHOOSEFONTW	cf;
 	// if name is "*", bring up std font dialog:
-	vim_memset(&cf, 0, sizeof(cf));
+	CLEAR_FIELD(cf);
 	cf.lStructSize = sizeof(cf);
 	cf.hwndOwner = s_hwnd;
 	cf.Flags = CF_SCREENFONTS | CF_FIXEDPITCHONLY | CF_INITTOLOGFONTSTRUCT;

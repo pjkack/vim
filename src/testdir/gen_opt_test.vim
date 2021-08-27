@@ -63,7 +63,7 @@ let test_values = {
       \
       \ 'ambiwidth': [['', 'single'], ['xxx']],
       \ 'background': [['', 'light', 'dark'], ['xxx']],
-      \ 'backspace': [[0, 2, '', 'eol', 'eol,start'], ['xxx']],
+      \ 'backspace': [[0, 2, 3, '', 'eol', 'eol,start', 'indent,eol,nostop'], ['4', 'xxx']],
       \ 'backupcopy': [['yes', 'auto'], ['', 'xxx', 'yes,no']],
       \ 'backupext': [['xxx'], ['']],
       \ 'belloff': [['', 'all', 'copy,error'], ['xxx']],
@@ -73,7 +73,7 @@ let test_values = {
       \ 'buftype': [['', 'help', 'nofile'], ['xxx', 'help,nofile']],
       \ 'casemap': [['', 'internal'], ['xxx']],
       \ 'cedit': [['', '\<Esc>'], ['xxx', 'f']],
-      \ 'clipboard': [['', 'unnamed', 'autoselect,unnamed'], ['xxx']],
+      \ 'clipboard': [['', 'unnamed', 'autoselect,unnamed', 'html', 'exclude:vimdisplay'], ['xxx', '\ze*', 'exclude:\\%(']],
       \ 'colorcolumn': [['', '8', '+2'], ['xxx']],
       \ 'comments': [['', 'b:#'], ['xxx']],
       \ 'commentstring': [['', '/*%s*/'], ['xxx']],
@@ -130,8 +130,9 @@ let test_values = {
       \ 'selectmode': [['', 'mouse', 'key,cmd'], ['xxx']],
       \ 'sessionoptions': [['', 'blank', 'help,options,slash'], ['xxx']],
       \ 'signcolumn': [['', 'auto', 'no'], ['xxx', 'no,yes']],
-      \ 'spellfile': [['', 'file.en.add'], ['xxx', '/tmp/file']],
+      \ 'spellfile': [['', 'file.en.add', '/tmp/dir\ with\ space/en.utf-8.add'], ['xxx', '/tmp/file']],
       \ 'spelllang': [['', 'xxx', 'sr@latin'], ['not&lang', "that\\\rthere"]],
+      \ 'spelloptions': [['', 'camel'], ['xxx']],
       \ 'spellsuggest': [['', 'best', 'double,33'], ['xxx']],
       \ 'switchbuf': [['', 'useopen', 'split,newtab'], ['xxx']],
       \ 'tagcase': [['smart', 'match'], ['', 'xxx', 'smart,match']],
@@ -150,7 +151,7 @@ let test_values = {
       \ 'viminfo': [['', '''50', '"30'], ['xxx']],
       \ 'virtualedit': [['', 'all', 'all,block'], ['xxx']],
       \ 'whichwrap': [['', 'b,s', 'bs'], ['xxx']],
-      \ 'wildmode': [['', 'full', 'list:full', 'full,longest'], ['xxx']],
+      \ 'wildmode': [['', 'full', 'list:full', 'full,longest'], ['xxx', 'a4', 'full,full,full,full,full']],
       \ 'wildoptions': [['', 'tagfile'], ['xxx']],
       \ 'winaltkeys': [['menu', 'no'], ['', 'xxx']],
       \
@@ -199,8 +200,8 @@ while 1
       " setting an option can only fail when it's implemented.
       call add(script, "if exists('+" . name . "')")
       for val in a[1]
-	call add(script, "call assert_fails('set " . name . "=" . val . "')")
-	call add(script, "call assert_fails('set " . shortname . "=" . val . "')")
+	call add(script, "silent! call assert_fails('set " . name . "=" . val . "')")
+	call add(script, "silent! call assert_fails('set " . shortname . "=" . val . "')")
       endfor
       call add(script, "endif")
     endif

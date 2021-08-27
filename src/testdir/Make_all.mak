@@ -7,41 +7,50 @@
 NO_PLUGINS = --noplugin --not-a-term
 NO_INITS = -U NONE $(NO_PLUGINS)
 
-# The first script creates small.vim.
-SCRIPTS_FIRST = \
-	test1.out
+# Tests for tiny and small builds.
+SCRIPTS_TINY = \
+	test20 \
+	test21 \
+	test22 \
+	test23 \
+	test24 \
+	test25 \
+	test26 \
+	test27
 
-# Tests that run on all systems.
-SCRIPTS_ALL = \
-	test42.out \
-	test44.out \
-	test70.out \
-	test99.out \
-	test_eval.out
+SCRIPTS_TINY_OUT = \
+	test20.out \
+	test21.out \
+	test22.out \
+	test23.out \
+	test24.out \
+	test25.out \
+	test26.out \
+	test27.out
 
+# Tests for Vim9 script.
+TEST_VIM9 = \
+	test_vim9_assign \
+	test_vim9_builtin \
+	test_vim9_cmd \
+	test_vim9_disassemble \
+	test_vim9_expr \
+	test_vim9_fails \
+	test_vim9_func \
+	test_vim9_script
 
-# Tests that run on most systems, but not on Amiga.
-SCRIPTS_MORE1 = \
-	test52.out \
-	test86.out \
-	test87.out
+TEST_VIM9_RES = \
+	test_vim9_assign.res \
+	test_vim9_builtin.res \
+	test_vim9_cmd.res \
+	test_vim9_disassemble.res \
+	test_vim9_expr.res \
+	test_vim9_fails.res \
+	test_vim9_func.res \
+	test_vim9_script.res
 
-
-# Tests that run on most systems, but not on Amiga and DOS/Windows.
-SCRIPTS_MORE2 = \
-	test49.out
-
-
-# Tests that run on most systems, but not on VMS
-SCRIPTS_MORE4 = \
-	test59.out
-
-# Tests specifically for MS-Windows.
-SCRIPTS_WIN32 =
-
-
-# Tests for the GUI.
-SCRIPTS_GUI =
+# Benchmark scripts.
+SCRIPTS_BENCH = test_bench_regexp.res
 
 # Individual tests, including the ones part of test_alot.
 # Please keep sorted up to test_alot.
@@ -60,6 +69,7 @@ NEW_TESTS = \
 	test_blob \
 	test_blockedit \
 	test_breakindent \
+	test_buffer \
 	test_bufline \
 	test_bufwintabinfo \
 	test_cd \
@@ -71,14 +81,17 @@ NEW_TESTS = \
 	test_charsearch_utf8 \
 	test_checkpath \
 	test_cindent \
+	test_cjk_linebreak \
 	test_clientserver \
 	test_close_count \
 	test_cmdline \
 	test_command_count \
+	test_comments \
 	test_comparators \
 	test_compiler \
 	test_conceal \
 	test_const \
+	test_cpoptions \
 	test_crypt \
 	test_cscope \
 	test_cursor_func \
@@ -95,9 +108,9 @@ NEW_TESTS = \
 	test_escaped_glob \
 	test_eval_stuff \
 	test_ex_equal \
+	test_ex_mode \
 	test_ex_undo \
 	test_ex_z \
-	test_ex_mode \
 	test_excmd \
 	test_exec_while_if \
 	test_execute_func \
@@ -120,11 +133,13 @@ NEW_TESTS = \
 	test_find_complete \
 	test_findfile \
 	test_fixeol \
+	test_flatten \
 	test_float_func \
 	test_fnameescape \
 	test_fnamemodify \
 	test_fold \
 	test_functions \
+	test_function_lists \
 	test_ga \
 	test_getcwd \
 	test_getvar \
@@ -145,6 +160,7 @@ NEW_TESTS = \
 	test_iminsert \
 	test_increment \
 	test_increment_dbcs \
+	test_indent \
 	test_ins_complete \
 	test_interrupt \
 	test_job_fails \
@@ -172,14 +188,17 @@ NEW_TESTS = \
 	test_match \
 	test_matchadd_conceal \
 	test_matchadd_conceal_utf8 \
+	test_matchfuzzy \
 	test_memory_usage \
-	test_method \
 	test_menu \
 	test_messages \
+	test_method \
 	test_mksession \
 	test_mksession_utf8 \
+	test_modeless \
 	test_modeline \
 	test_move \
+	test_mzscheme \
 	test_nested_function \
 	test_netbeans \
 	test_normal \
@@ -220,6 +239,7 @@ NEW_TESTS = \
 	test_search \
 	test_search_stat \
 	test_searchpos \
+	test_selectmode \
 	test_set \
 	test_sha256 \
 	test_shift \
@@ -232,6 +252,7 @@ NEW_TESTS = \
 	test_source \
 	test_source_utf8 \
 	test_spell \
+	test_spell_utf8 \
 	test_spellfile \
 	test_startup \
 	test_startup_utf8 \
@@ -254,6 +275,8 @@ NEW_TESTS = \
 	test_termcodes \
 	test_termencoding \
 	test_terminal \
+	test_terminal2 \
+	test_terminal3 \
 	test_terminal_fail \
 	test_textformat \
 	test_textobjects \
@@ -268,8 +291,8 @@ NEW_TESTS = \
 	test_utf8 \
 	test_utf8_comparisons \
 	test_vartabs \
-	test_vim9_expr \
-	test_vim9_script \
+	test_version \
+	$(TEST_VIM9) \
 	test_viminfo \
 	test_vimscript \
 	test_virtualedit \
@@ -287,7 +310,6 @@ NEW_TESTS = \
 	test_alot_utf8 \
 	test_alot
 
-
 # Test targets that use runtest.vim.
 # Keep test_alot*.res as the last one, sort the others.
 # test_largefile.res is omitted, it uses too much resources to run on CI.
@@ -304,6 +326,7 @@ NEW_TESTS_RES = \
 	test_blob.res \
 	test_blockedit.res \
 	test_breakindent.res \
+	test_buffer.res \
 	test_bufline.res \
 	test_bufwintabinfo.res \
 	test_cd.res \
@@ -314,13 +337,16 @@ NEW_TESTS_RES = \
 	test_charsearch.res \
 	test_checkpath.res \
 	test_cindent.res \
+	test_cjk_linebreak.res \
 	test_clientserver.res \
 	test_close_count.res \
 	test_cmdline.res \
 	test_command_count.res \
+	test_comments.res \
 	test_comparators.res \
 	test_conceal.res \
 	test_const.res \
+	test_cpoptions.res \
 	test_crypt.res \
 	test_cscope.res \
 	test_cursor_func.res \
@@ -352,10 +378,12 @@ NEW_TESTS_RES = \
 	test_find_complete.res \
 	test_findfile.res \
 	test_fixeol.res \
+	test_flatten.res \
 	test_float_func.res \
 	test_fnameescape.res \
 	test_fold.res \
 	test_functions.res \
+	test_function_lists.res \
 	test_getcwd.res \
 	test_getvar.res \
 	test_gf.res \
@@ -373,6 +401,7 @@ NEW_TESTS_RES = \
 	test_iminsert.res \
 	test_increment.res \
 	test_increment_dbcs.res \
+	test_indent.res \
 	test_ins_complete.res \
 	test_interrupt.res \
 	test_job_fails.res \
@@ -387,6 +416,7 @@ NEW_TESTS_RES = \
 	test_listdict.res \
 	test_listener.res \
 	test_listlbr.res \
+	test_listlbr_utf8.res \
 	test_lua.res \
 	test_makeencoding.res \
 	test_man.res \
@@ -395,11 +425,16 @@ NEW_TESTS_RES = \
 	test_marks.res \
 	test_match.res \
 	test_matchadd_conceal.res \
+	test_matchadd_conceal_utf8.res \
+	test_matchfuzzy.res \
 	test_memory_usage.res \
+	test_menu.res \
 	test_messages.res \
 	test_method.res \
 	test_mksession.res \
+	test_modeless.res \
 	test_modeline.res \
+	test_mzscheme.res \
 	test_nested_function.res \
 	test_netbeans.res \
 	test_normal.res \
@@ -433,6 +468,7 @@ NEW_TESTS_RES = \
 	test_scrollbind.res \
 	test_search.res \
 	test_search_stat.res \
+	test_selectmode.res \
 	test_shortpathname.res \
 	test_signals.res \
 	test_signs.res \
@@ -441,6 +477,7 @@ NEW_TESTS_RES = \
 	test_sound.res \
 	test_source.res \
 	test_spell.res \
+	test_spell_utf8.res \
 	test_spellfile.res \
 	test_startup.res \
 	test_stat.res \
@@ -459,6 +496,8 @@ NEW_TESTS_RES = \
 	test_termcodes.res \
 	test_termencoding.res \
 	test_terminal.res \
+	test_terminal2.res \
+	test_terminal3.res \
 	test_terminal_fail.res \
 	test_textformat.res \
 	test_textobjects.res \
@@ -470,8 +509,7 @@ NEW_TESTS_RES = \
 	test_user_func.res \
 	test_usercommands.res \
 	test_vartabs.res \
-	test_vim9_expr.res \
-	test_vim9_script.res \
+	$(TEST_VIM9_RES) \
 	test_viminfo.res \
 	test_vimscript.res \
 	test_virtualedit.res \

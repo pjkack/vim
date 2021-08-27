@@ -246,12 +246,19 @@ static int nfa_classcodes[] = {
 static char_u e_nul_found[] = N_("E865: (NFA) Regexp end encountered prematurely");
 static char_u e_misplaced[] = N_("E866: (NFA regexp) Misplaced %c");
 static char_u e_ill_char_class[] = N_("E877: (NFA regexp) Invalid character class: %d");
+static char_u e_value_too_large[] = N_("E951: \\% value too large");
 
 // Variables only used in nfa_regcomp() and descendants.
 static int nfa_re_flags; // re_flags passed to nfa_regcomp()
 static int *post_start;  // holds the postfix form of r.e.
 static int *post_end;
 static int *post_ptr;
+
+// Set when the pattern should use the NFA engine.
+// E.g. [[:upper:]] only allows 8bit characters for BT engine,
+// while NFA engine handles multibyte characters correctly.
+static int wants_nfa;
+
 static int nstate;	// Number of states in the NFA.
 static int istate;	// Index in the state vector, used in alloc_state()
 
@@ -305,6 +312,7 @@ nfa_regcomp_start(
 	return FAIL;
     post_ptr = post_start;
     post_end = post_start + nstate_max;
+    wants_nfa = FALSE;
     rex.nfa_has_zend = FALSE;
     rex.nfa_has_backref = FALSE;
 
@@ -1541,19 +1549,27 @@ nfa_regatom(void)
 
 		default:
 		    {
-			long	n = 0;
+			long_u	n = 0;
 			int	cmp = c;
 
 			if (c == '<' || c == '>')
 			    c = getchr();
 			while (VIM_ISDIGIT(c))
 			{
-			    n = n * 10 + (c - '0');
+			    long_u tmp = n * 10 + (c - '0');
+
+			    if (tmp < n)
+			    {
+				// overflow.
+				emsg(_(e_value_too_large));
+				return FAIL;
+			    }
+			    n = tmp;
 			    c = getchr();
 			}
 			if (c == 'l' || c == 'c' || c == 'v')
 			{
-			    int limit = INT_MAX;
+			    long_u limit = INT_MAX;
 
 			    if (c == 'l')
 			    {
@@ -1576,7 +1592,7 @@ nfa_regatom(void)
 			    }
 			    if (n >= limit)
 			    {
-				emsg(_("E951: \\% value too large"));
+				emsg(_(e_value_too_large));
 				return FAIL;
 			    }
 			    EMIT((int)n);
@@ -1698,6 +1714,7 @@ collection:
 				    EMIT(NFA_CLASS_GRAPH);
 				    break;
 				case CLASS_LOWER:
+				    wants_nfa = TRUE;
 				    EMIT(NFA_CLASS_LOWER);
 				    break;
 				case CLASS_PRINT:
@@ -1710,6 +1727,7 @@ collection:
 				    EMIT(NFA_CLASS_SPACE);
 				    break;
 				case CLASS_UPPER:
+				    wants_nfa = TRUE;
 				    EMIT(NFA_CLASS_UPPER);
 				    break;
 				case CLASS_XDIGIT:
@@ -2128,9 +2146,15 @@ nfa_regpiece(void)
 
 	    // The engine is very inefficient (uses too many states) when the
 	    // maximum is much larger than the minimum and when the maximum is
-	    // large.  Bail out if we can use the other engine.
+	    // large.  However, when maxval is MAX_LIMIT, it is okay, as this
+	    // will emit NFA_STAR.
+	    // Bail out if we can use the other engine, but only, when the
+	    // pattern does not need the NFA engine like (e.g. [[:upper:]]\{2,\}
+	    // does not work with with characters > 8 bit with the BT engine)
 	    if ((nfa_re_flags & RE_AUTO)
-				   && (maxval > 500 || maxval > minval + 200))
+				   && (maxval > 500 || maxval > minval + 200)
+				   && (maxval != MAX_LIMIT && minval < 200)
+				   && !wants_nfa)
 		return FAIL;
 
 	    // Ignore previous call to nfa_regatom()
@@ -4564,7 +4588,7 @@ skip_add:
 
 	    // avoid compiler warnings
 	    save_ptr = NULL;
-	    vim_memset(&save_multipos, 0, sizeof(save_multipos));
+	    CLEAR_FIELD(save_multipos);
 
 	    // Set the position (with "off" added) in the subexpression.  Save
 	    // and restore it when it was in use.  Otherwise fill any gap.
@@ -4717,7 +4741,7 @@ skip_add:
 		save_ptr = sub->list.line[subidx].end;
 		sub->list.line[subidx].end = rex.input + off;
 		// avoid compiler warnings
-		vim_memset(&save_multipos, 0, sizeof(save_multipos));
+		CLEAR_FIELD(save_multipos);
 	    }
 
 	    subs = addstate(l, state->out, subs, pim, off_arg);
@@ -5450,7 +5474,7 @@ find_match_text(colnr_T startcol, int regstart, char_u *match_text)
 	{
 	    c1 = PTR2CHAR(match_text + len1);
 	    c2 = PTR2CHAR(rex.line + col + len2);
-	    if (c1 != c2 && (!rex.reg_ic || MB_TOLOWER(c1) != MB_TOLOWER(c2)))
+	    if (c1 != c2 && (!rex.reg_ic || MB_CASEFOLD(c1) != MB_CASEFOLD(c2)))
 	    {
 		match = FALSE;
 		break;
@@ -5745,9 +5769,11 @@ nfa_regmatch(
 	    {
 	    case NFA_MATCH:
 	      {
-		// If the match ends before a composing characters and
-		// rex.reg_icombine is not set, that is not really a match.
-		if (enc_utf8 && !rex.reg_icombine && utf_iscomposing(curc))
+		// If the match is not at the start of the line, ends before a
+		// composing characters and rex.reg_icombine is not set, that
+		// is not really a match.
+		if (enc_utf8 && !rex.reg_icombine
+			     && rex.input != rex.line && utf_iscomposing(curc))
 		    break;
 
 		nfa_match = TRUE;
@@ -6262,11 +6288,11 @@ nfa_regmatch(
 			}
 			if (rex.reg_ic)
 			{
-			    int curc_low = MB_TOLOWER(curc);
+			    int curc_low = MB_CASEFOLD(curc);
 			    int done = FALSE;
 
 			    for ( ; c1 <= c2; ++c1)
-				if (MB_TOLOWER(c1) == curc_low)
+				if (MB_CASEFOLD(c1) == curc_low)
 				{
 				    result = result_if_matched;
 				    done = TRUE;
@@ -6278,8 +6304,8 @@ nfa_regmatch(
 		    }
 		    else if (state->c < 0 ? check_char_class(state->c, curc)
 			       : (curc == state->c
-				   || (rex.reg_ic && MB_TOLOWER(curc)
-						    == MB_TOLOWER(state->c))))
+				   || (rex.reg_ic && MB_CASEFOLD(curc)
+						    == MB_CASEFOLD(state->c))))
 		    {
 			result = result_if_matched;
 			break;
@@ -6704,7 +6730,7 @@ nfa_regmatch(
 		result = (c == curc);
 
 		if (!result && rex.reg_ic)
-		    result = MB_TOLOWER(c) == MB_TOLOWER(curc);
+		    result = MB_CASEFOLD(c) == MB_CASEFOLD(curc);
 		// If rex.reg_icombine is not set only skip over the character
 		// itself.  When it is set skip over composing characters.
 		if (result && enc_utf8 && !rex.reg_icombine)
@@ -6873,7 +6899,7 @@ nfa_regmatch(
 			// cheaper than adding a state that won't match.
 			c = PTR2CHAR(rex.input + clen);
 			if (c != prog->regstart && (!rex.reg_ic
-			       || MB_TOLOWER(c) != MB_TOLOWER(prog->regstart)))
+			     || MB_CASEFOLD(c) != MB_CASEFOLD(prog->regstart)))
 			{
 #ifdef ENABLE_LOG
 			    fprintf(log_fd, "  Skipping start state, regstart does not match\n");
@@ -7094,8 +7120,7 @@ nfa_regtry(
 
 		if (lpos->start != NULL && lpos->end != NULL)
 		    re_extmatch_out->matches[i] =
-			    vim_strnsave(lpos->start,
-					      (int)(lpos->end - lpos->start));
+			    vim_strnsave(lpos->start, lpos->end - lpos->start);
 	    }
 	}
     }
@@ -7139,7 +7164,7 @@ nfa_regexec_both(
     // Be paranoid...
     if (prog == NULL || line == NULL)
     {
-	emsg(_(e_null));
+	iemsg(_(e_null));
 	goto theend;
     }
 
@@ -7217,6 +7242,26 @@ nfa_regexec_both(
 #endif
 
 theend:
+    if (retval > 0)
+    {
+	// Make sure the end is never before the start.  Can happen when \zs and
+	// \ze are used.
+	if (REG_MULTI)
+	{
+	    lpos_T *start = &rex.reg_mmatch->startpos[0];
+	    lpos_T *end = &rex.reg_mmatch->endpos[0];
+
+	    if (end->lnum < start->lnum
+			|| (end->lnum == start->lnum && end->col < start->col))
+		rex.reg_mmatch->endpos[0] = rex.reg_mmatch->startpos[0];
+	}
+	else
+	{
+	    if (rex.reg_match->endp[0] < rex.reg_match->startp[0])
+		rex.reg_match->endp[0] = rex.reg_match->startp[0];
+	}
+    }
+
     return retval;
 }
 
@@ -7409,17 +7454,7 @@ nfa_regexec_multi(
     proftime_T	*tm,		// timeout limit or NULL
     int		*timed_out)	// flag set on timeout or NULL
 {
-    rex.reg_match = NULL;
-    rex.reg_mmatch = rmp;
-    rex.reg_buf = buf;
-    rex.reg_win = win;
-    rex.reg_firstlnum = lnum;
-    rex.reg_maxline = rex.reg_buf->b_ml.ml_line_count - lnum;
-    rex.reg_line_lbr = FALSE;
-    rex.reg_ic = rmp->rmm_ic;
-    rex.reg_icombine = FALSE;
-    rex.reg_maxcol = rmp->rmm_maxcol;
-
+    init_regexec_multi(rmp, win, buf, lnum);
     return nfa_regexec_both(NULL, col, tm, timed_out);
 }
 

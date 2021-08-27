@@ -46,9 +46,6 @@
 #  include <sys/statfs.h>
 #  define STATFS statfs
 #  define F_BSIZE f_bsize
-#  ifdef __MINT__		// do we still need this?
-#   define fstatfs(fd, buf, len, nul) mch_fstat((fd), (buf))
-#  endif
 # endif
 #endif
 
@@ -509,17 +506,6 @@ mf_free(memfile_T *mfp, bhdr_T *hp)
     else
 	mf_ins_free(mfp, hp);	// put *hp in the free list
 }
-
-#if defined(__MORPHOS__) && defined(__libnix__)
-// function is missing in MorphOS libnix version
-extern unsigned long *__stdfiledes;
-
-    static unsigned long
-fdtofh(int filedescriptor)
-{
-    return __stdfiledes[filedescriptor];
-}
-#endif
 
 /*
  * Sync the memory file *mfp to disk.
@@ -1337,7 +1323,7 @@ mf_do_open(
     static void
 mf_hash_init(mf_hashtab_T *mht)
 {
-    vim_memset(mht, 0, sizeof(mf_hashtab_T));
+    CLEAR_POINTER(mht);
     mht->mht_buckets = mht->mht_small_buckets;
     mht->mht_mask = MHT_INIT_SIZE - 1;
 }
@@ -1480,7 +1466,7 @@ mf_hash_grow(mf_hashtab_T *mht)
 	 * a power of two.
 	 */
 
-	vim_memset(tails, 0, sizeof(tails));
+	CLEAR_FIELD(tails);
 
 	for (mhi = mht->mht_buckets[i]; mhi != NULL; mhi = mhi->mhi_next)
 	{

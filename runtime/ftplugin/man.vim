@@ -1,8 +1,8 @@
 " Vim filetype plugin file
 " Language:	man
+" Maintainer:	Jason Franklin <vim@justemail.net>
 " Maintainer:	SungHyun Nam <goweol@gmail.com>
-" Last Change: 	2019 Sep 26
-"		(fix by Jason Franklin)
+" Last Change: 	2020 Oct 09
 
 " To make the ":Man" command available before editing a manual page, source
 " this script from your startup vimrc file.
@@ -34,8 +34,8 @@ if &filetype == "man"
     endif
     nnoremap <buffer> <Plug>ManBS :%s/.\b//g<CR>:setl nomod<CR>''
 
-    nnoremap <buffer> <c-]> :call <SID>PreGetPage(v:count)<CR>
-    nnoremap <buffer> <c-t> :call <SID>PopPage()<CR>
+    nnoremap <buffer> <silent> <c-]> :call <SID>PreGetPage(v:count)<CR>
+    nnoremap <buffer> <silent> <c-t> :call <SID>PopPage()<CR>
     nnoremap <buffer> <silent> q :q<CR>
 
     " Add undo commands for the maps
@@ -76,7 +76,7 @@ catch /E145:/
   " Ignore the error in restricted mode
 endtry
 
-func <SID>PreGetPage(cnt)
+func s:PreGetPage(cnt)
   if a:cnt == 0
     let old_isk = &iskeyword
     if &ft == 'man'
@@ -96,27 +96,30 @@ func <SID>PreGetPage(cnt)
     let sect = a:cnt
     let page = expand("<cword>")
   endif
-  call s:GetPage(sect, page)
+  call s:GetPage('', sect, page)
 endfunc
 
-func <SID>GetCmdArg(sect, page)
-  if a:sect == ''
-    return a:page
+func s:GetCmdArg(sect, page)
+
+  if empty(a:sect)
+    return shellescape(a:page)
   endif
-  return s:man_sect_arg.' '.a:sect.' '.a:page
+
+  return s:man_sect_arg . ' ' . shellescape(a:sect) . ' ' . shellescape(a:page)
 endfunc
 
-func <SID>FindPage(sect, page)
-  let where = system("man ".s:man_find_arg.' '.s:GetCmdArg(a:sect, a:page))
-  if where !~ "^/"
-    if matchstr(where, " [^ ]*$") !~ "^ /"
-      return 0
-    endif
+func s:FindPage(sect, page)
+  let l:cmd = printf('man %s %s', s:man_find_arg, s:GetCmdArg(a:sect, a:page))
+  call system(l:cmd)
+
+  if v:shell_error
+    return 0
   endif
+
   return 1
 endfunc
 
-func <SID>GetPage(cmdmods, ...)
+func s:GetPage(cmdmods, ...)
   if a:0 >= 2
     let sect = a:1
     let page = a:2
@@ -138,11 +141,11 @@ func <SID>GetPage(cmdmods, ...)
     endif
   endif
   if s:FindPage(sect, page) == 0
-    let msg = "\nNo manual entry for ".page
-    if sect != ""
-      let msg .= " in section ".sect
+    let msg = 'man.vim: no manual entry for "' . page . '"'
+    if !empty(sect)
+      let msg .= ' in section ' . sect
     endif
-    echo msg
+    echomsg msg
     return
   endif
   exec "let s:man_tag_buf_".s:man_tag_depth." = ".bufnr("%")
@@ -189,7 +192,7 @@ func <SID>GetPage(cmdmods, ...)
   setl buftype=nofile noswapfile
 
   setl fdc=0 ma nofen nonu nornu
-  silent exec "norm! 1GdG"
+  %delete _
   let unsetwidth = 0
   if empty($MANWIDTH)
     let $MANWIDTH = winwidth(0)
@@ -205,6 +208,7 @@ func <SID>GetPage(cmdmods, ...)
     let s:env_has_u = (v:shell_error == 0)
   endif
   let env_cmd = s:env_has_u ? 'env -u MANPAGER' : 'env MANPAGER=cat'
+  let env_cmd .= ' GROFF_NO_SGR=1'
   let man_cmd = env_cmd . ' man ' . s:GetCmdArg(sect, page) . ' | col -b'
   silent exec "r !" . man_cmd
 
@@ -213,10 +217,10 @@ func <SID>GetPage(cmdmods, ...)
   endif
   " Remove blank lines from top and bottom.
   while line('$') > 1 && getline(1) =~ '^\s*$'
-    silent keepj norm! ggdd
+    1delete _
   endwhile
   while line('$') > 1 && getline('$') =~ '^\s*$'
-    silent keepj norm! Gdd
+    $delete _
   endwhile
   1
   setl ft=man nomod
@@ -225,7 +229,7 @@ func <SID>GetPage(cmdmods, ...)
   setl noma
 endfunc
 
-func <SID>PopPage()
+func s:PopPage()
   if s:man_tag_depth > 0
     let s:man_tag_depth = s:man_tag_depth - 1
     exec "let s:man_tag_buf=s:man_tag_buf_".s:man_tag_depth

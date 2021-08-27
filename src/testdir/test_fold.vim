@@ -95,9 +95,7 @@ func Test_indent_fold2()
 endfunc
 
 func Test_manual_fold_with_filter()
-  if !executable('cat')
-    return
-  endif
+  CheckExecutable cat
   for type in ['manual', 'marker']
     exe 'set foldmethod=' . type
     new
@@ -557,9 +555,7 @@ endfunc
 
 " test syntax folding
 func Test_fold_syntax()
-  if !has('syntax')
-    return
-  endif
+  CheckFeature syntax
 
   enew!
   set fdm=syntax fdl=0
@@ -794,3 +790,73 @@ func Test_fold_delete_first_line()
   bwipe!
   set foldmethod&
 endfunc
+
+" Test for errors in 'foldexpr'
+func Test_fold_expr_error()
+  new
+  call setline(1, ['one', 'two', 'three'])
+
+  " Return a list from the expression
+  set foldexpr=[]
+  set foldmethod=expr
+  for i in range(3)
+    call assert_equal(0, foldlevel(i))
+  endfor
+
+  " expression error
+  set foldexpr=[{]
+  set foldmethod=expr
+  for i in range(3)
+    call assert_equal(0, foldlevel(i))
+  endfor
+
+  set foldmethod& foldexpr&
+  close!
+endfunc
+
+func Test_undo_fold_deletion()
+  new
+  set fdm=marker
+  let lines =<< trim END
+      " {{{
+      " }}}1
+      " {{{
+  END
+  call setline(1, lines)
+  3d
+  g/"/d
+  undo
+  redo
+  eval getline(1, '$')->assert_equal([''])
+
+  set fdm&vim
+  bwipe!
+endfunc
+
+" this was crashing
+func Test_move_no_folds()
+  new
+  fold
+  setlocal fdm=expr
+  normal zj
+  bwipe!
+endfunc
+
+" this was crashing
+func Test_fold_create_delete_create()
+  new
+  fold
+  fold
+  normal zd
+  fold
+  bwipe!
+endfunc
+
+" this was crashing
+func Test_fold_create_delete()
+  new
+  norm zFzFzdzj
+  bwipe!
+endfunc
+
+" vim: shiftwidth=2 sts=2 expandtab

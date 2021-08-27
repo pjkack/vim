@@ -26,6 +26,18 @@ func Test_rubydo()
   %bwipe!
 endfunc
 
+func Test_rubydo_dollar_underscore()
+  new
+  call setline(1, ['one', 'two', 'three', 'four'])
+  2,3rubydo $_ = '[' + $_  + ']'
+  call assert_equal(['one', '[two]', '[three]', 'four'], getline(1, '$'))
+  bwipe!
+
+  call assert_fails('rubydo $_ = 0', 'E265:')
+  call assert_fails('rubydo (')
+  bwipe!
+endfunc
+
 func Test_rubyfile()
   " Check :rubyfile does not SEGV with Ruby level exception but just fails
   let tempfile = tempname() . '.rb'
@@ -332,11 +344,11 @@ func Test_ruby_Vim_evaluate_list()
   call setline(line('$'), ['2 line 2'])
   ruby Vim.command("normal /^2\n")
   let l = ["abc", "def"]
-  ruby << EOF
-  curline = $curbuf.line_number
-  l = Vim.evaluate("l");
-  $curbuf.append(curline, l.join("\n"))
-EOF
+  ruby << trim EOF
+    curline = $curbuf.line_number
+    l = Vim.evaluate("l");
+    $curbuf.append(curline, l.join("\n"))
+  EOF
   normal j
   .rubydo $_ = $_.gsub(/\n/, '/')
   call assert_equal('abc/def', getline('$'))
@@ -378,7 +390,7 @@ endfunc
 
 func Test_ruby_p()
   ruby p 'Just a test'
-  let messages = split(execute('message'), "\n")
+  let messages = GetMessages()
   call assert_equal('"Just a test"', messages[-1])
 
   " Check return values of p method
@@ -391,6 +403,37 @@ func Test_ruby_p()
   messages clear
   call assert_equal(v:true, rubyeval('p() == nil'))
 
-  let messages = split(execute('message'), "\n")
+  let messages = GetMessages()
   call assert_equal(0, len(messages))
 endfunc
+
+func Test_rubyeval_error()
+  " On Linux or Windows the error matches:
+  "   "syntax error, unexpected end-of-input"
+  " whereas on macOS in CI, the error message makes less sense:
+  "   "SyntaxError: array length must be 2"
+  " Unclear why. The test does not check the error message.
+  call assert_fails('call rubyeval("(")')
+endfunc
+
+" Test for various heredoc syntax
+func Test_ruby_heredoc()
+  ruby << END
+Vim.command('let s = "A"')
+END
+  ruby <<
+Vim.command('let s ..= "B"')
+.
+  ruby << trim END
+    Vim.command('let s ..= "C"')
+  END
+  ruby << trim
+    Vim.command('let s ..= "D"')
+  .
+  ruby << trim eof
+    Vim.command('let s ..= "E"')
+  eof
+  call assert_equal('ABCDE', s)
+endfunc
+
+" vim: shiftwidth=2 sts=2 expandtab

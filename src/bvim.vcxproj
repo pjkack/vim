@@ -101,7 +101,7 @@
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
-      <PreprocessorDefinitions>WIN32;WINVER=0x0601;_WIN32_WINNT=0x0601;HAVE_PATHDEF;FEAT_GUI_MSWIN;FEAT_DIRECTX;DYNAMIC_DIRECTX;FEAT_DIRECTX_COLOR_EMOJI;DYNAMIC_ICONV;DYNAMIC_GETTEXT;FEAT_BIG;FEAT_PROFILE;FEAT_JOB_CHANNEL;FEAT_TERMINAL;FEAT_BORE;</PreprocessorDefinitions>
+      <PreprocessorDefinitions>WIN32;WINVER=0x0601;_WIN32_WINNT=0x0601;_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_WARNINGS;_WINSOCK_DEPRECATED_NO_WARNINGS;HAVE_STDINT_H;HAVE_PATHDEF;FEAT_GUI_MSWIN;FEAT_DIRECTX;DYNAMIC_DIRECTX;FEAT_DIRECTX_COLOR_EMOJI;DYNAMIC_ICONV;DYNAMIC_GETTEXT;FEAT_BIG;FEAT_PROFILE;FEAT_JOB_CHANNEL;FEAT_TERMINAL;FEAT_BORE;VSNPRINTF=vim_vsnprintf;SNPRINTF=vim_snprintf;</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>.;proto;libvterm/include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
       <WarningLevel>Level3</WarningLevel>
@@ -125,7 +125,7 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
-      <PreprocessorDefinitions>WIN32;WINVER=0x0601;_WIN32_WINNT=0x0601;HAVE_PATHDEF;FEAT_GUI_MSWIN;FEAT_DIRECTX;DYNAMIC_DIRECTX;FEAT_DIRECTX_COLOR_EMOJI;DYNAMIC_ICONV;DYNAMIC_GETTEXT;FEAT_BIG;FEAT_PROFILE;FEAT_JOB_CHANNEL;FEAT_TERMINAL;FEAT_BORE;</PreprocessorDefinitions>
+      <PreprocessorDefinitions>WIN32;WINVER=0x0601;_WIN32_WINNT=0x0601;_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_WARNINGS;_WINSOCK_DEPRECATED_NO_WARNINGS;HAVE_STDINT_H;HAVE_PATHDEF;FEAT_GUI_MSWIN;FEAT_DIRECTX;DYNAMIC_DIRECTX;FEAT_DIRECTX_COLOR_EMOJI;DYNAMIC_ICONV;DYNAMIC_GETTEXT;FEAT_BIG;FEAT_PROFILE;FEAT_JOB_CHANNEL;FEAT_TERMINAL;FEAT_BORE;VSNPRINTF=vim_vsnprintf;SNPRINTF=vim_snprintf;</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>.;proto;libvterm/include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
       <WarningLevel>Level3</WarningLevel>
@@ -148,7 +148,7 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
-      <PreprocessorDefinitions>WIN32;WINVER=0x0601;_WIN32_WINNT=0x0601;HAVE_PATHDEF;FEAT_GUI_MSWIN;FEAT_DIRECTX;DYNAMIC_DIRECTX;FEAT_DIRECTX_COLOR_EMOJI;DYNAMIC_ICONV;DYNAMIC_GETTEXT;FEAT_BIG;FEAT_PROFILE;FEAT_JOB_CHANNEL;FEAT_TERMINAL;FEAT_BORE;NDEBUG</PreprocessorDefinitions>
+      <PreprocessorDefinitions>WIN32;WINVER=0x0601;_WIN32_WINNT=0x0601;_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_WARNINGS;_WINSOCK_DEPRECATED_NO_WARNINGS;HAVE_STDINT_H;HAVE_PATHDEF;FEAT_GUI_MSWIN;FEAT_DIRECTX;DYNAMIC_DIRECTX;FEAT_DIRECTX_COLOR_EMOJI;DYNAMIC_ICONV;DYNAMIC_GETTEXT;FEAT_BIG;FEAT_PROFILE;FEAT_JOB_CHANNEL;FEAT_TERMINAL;FEAT_BORE;VSNPRINTF=vim_vsnprintf;SNPRINTF=vim_snprintf;NDEBUG</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>.;proto;libvterm/include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <WarningLevel>Level3</WarningLevel>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
@@ -181,7 +181,7 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
-      <PreprocessorDefinitions>WIN32;WINVER=0x0601;_WIN32_WINNT=0x0601;HAVE_PATHDEF;FEAT_GUI_MSWIN;FEAT_DIRECTX;DYNAMIC_DIRECTX;FEAT_DIRECTX_COLOR_EMOJI;DYNAMIC_ICONV;DYNAMIC_GETTEXT;FEAT_BIG;FEAT_PROFILE;FEAT_JOB_CHANNEL;FEAT_TERMINAL;FEAT_BORE;NDEBUG</PreprocessorDefinitions>
+      <PreprocessorDefinitions>WIN32;WINVER=0x0601;_WIN32_WINNT=0x0601;_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_WARNINGS;_WINSOCK_DEPRECATED_NO_WARNINGS;HAVE_STDINT_H;HAVE_PATHDEF;FEAT_GUI_MSWIN;FEAT_DIRECTX;DYNAMIC_DIRECTX;FEAT_DIRECTX_COLOR_EMOJI;DYNAMIC_ICONV;DYNAMIC_GETTEXT;FEAT_BIG;FEAT_PROFILE;FEAT_JOB_CHANNEL;FEAT_TERMINAL;FEAT_BORE;VSNPRINTF=vim_vsnprintf;SNPRINTF=vim_snprintf;NDEBUG</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>.;proto;libvterm/include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <WarningLevel>Level3</WarningLevel>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
@@ -225,6 +225,8 @@
     <ClCompile Include="channel.c" />
     <ClCompile Include="charset.c" />
     <ClCompile Include="cindent.c" />
+    <ClCompile Include="clientserver.c" />
+    <ClCompile Include="clipboard.c" />
     <ClCompile Include="cmdexpand.c" />
     <ClCompile Include="cmdhist.c" />
     <ClCompile Include="crypt.c" />
@@ -258,6 +260,7 @@
     <ClCompile Include="gui_w32.c" />
     <ClCompile Include="hardcopy.c" />
     <ClCompile Include="hashtab.c" />
+    <ClCompile Include="help.c" />
     <ClCompile Include="highlight.c" />
     <ClCompile Include="if_bore.c" />
     <ClCompile Include="if_bore_find.cpp" />
@@ -265,11 +268,14 @@
     <ClCompile Include="indent.c" />
     <ClCompile Include="insexpand.c" />
     <ClCompile Include="iscygpty.c" />
+    <ClCompile Include="job.c" />
     <ClCompile Include="json.c" />
     <ClCompile Include="list.c" />
+    <ClCompile Include="locale.c" />
     <ClCompile Include="main.c" />
     <ClCompile Include="map.c" />
     <ClCompile Include="mark.c" />
+    <ClCompile Include="match.c" />
     <ClCompile Include="mbyte.c" />
     <ClCompile Include="memfile.c" />
     <ClCompile Include="memline.c" />
@@ -314,7 +320,11 @@
     <ClCompile Include="term.c" />
     <ClCompile Include="terminal.c" />
     <ClCompile Include="testing.c" />
+    <ClCompile Include="textformat.c" />
+    <ClCompile Include="textobject.c" />
     <ClCompile Include="textprop.c" />
+    <ClCompile Include="time.c" />
+    <ClCompile Include="typval.c" />
     <ClCompile Include="ui.c" />
     <ClCompile Include="undo.c" />
     <ClCompile Include="usercmd.c" />
@@ -323,6 +333,7 @@
     <ClCompile Include="vim9compile.c" />
     <ClCompile Include="vim9execute.c" />
     <ClCompile Include="vim9script.c" />
+    <ClCompile Include="vim9type.c" />
     <ClCompile Include="viminfo.c" />
     <ClCompile Include="winclip.c" />
     <ClCompile Include="window.c" />
@@ -349,16 +360,33 @@
     <None Include="bvim.exe.mnf" />
     <None Include="gvim.exe.mnf" />
     <None Include="proto\arabic.pro" />
+    <None Include="proto\arglist.pro" />
+    <None Include="proto\autocmd.pro" />
     <None Include="proto\beval.pro" />
+    <None Include="proto\blob.pro" />
     <None Include="proto\blowfish.pro" />
     <None Include="proto\buffer.pro" />
+    <None Include="proto\bufwrite.pro" />
+    <None Include="proto\change.pro" />
     <None Include="proto\channel.pro" />
     <None Include="proto\charset.pro" />
+    <None Include="proto\cindent.pro" />
+    <None Include="proto\clientserver.pro" />
+    <None Include="proto\clipboard.pro" />
+    <None Include="proto\cmdexpand.pro" />
+    <None Include="proto\cmdhist.pro" />
+    <None Include="proto\crypt.pro" />
+    <None Include="proto\crypt_zip.pro" />
+    <None Include="proto\debugger.pro" />
     <None Include="proto\dict.pro" />
     <None Include="proto\diff.pro" />
     <None Include="proto\digraph.pro" />
+    <None Include="proto\drawline.pro" />
+    <None Include="proto\drawscreen.pro" />
     <None Include="proto\edit.pro" />
     <None Include="proto\eval.pro" />
+    <None Include="proto\evalbuffer.pro" />
+    <None Include="proto\evalfunc.pro" />
     <None Include="proto\evalvars.pro" />
     <None Include="proto\evalwindow.pro" />
     <None Include="proto\ex_cmds.pro" />
@@ -368,13 +396,17 @@
     <None Include="proto\ex_getln.pro" />
     <None Include="proto\farsi.pro" />
     <None Include="proto\fileio.pro" />
+    <None Include="proto\filepath.pro" />
+    <None Include="proto\findfile.pro" />
     <None Include="proto\fold.pro" />
     <None Include="proto\getchar.pro" />
     <None Include="proto\gui.pro" />
     <None Include="proto\gui_athena.pro" />
     <None Include="proto\gui_beval.pro" />
     <None Include="proto\gui_gtk.pro" />
+    <None Include="proto\gui_gtk_gresources.pro" />
     <None Include="proto\gui_gtk_x11.pro" />
+    <None Include="proto\gui_haiku.pro" />
     <None Include="proto\gui_mac.pro" />
     <None Include="proto\gui_motif.pro" />
     <None Include="proto\gui_photon.pro" />
@@ -382,10 +414,13 @@
     <None Include="proto\gui_w16.pro" />
     <None Include="proto\gui_w32.pro" />
     <None Include="proto\gui_x11.pro" />
+    <None Include="proto\gui_xim.pro" />
     <None Include="proto\gui_xmdlg.pro" />
     <None Include="proto\hangulin.pro" />
     <None Include="proto\hardcopy.pro" />
     <None Include="proto\hashtab.pro" />
+    <None Include="proto\help.pro" />
+    <None Include="proto\highlight.pro" />
     <None Include="proto\if_bore.pro" />
     <None Include="proto\if_cscope.pro" />
     <None Include="proto\if_lua.pro" />
@@ -398,10 +433,16 @@
     <None Include="proto\if_ruby.pro" />
     <None Include="proto\if_tcl.pro" />
     <None Include="proto\if_xcmdsrv.pro" />
+    <None Include="proto\indent.pro" />
+    <None Include="proto\insexpand.pro" />
+    <None Include="proto\job.pro" />
     <None Include="proto\json.pro" />
     <None Include="proto\list.pro" />
+    <None Include="proto\locale.pro" />
     <None Include="proto\main.pro" />
+    <None Include="proto\map.pro" />
     <None Include="proto\mark.pro" />
+    <None Include="proto\match.pro" />
     <None Include="proto\mbyte.pro" />
     <None Include="proto\memfile.pro" />
     <None Include="proto\memline.pro" />
@@ -409,11 +450,13 @@
     <None Include="proto\message.pro" />
     <None Include="proto\misc1.pro" />
     <None Include="proto\misc2.pro" />
+    <None Include="proto\mouse.pro" />
     <None Include="proto\move.pro" />
     <None Include="proto\netbeans.pro" />
     <None Include="proto\normal.pro" />
     <None Include="proto\ops.pro" />
     <None Include="proto\option.pro" />
+    <None Include="proto\optionstr.pro" />
     <None Include="proto\os_amiga.pro" />
     <None Include="proto\os_mac_conv.pro" />
     <None Include="proto\os_msdos.pro" />
@@ -424,35 +467,57 @@
     <None Include="proto\os_vms.pro" />
     <None Include="proto\os_win16.pro" />
     <None Include="proto\os_win32.pro" />
+    <None Include="proto\popupmenu.pro" />
     <None Include="proto\popupmnu.pro" />
+    <None Include="proto\popupwin.pro" />
+    <None Include="proto\profiler.pro" />
     <None Include="proto\pty.pro" />
     <None Include="proto\quickfix.pro" />
+    <None Include="proto\quickfix.pro.orig" />
     <None Include="proto\regexp.pro" />
+    <None Include="proto\register.pro" />
     <None Include="proto\screen.pro" />
+    <None Include="proto\scriptfile.pro" />
     <None Include="proto\search.pro" />
+    <None Include="proto\session.pro" />
     <None Include="proto\sha256.pro" />
+    <None Include="proto\sign.pro" />
+    <None Include="proto\sound.pro" />
     <None Include="proto\spell.pro" />
     <None Include="proto\spellfile.pro" />
+    <None Include="proto\spellsuggest.pro" />
     <None Include="proto\syntax.pro" />
     <None Include="proto\tag.pro" />
     <None Include="proto\term.pro" />
     <None Include="proto\terminal.pro" />
     <None Include="proto\termlib.pro" />
+    <None Include="proto\testing.pro" />
+    <None Include="proto\textformat.pro" />
+    <None Include="proto\textobject.pro" />
+    <None Include="proto\textprop.pro" />
+    <None Include="proto\time.pro" />
+    <None Include="proto\typval.pro" />
     <None Include="proto\ui.pro" />
     <None Include="proto\undo.pro" />
+    <None Include="proto\usercmd.pro" />
     <None Include="proto\userfunc.pro" />
     <None Include="proto\version.pro" />
     <None Include="proto\vim9compile.pro" />
     <None Include="proto\vim9execute.pro" />
     <None Include="proto\vim9script.pro" />
+    <None Include="proto\vim9type.pro" />
+    <None Include="proto\viminfo.pro" />
+    <None Include="proto\winclip.pro" />
     <None Include="proto\window.pro" />
     <None Include="proto\workshop.pro" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="alloc.h" />
     <ClInclude Include="arabic.h" />
     <ClInclude Include="ascii.h" />
     <ClInclude Include="beval.h" />
     <ClInclude Include="dosinst.h" />
+    <ClInclude Include="errors.h" />
     <ClInclude Include="ex_cmdidxs.h" />
     <ClInclude Include="ex_cmds.h" />
     <ClInclude Include="feature.h" />
@@ -476,10 +541,12 @@
     <ClInclude Include="if_py_both.h" />
     <ClInclude Include="if_sniff.h" />
     <ClInclude Include="integration.h" />
+    <ClInclude Include="iscygpty.h" />
     <ClInclude Include="keymap.h" />
     <ClInclude Include="macros.h" />
     <ClInclude Include="nbdebug.h" />
     <ClInclude Include="option.h" />
+    <ClInclude Include="optiondefs.h" />
     <ClInclude Include="os_amiga.h" />
     <ClInclude Include="os_beos.h" />
     <ClInclude Include="os_dos.h" />
@@ -494,7 +561,9 @@
     <ClInclude Include="os_win16.h" />
     <ClInclude Include="os_win32.h" />
     <ClInclude Include="proto.h" />
+    <ClInclude Include="protodef.h" />
     <ClInclude Include="regexp.h" />
+    <ClInclude Include="spell.h" />
     <ClInclude Include="structs.h" />
     <ClInclude Include="term.h" />
     <ClInclude Include="version.h" />

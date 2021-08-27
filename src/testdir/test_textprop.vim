@@ -6,8 +6,6 @@ CheckFeature textprop
 
 source screendump.vim
 
-" test length zero
-
 func Test_proptype_global()
   call prop_type_add('comment', {'highlight': 'Directory', 'priority': 123, 'start_incl': 1, 'end_incl': 1})
   let proptypes = prop_type_list()
@@ -213,6 +211,38 @@ func Test_prop_find()
 
   call prop_clear(1,6)
   call prop_type_delete('prop_name')
+
+  bwipe!
+endfunc
+
+def Test_prop_find2()
+  # Multiple props per line, start on the first, should find the second.
+  new
+  ['the quikc bronw fox jumsp over the layz dog']->repeat(2)->setline(1)
+  prop_type_add('misspell', {highlight: 'ErrorMsg'})
+  for lnum in [1, 2]
+    for col in [8, 14, 24, 38]
+      prop_add(lnum, col, {type: 'misspell', length: 2})
+    endfor
+  endfor
+  cursor(1, 8)
+  var expected = {lnum: 1, id: 0, col: 14, end: 1, type: 'misspell', length: 2, start: 1}
+  var result = prop_find({type: 'misspell', skipstart: true}, 'f')
+  assert_equal(expected, result)
+
+  prop_type_delete('misspell')
+  bwipe!
+enddef
+
+func Test_prop_find_smaller_len_than_match_col()
+  new
+  call prop_type_add('test', {'highlight': 'ErrorMsg'})
+  call setline(1, ['xxxx', 'x'])
+  call prop_add(1, 4, {'type': 'test'})
+  call assert_equal({'id': 0, 'lnum': 1, 'col': 4, 'type': 'test', 'length': 0, 'start': 1, 'end': 1},
+        \ prop_find({'type': 'test', 'lnum': 2, 'col': 1}, 'b'))
+  bwipe!
+  call prop_type_delete('test')
 endfunc
 
 func Test_prop_add()
@@ -233,13 +263,20 @@ func Test_prop_add()
 
   " Prop without length or end column is zero length
   call prop_clear(1)
-  call prop_add(1, 5, {'type': 'two'})
-  let expected = [{'col': 5, 'length': 0, 'type': 'two', 'id': 0, 'start': 1, 'end': 1}]
+  call prop_type_add('included', {'start_incl': 1, 'end_incl': 1})
+  call prop_add(1, 5, #{type: 'included'})
+  let expected = [#{col: 5, length: 0, type: 'included', id: 0, start: 1, end: 1}]
+  call assert_equal(expected, prop_list(1))
+
+  " Inserting text makes the prop bigger.
+  exe "normal 5|ixx\<Esc>"
+  let expected = [#{col: 5, length: 2, type: 'included', id: 0, start: 1, end: 1}]
   call assert_equal(expected, prop_list(1))
 
   call assert_fails("call prop_add(1, 5, {'type': 'two', 'bufnr': 234343})", 'E158:')
 
   call DeletePropTypes()
+  call prop_type_delete('included')
   bwipe!
 endfunc
 
@@ -265,7 +302,44 @@ func Test_prop_remove()
 
   call DeletePropTypes()
   bwipe!
+
+  new
+  call AddPropTypes()
+  call SetupPropsInFirstLine()
+  call prop_add(1, 6, {'length': 2, 'id': 11, 'type': 'three'})
+  let props = Get_expected_props()
+  call insert(props, {'col': 6, 'length': 2, 'id': 11, 'type': 'three', 'start': 1, 'end': 1}, 3)
+  call assert_equal(props, prop_list(1))
+  call assert_equal(1, prop_remove({'type': 'three', 'id': 11, 'both': 1, 'all': 1}, 1))
+  unlet props[3]
+  call assert_equal(props, prop_list(1))
+
+  call assert_fails("call prop_remove({'id': 11, 'both': 1})", 'E860:')
+  call assert_fails("call prop_remove({'type': 'three', 'both': 1})", 'E860:')
+
+  call DeletePropTypes()
+  bwipe!
 endfunc
+
+def Test_prop_add_vim9()
+  prop_type_add('comment', {
+      highlight: 'Directory',
+      priority: 123,
+      start_incl: true,
+      end_incl: true,
+      combine: false,
+    })
+  prop_type_delete('comment')
+enddef
+
+def Test_prop_remove_vim9()
+  new
+  AddPropTypes()
+  SetupPropsInFirstLine()
+  assert_equal(1, prop_remove({type: 'three', id: 13, both: true, all: true}))
+  DeletePropTypes()
+  bwipe!
+enddef
 
 func SetupOneLine()
   call setline(1, 'xonex xtwoxx')
@@ -427,9 +501,11 @@ func Test_prop_open_line()
   call assert_equal('nex xtwoxx', getline(2))
   let exp_first = [deepcopy(expected[0])]
   let exp_first[0].length = 1
+  let exp_first[0].end = 0
   call assert_equal(exp_first, prop_list(1))
   let expected[0].col = 1
   let expected[0].length = 2
+  let expected[0].start = 0
   let expected[1].col -= 2
   call assert_equal(expected, prop_list(2))
   call DeletePropTypes()
@@ -542,11 +618,13 @@ func Test_prop_substitute()
 	\ copy(expected_props[3]),
 	\ ]
   let expected_props[0].length = 5
+  let expected_props[0].end = 0
   unlet expected_props[3]
   unlet expected_props[2]
   call assert_equal(expected_props, prop_list(1))
 
   let new_props[0].length = 6
+  let new_props[0].start = 0
   let new_props[1].col = 1
   let new_props[1].length = 1
   let new_props[2].col = 3
@@ -1054,6 +1132,19 @@ func Test_proptype_substitute2()
   bwipe!
 endfunc
 
+" This was causing property corruption.
+func Test_proptype_substitute3()
+  new
+  call setline(1, ['abcxxx', 'def'])
+  call prop_type_add("test", {"highlight": "Search"})
+  call prop_add(1, 2, {"end_lnum": 2, "end_col": 2, "type": "test"})
+  %s/x\+$//
+  redraw
+
+  call prop_type_delete('test')
+  bwipe!
+endfunc
+
 func SaveOptions()
   let d = #{tabstop: &tabstop,
 	  \ softtabstop: &softtabstop,
@@ -1144,3 +1235,147 @@ func Test_textprop_ins_str()
   call prop_remove({'type': 'test'})
   call prop_type_delete('test')
 endfunc
+
+func Test_find_prop_later_in_line()
+  new
+  call prop_type_add('test', {'highlight': 'ErrorMsg'})
+  call setline(1, 'just some text')
+  call prop_add(1, 1, {'length': 4, 'type': 'test'})
+  call prop_add(1, 10, {'length': 3, 'type': 'test'})
+
+  call assert_equal({'id': 0, 'lnum': 1, 'col': 10, 'end': 1, 'type': 'test', 'length': 3, 'start': 1},
+			  \ prop_find(#{type: 'test', lnum: 1, col: 6}))
+
+  bwipe!
+  call prop_type_delete('test')
+endfunc
+
+func Test_find_zerowidth_prop_sol()
+  new
+  call prop_type_add('test', {'highlight': 'ErrorMsg'})
+  call setline(1, 'just some text')
+  call prop_add(1, 1, {'length': 0, 'type': 'test'})
+
+  call assert_equal({'id': 0, 'lnum': 1, 'col': 1, 'end': 1, 'type': 'test', 'length': 0, 'start': 1},
+			  \ prop_find(#{type: 'test', lnum: 1}))
+
+  bwipe!
+  call prop_type_delete('test')
+endfunc
+
+" Test for passing invalid arguments to prop_xxx() functions
+func Test_prop_func_invalid_args()
+  call assert_fails('call prop_clear(1, 2, [])', 'E715:')
+  call assert_fails('call prop_clear(-1, 2)', 'E16:')
+  call assert_fails('call prop_find(test_null_dict())', 'E474:')
+  call assert_fails('call prop_find({"bufnr" : []})', 'E730:')
+  call assert_fails('call prop_find({})', 'E968:')
+  call assert_fails('call prop_find({}, "x")', 'E474:')
+  call assert_fails('call prop_find({"lnum" : -2})', 'E16:')
+  call assert_fails('call prop_list(1, [])', 'E715:')
+  call assert_fails('call prop_list(-1, {})', 'E16:')
+  call assert_fails('call prop_remove([])', 'E474:')
+  call assert_fails('call prop_remove({}, -2)', 'E16:')
+  call assert_fails('call prop_remove({})', 'E968:')
+  call assert_fails('call prop_type_add([], {})', 'E730:')
+  call assert_fails("call prop_type_change('long', {'xyz' : 10})", 'E971:')
+  call assert_fails("call prop_type_delete([])", 'E730:')
+  call assert_fails("call prop_type_delete('xyz', [])", 'E715:')
+  call assert_fails("call prop_type_get([])", 'E730:')
+  call assert_fails("call prop_type_get('', [])", 'E474:')
+  call assert_fails("call prop_type_list([])", 'E715:')
+endfunc
+
+func Test_prop_split_join()
+  new
+  call prop_type_add('test', {'highlight': 'ErrorMsg'})
+  call setline(1, 'just some text')
+  call prop_add(1, 6, {'length': 4, 'type': 'test'})
+
+  " Split in middle of "some"
+  execute "normal! 8|i\<CR>"
+  call assert_equal([{'id': 0, 'col': 6, 'end': 0, 'type': 'test', 'length': 2, 'start': 1}],
+			  \ prop_list(1))
+  call assert_equal([{'id': 0, 'col': 1, 'end': 1, 'type': 'test', 'length': 2, 'start': 0}],
+			  \ prop_list(2))
+
+  " Join the two lines back together
+  normal! 1GJ
+  call assert_equal([{'id': 0, 'col': 6, 'end': 1, 'type': 'test', 'length': 5, 'start': 1}], prop_list(1))
+
+  bwipe!
+  call prop_type_delete('test')
+endfunc
+
+func Test_prop_increment_decrement()
+  new
+  call prop_type_add('test', {'highlight': 'ErrorMsg'})
+  call setline(1, 'its 998 times')
+  call prop_add(1, 5, {'length': 3, 'type': 'test'})
+
+  exe "normal! 0f9\<C-A>"
+  eval getline(1)->assert_equal('its 999 times')
+  eval prop_list(1)->assert_equal([
+        \ #{id: 0, col: 5, end: 1, type: 'test', length: 3, start: 1}])
+
+  exe "normal! 0f9\<C-A>"
+  eval getline(1)->assert_equal('its 1000 times')
+  eval prop_list(1)->assert_equal([
+        \ #{id: 0, col: 5, end: 1, type: 'test', length: 4, start: 1}])
+
+  bwipe!
+  call prop_type_delete('test')
+endfunc
+
+func Test_prop_block_insert()
+  new
+  call prop_type_add('test', {'highlight': 'ErrorMsg'})
+  call setline(1, ['one ', 'two '])
+  call prop_add(1, 1, {'length': 3, 'type': 'test'})
+  call prop_add(2, 1, {'length': 3, 'type': 'test'})
+
+  " insert "xx" in the first column of both lines
+  exe "normal! gg0\<C-V>jIxx\<Esc>"
+  eval getline(1, 2)->assert_equal(['xxone ', 'xxtwo '])
+  let expected = [#{id: 0, col: 3, end: 1, type: 'test', length: 3, start: 1}]
+  eval prop_list(1)->assert_equal(expected)
+  eval prop_list(2)->assert_equal(expected)
+
+  " insert "yy" inside the text props to make them longer
+  exe "normal! gg03l\<C-V>jIyy\<Esc>"
+  eval getline(1, 2)->assert_equal(['xxoyyne ', 'xxtyywo '])
+  let expected[0].length = 5
+  eval prop_list(1)->assert_equal(expected)
+  eval prop_list(2)->assert_equal(expected)
+
+  " insert "zz" after the text props, text props don't change
+  exe "normal! gg07l\<C-V>jIzz\<Esc>"
+  eval getline(1, 2)->assert_equal(['xxoyynezz ', 'xxtyywozz '])
+  eval prop_list(1)->assert_equal(expected)
+  eval prop_list(2)->assert_equal(expected)
+
+  bwipe!
+  call prop_type_delete('test')
+endfunc
+
+" this was causing an ml_get error because w_botline was wrong
+func Test_prop_one_line_window()
+  enew
+  call range(2)->setline(1)
+  call prop_type_add('testprop', {})
+  call prop_add(1, 1, {'type': 'testprop'})
+  call popup_create('popup', {'textprop': 'testprop'})
+  $
+  new
+  wincmd _
+  call feedkeys("\r", 'xt')
+  redraw
+
+  call popup_clear()
+  call prop_type_delete('testprop')
+  close
+  bwipe!
+endfunc
+
+
+" vim: shiftwidth=2 sts=2 expandtab
