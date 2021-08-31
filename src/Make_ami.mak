@@ -80,6 +80,7 @@ endif
 
 # Common sources
 SRC += \
+	alloc.c \
 	arabic.c \
 	arglist.c \
 	autocmd.c \
@@ -117,6 +118,7 @@ SRC += \
 	fileio.c \
 	filepath.c \
 	findfile.c \
+	float.c \
 	fold.c \
 	getchar.c \
 	hardcopy.c \
@@ -161,6 +163,7 @@ SRC += \
 	spell.c \
 	spellfile.c \
 	spellsuggest.c \
+	strings.c \
 	syntax.c \
 	tag.c \
 	term.c \

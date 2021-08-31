@@ -593,6 +593,13 @@
 # define FEAT_SOUND_CANBERRA
 #endif
 
+/*
+ * libsodium - add cryptography support
+ */
+#if defined(HAVE_SODIUM) && defined(FEAT_BIG)
+# define FEAT_SODIUM
+#endif
+
 // There are two ways to use XPM.
 #if (defined(HAVE_XM_XPMP_H) && defined(FEAT_GUI_MOTIF)) \
 		|| defined(HAVE_X11_XPM_H)
@@ -1147,6 +1154,12 @@
 # define FEAT_SYN_HL
 #endif
 
+/*
+ * +autoshelldir	    'autoshelldir' option.
+ */
+#if defined(FEAT_TERMINAL)
+# define FEAT_AUTOSHELLDIR
+#endif
 /*
  * +textprop and +popupwin	Text PROPerties and POPUP windows
  */

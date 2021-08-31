@@ -3723,7 +3723,7 @@ syn_cmd_clear(exarg_T *eap, int syncing)
 		id = syn_namen2id(arg, (int)(arg_end - arg));
 		if (id == 0)
 		{
-		    semsg(_(e_nogroup), arg);
+		    semsg(_(e_no_such_highlight_group_name_str), arg);
 		    break;
 		}
 		else
@@ -3789,7 +3789,7 @@ syn_cmd_enable(exarg_T *eap, int syncing UNUSED)
     static void
 syn_cmd_reset(exarg_T *eap, int syncing UNUSED)
 {
-    eap->nextcmd = check_nextcmd(eap->arg);
+    set_nextcmd(eap, eap->arg);
     if (!eap->skip)
     {
 	set_internal_string_var((char_u *)"syntax_cmd", (char_u *)"reset");
@@ -3821,7 +3821,7 @@ syn_cmd_onoff(exarg_T *eap, char *name)
 {
     char_u	buf[100];
 
-    eap->nextcmd = check_nextcmd(eap->arg);
+    set_nextcmd(eap, eap->arg);
     if (!eap->skip)
     {
 	STRCPY(buf, "so ");
@@ -3921,14 +3921,14 @@ syn_cmd_list(
 	    {
 		id = syn_namen2id(arg, (int)(arg_end - arg));
 		if (id == 0)
-		    semsg(_(e_nogroup), arg);
+		    semsg(_(e_no_such_highlight_group_name_str), arg);
 		else
 		    syn_list_one(id, syncing, TRUE);
 	    }
 	    arg = skipwhite(arg_end);
 	}
     }
-    eap->nextcmd = check_nextcmd(arg);
+    set_nextcmd(eap, arg);
 }
 
     static void
@@ -4573,7 +4573,7 @@ get_syn_options(
 	if (strchr(first_letters, *arg) == NULL)
 	    break;
 
-	for (fidx = sizeof(flagtab) / sizeof(struct flag); --fidx >= 0; )
+	for (fidx = ARRAY_LENGTH(flagtab); --fidx >= 0; )
 	{
 	    p = flagtab[fidx].name;
 	    for (i = 0, len = 0; p[i] != NUL; i += 2, ++len)
@@ -4921,7 +4921,7 @@ error:
     }
 
     if (rest != NULL)
-	eap->nextcmd = check_nextcmd(rest);
+	set_nextcmd(eap, rest);
     else
 	semsg(_(e_invarg2), arg);
 
@@ -4978,7 +4978,7 @@ syn_cmd_match(
 	/*
 	 * Check for trailing command and illegal trailing arguments.
 	 */
-	eap->nextcmd = check_nextcmd(rest);
+	set_nextcmd(eap, rest);
 	if (!ends_excmd2(eap->cmd, rest) || eap->skip)
 	    rest = NULL;
 	else if (ga_grow(&curwin->w_s->b_syn_patterns, 1) != FAIL
@@ -5218,7 +5218,7 @@ syn_cmd_region(
 	 * Check for trailing garbage or command.
 	 * If OK, add the item.
 	 */
-	eap->nextcmd = check_nextcmd(rest);
+	set_nextcmd(eap, rest);
 	if (!ends_excmd(*rest) || eap->skip)
 	    rest = NULL;
 	else if (ga_grow(&(curwin->w_s->b_syn_patterns), pat_count) != FAIL
@@ -5896,7 +5896,7 @@ syn_cmd_sync(exarg_T *eap, int syncing UNUSED)
 	semsg(_("E404: Illegal arguments: %s"), arg_start);
     else if (!finished)
     {
-	eap->nextcmd = check_nextcmd(arg_start);
+	set_nextcmd(eap, arg_start);
 	redraw_curbuf_later(SOME_VALID);
 	syn_stack_free_all(curwin->w_s);	// Need to recompute all syntax.
     }
@@ -5990,12 +5990,17 @@ get_id_list(
 		    break;
 		}
 		if (name[1] == 'A')
-		    id = SYNID_ALLBUT;
+		    id = SYNID_ALLBUT + current_syn_inc_tag;
 		else if (name[1] == 'T')
-		    id = SYNID_TOP;
+		{
+		    if (curwin->w_s->b_syn_topgrp >= SYNID_CLUSTER)
+			id = curwin->w_s->b_syn_topgrp;
+		    else
+			id = SYNID_TOP + current_syn_inc_tag;
+		}
 		else
-		    id = SYNID_CONTAINED;
-		id += current_syn_inc_tag;
+		    id = SYNID_CONTAINED + current_syn_inc_tag;
+
 	    }
 	    else if (name[1] == '@')
 	    {

@@ -258,7 +258,7 @@ static int au_need_clean = FALSE;   // need to delete marked patterns
 
 static char_u *event_nr2name(event_T event);
 static int au_get_grouparg(char_u **argp);
-static int do_autocmd_event(event_T event, char_u *pat, int once, int nested, char_u *cmd, int forceit, int group);
+static int do_autocmd_event(event_T event, char_u *pat, int once, int nested, char_u *cmd, int forceit, int group, int flags);
 static int apply_autocmds_group(event_T event, char_u *fname, char_u *fname_io, int force, int group, buf_T *buf, exarg_T *eap);
 static void auto_next_pat(AutoPatCmd *apc, int stop_at_last);
 static int au_find_group(char_u *name);
@@ -615,7 +615,7 @@ free_all_autocmds(void)
 
     for (current_augroup = -1; current_augroup < augroups.ga_len;
 							    ++current_augroup)
-	do_autocmd((char_u *)"", TRUE);
+	do_autocmd(NULL, (char_u *)"", TRUE);
 
     for (i = 0; i < augroups.ga_len; ++i)
     {
@@ -823,20 +823,23 @@ au_event_restore(char_u *old_ei)
  * :autocmd * *.c		show all autocommands for *.c files.
  *
  * Mostly a {group} argument can optionally appear before <event>.
+ * "eap" can be NULL.
  */
     void
-do_autocmd(char_u *arg_in, int forceit)
+do_autocmd(exarg_T *eap, char_u *arg_in, int forceit)
 {
     char_u	*arg = arg_in;
     char_u	*pat;
     char_u	*envpat = NULL;
     char_u	*cmd;
+    int		cmd_need_free = FALSE;
     event_T	event;
-    int		need_free = FALSE;
+    char_u	*tofree = NULL;
     int		nested = FALSE;
     int		once = FALSE;
     int		group;
     int		i;
+    int		flags = 0;
 
     if (*arg == '|')
     {
@@ -935,10 +938,14 @@ do_autocmd(char_u *arg_in, int forceit)
 	 */
 	if (*cmd != NUL)
 	{
+	    if (eap != NULL)
+		// Read a {} block if it follows.
+		cmd = may_get_cmd_block(eap, cmd, &tofree, &flags);
+
 	    cmd = expand_sfile(cmd);
 	    if (cmd == NULL)	    // some error
 		return;
-	    need_free = TRUE;
+	    cmd_need_free = TRUE;
 	}
     }
 
@@ -956,22 +963,26 @@ do_autocmd(char_u *arg_in, int forceit)
     last_group = AUGROUP_ERROR;		// for listing the group name
     if (*arg == '*' || *arg == NUL || *arg == '|')
     {
-	for (event = (event_T)0; (int)event < (int)NUM_EVENTS;
-					    event = (event_T)((int)event + 1))
-	    if (do_autocmd_event(event, pat,
-				 once, nested, cmd, forceit, group) == FAIL)
-		break;
+	if (!forceit && *cmd != NUL)
+	    emsg(_(e_cannot_define_autocommands_for_all_events));
+	else
+	    for (event = (event_T)0; (int)event < (int)NUM_EVENTS;
+					     event = (event_T)((int)event + 1))
+		if (do_autocmd_event(event, pat,
+			     once, nested, cmd, forceit, group, flags) == FAIL)
+		    break;
     }
     else
     {
 	while (*arg && *arg != '|' && !VIM_ISWHITE(*arg))
 	    if (do_autocmd_event(event_name2nr(arg, &arg), pat,
-				 once, nested,	cmd, forceit, group) == FAIL)
+			  once, nested,	cmd, forceit, group, flags) == FAIL)
 		break;
     }
 
-    if (need_free)
+    if (cmd_need_free)
 	vim_free(cmd);
+    vim_free(tofree);
     vim_free(envpat);
 }
 
@@ -1021,7 +1032,8 @@ do_autocmd_event(
     int		nested,
     char_u	*cmd,
     int		forceit,
-    int		group)
+    int		group,
+    int		flags)
 {
     AutoPat	*ap;
     AutoPat	**prev_ap;
@@ -1248,6 +1260,8 @@ do_autocmd_event(
 		return FAIL;
 	    ac->cmd = vim_strsave(cmd);
 	    ac->script_ctx = current_sctx;
+	    if (flags & UC_VIM9)
+		ac->script_ctx.sc_version = SCRIPT_VERSION_VIM9;
 #ifdef FEAT_EVAL
 	    ac->script_ctx.sc_lnum += SOURCING_LNUM;
 #endif
@@ -1273,10 +1287,11 @@ do_autocmd_event(
  */
     int
 do_doautocmd(
-    char_u	*arg,
+    char_u	*arg_start,
     int		do_msg,	    // give message for no matching autocmds?
     int		*did_something)
 {
+    char_u	*arg = arg_start;
     char_u	*fname;
     int		nothing_done = TRUE;
     int		group;
@@ -1315,8 +1330,12 @@ do_doautocmd(
 				      fname, NULL, TRUE, group, curbuf, NULL))
 	    nothing_done = FALSE;
 
-    if (nothing_done && do_msg)
-	msg(_("No matching autocommands"));
+    if (nothing_done && do_msg
+#ifdef FEAT_EVAL
+		&& !aborting()
+#endif
+	       )
+	smsg(_("No matching autocommands: %s"), arg_start);
     if (did_something != NULL)
 	*did_something = !nothing_done;
 
@@ -1333,7 +1352,7 @@ do_doautocmd(
     void
 ex_doautoall(exarg_T *eap)
 {
-    int		retval;
+    int		retval = OK;
     aco_save_T	aco;
     buf_T	*buf;
     bufref_T	bufref;
@@ -1350,7 +1369,8 @@ ex_doautoall(exarg_T *eap)
      */
     FOR_ALL_BUFFERS(buf)
     {
-	if (buf->b_ml.ml_mfp != NULL)
+	// Only do loaded buffers and skip the current buffer, it's done last.
+	if (buf->b_ml.ml_mfp != NULL && buf != curbuf)
 	{
 	    // find a window for this buffer and save some values
 	    aucmd_prepbuf(&aco, buf);
@@ -1360,20 +1380,29 @@ ex_doautoall(exarg_T *eap)
 	    retval = do_doautocmd(arg, FALSE, &did_aucmd);
 
 	    if (call_do_modelines && did_aucmd)
-	    {
 		// Execute the modeline settings, but don't set window-local
 		// options if we are using the current window for another
 		// buffer.
 		do_modelines(curwin == aucmd_win ? OPT_NOWIN : 0);
-	    }
 
 	    // restore the current window
 	    aucmd_restbuf(&aco);
 
 	    // stop if there is some error or buffer was deleted
 	    if (retval == FAIL || !bufref_valid(&bufref))
+	    {
+		retval = FAIL;
 		break;
+	    }
 	}
+    }
+
+    // Execute autocommands for the current buffer last.
+    if (retval == OK)
+    {
+	do_doautocmd(arg, FALSE, &did_aucmd);
+	if (call_do_modelines && did_aucmd)
+	    do_modelines(0);
     }
 
     check_cursor();	    // just in case lines got deleted
@@ -2103,14 +2132,16 @@ apply_autocmds_group(
 	    ap->last = FALSE;
 	ap->last = TRUE;
 
-	// make sure cursor and topline are valid
-	check_lnums(TRUE);
+	if (nesting == 1)
+	    // make sure cursor and topline are valid
+	    check_lnums(TRUE);
 
 	do_cmdline(NULL, getnextac, (void *)&patcmd,
 				     DOCMD_NOWAIT|DOCMD_VERBOSE|DOCMD_REPEAT);
 
-	// restore cursor and topline, unless they were changed
-	reset_lnums();
+	if (nesting == 1)
+	    // restore cursor and topline, unless they were changed
+	    reset_lnums();
 
 #ifdef FEAT_EVAL
 	if (eap != NULL)
@@ -2163,12 +2194,14 @@ apply_autocmds_group(
 	while (au_pending_free_buf != NULL)
 	{
 	    buf_T *b = au_pending_free_buf->b_next;
+
 	    vim_free(au_pending_free_buf);
 	    au_pending_free_buf = b;
 	}
 	while (au_pending_free_win != NULL)
 	{
 	    win_T *w = au_pending_free_win->w_next;
+
 	    vim_free(au_pending_free_win);
 	    au_pending_free_win = w;
 	}

@@ -40,7 +40,7 @@ static void enter_tabpage(tabpage_T *tp, buf_T *old_curbuf, int trigger_enter_au
 static void frame_fix_height(win_T *wp);
 static int frame_minheight(frame_T *topfrp, win_T *next_curwin);
 static int may_open_tabpage(void);
-static void win_enter_ext(win_T *wp, int undo_sync, int no_curwin, int trigger_new_autocmds, int trigger_enter_autocmds, int trigger_leave_autocmds);
+static int win_enter_ext(win_T *wp, int flags);
 static void win_free(win_T *wp, tabpage_T *tp);
 static int win_unlisted(win_T *wp);
 static void win_append(win_T *after, win_T *wp);
@@ -69,6 +69,14 @@ static win_T *win_alloc(win_T *after, int hidden);
 #define NOWIN		(win_T *)-1	// non-existing window
 
 #define ROWS_AVAIL (Rows - p_ch - tabline_height())
+
+// flags for win_enter_ext()
+#define WEE_UNDO_SYNC			0x01
+#define WEE_CURWIN_INVALID		0x02
+#define WEE_TRIGGER_NEW_AUTOCMDS	0x04
+#define WEE_TRIGGER_ENTER_AUTOCMDS	0x08
+#define WEE_TRIGGER_LEAVE_AUTOCMDS	0x10
+#define WEE_ALLOW_PARSE_MESSAGES	0x20
 
 static char *m_onlyone = N_("Already only one window");
 
@@ -133,7 +141,7 @@ do_window(
     do { \
 	if (cmdwin_type != 0) \
 	{ \
-	    emsg(_(e_cmdwin)); \
+	    emsg(_(e_invalid_in_cmdline_window)); \
 	    return; \
 	} \
     } while (0)
@@ -190,7 +198,7 @@ do_window(
 					? curwin->w_alt_fnum : Prenum) == NULL)
 		{
 		    if (Prenum == 0)
-			emsg(_(e_noalt));
+			emsg(_(e_no_alternate_file));
 		    else
 			semsg(_("E92: Buffer %ld not found"), Prenum);
 		    break;
@@ -766,11 +774,10 @@ cmd_with_count(
     size_t	bufsize,
     long	Prenum)
 {
-    size_t	len = STRLEN(cmd);
-
-    STRCPY(bufp, cmd);
     if (Prenum > 0)
-	vim_snprintf((char *)bufp + len, bufsize - len, "%ld", Prenum);
+	vim_snprintf((char *)bufp, bufsize, "%s %ld", cmd, Prenum);
+    else
+	STRCPY(bufp, cmd);
 }
 
 /*
@@ -783,6 +790,11 @@ check_split_disallowed()
     if (split_disallowed > 0)
     {
 	emsg(_("E242: Can't split a window while closing another"));
+	return FAIL;
+    }
+    if (curwin->w_buffer->b_locked_split)
+    {
+	emsg(_(e_cannot_split_window_when_closing_buffer));
 	return FAIL;
     }
     return OK;
@@ -809,6 +821,9 @@ win_split(int size, int flags)
     if (ERROR_IF_ANY_POPUP_WINDOW)
 	return FAIL;
 
+    if (check_split_disallowed() == FAIL)
+	return FAIL;
+
     // When the ":tab" modifier was used open a new tab page instead.
     if (may_open_tabpage() == OK)
 	return OK;
@@ -820,8 +835,6 @@ win_split(int size, int flags)
 	emsg(_("E442: Can't split topleft and botright at the same time"));
 	return FAIL;
     }
-    if (check_split_disallowed() == FAIL)
-	return FAIL;
 
     // When creating the help window make a snapshot of the window layout.
     // Otherwise clear the snapshot, it's now invalid.
@@ -874,7 +887,7 @@ win_split_ins(
     {
 	if (VISIBLE_HEIGHT(oldwin) <= p_wmh && new_wp == NULL)
 	{
-	    emsg(_(e_noroom));
+	    emsg(_(e_not_enough_room));
 	    return FAIL;
 	}
 	need_status = STATUS_HEIGHT;
@@ -932,7 +945,7 @@ win_split_ins(
 	}
 	if (available < needed && new_wp == NULL)
 	{
-	    emsg(_(e_noroom));
+	    emsg(_(e_not_enough_room));
 	    return FAIL;
 	}
 	if (new_size == 0)
@@ -1015,7 +1028,7 @@ win_split_ins(
 	}
 	if (available < needed && new_wp == NULL)
 	{
-	    emsg(_(e_noroom));
+	    emsg(_(e_not_enough_room));
 	    return FAIL;
 	}
 	oldwin_height = oldwin->w_height;
@@ -1342,7 +1355,8 @@ win_split_ins(
     /*
      * make the new window the current window
      */
-    win_enter_ext(wp, FALSE, FALSE, TRUE, TRUE, TRUE);
+    (void)win_enter_ext(wp, WEE_TRIGGER_NEW_AUTOCMDS
+		    | WEE_TRIGGER_ENTER_AUTOCMDS | WEE_TRIGGER_LEAVE_AUTOCMDS);
     if (flags & WSP_VERT)
 	p_wiw = i;
     else
@@ -1686,24 +1700,10 @@ win_exchange(long Prenum)
     curwin->w_vsep_width = wp->w_vsep_width;
     wp->w_vsep_width = temp;
 
-    // If the windows are not in the same frame, exchange the sizes to avoid
-    // messing up the window layout.  Otherwise fix the frame sizes.
-    if (curwin->w_frame->fr_parent != wp->w_frame->fr_parent)
-    {
-	temp = curwin->w_height;
-	curwin->w_height = wp->w_height;
-	wp->w_height = temp;
-	temp = curwin->w_width;
-	curwin->w_width = wp->w_width;
-	wp->w_width = temp;
-    }
-    else
-    {
-	frame_fix_height(curwin);
-	frame_fix_height(wp);
-	frame_fix_width(curwin);
-	frame_fix_width(wp);
-    }
+    frame_fix_height(curwin);
+    frame_fix_height(wp);
+    frame_fix_width(curwin);
+    frame_fix_width(wp);
 
     (void)win_comp_pos();		// recompute window positions
 
@@ -2486,6 +2486,9 @@ win_close(win_T *win, int free_buf)
 #ifdef FEAT_DIFF
     int		had_diffmode = win->w_p_diff;
 #endif
+#ifdef MESSAGE_QUEUE
+    int		did_decrement = FALSE;
+#endif
 
 #if defined(FEAT_TERMINAL) && defined(FEAT_PROP_POPUP)
     // Can close a popup window with a terminal if the job has finished.
@@ -2664,7 +2667,16 @@ win_close(win_T *win, int free_buf)
 	win_comp_pos();
     if (close_curwin)
     {
-	win_enter_ext(wp, FALSE, TRUE, FALSE, TRUE, TRUE);
+	// Pass WEE_ALLOW_PARSE_MESSAGES to decrement dont_parse_messages
+	// before autocommands.
+#ifdef MESSAGE_QUEUE
+	did_decrement =
+#else
+	(void)
+#endif
+	    win_enter_ext(wp,
+		WEE_CURWIN_INVALID | WEE_TRIGGER_ENTER_AUTOCMDS
+		      | WEE_TRIGGER_LEAVE_AUTOCMDS | WEE_ALLOW_PARSE_MESSAGES);
 	if (other_buffer)
 	    // careful: after this wp and win may be invalid!
 	    apply_autocmds(EVENT_BUFENTER, NULL, NULL, FALSE, curbuf);
@@ -2672,7 +2684,8 @@ win_close(win_T *win, int free_buf)
 
     --split_disallowed;
 #ifdef MESSAGE_QUEUE
-    --dont_parse_messages;
+    if (!did_decrement)
+	--dont_parse_messages;
 #endif
 
     /*
@@ -4190,8 +4203,9 @@ enter_tabpage(
     // We would like doing the TabEnter event first, but we don't have a
     // valid current window yet, which may break some commands.
     // This triggers autocommands, thus may make "tp" invalid.
-    win_enter_ext(tp->tp_curwin, FALSE, TRUE, FALSE,
-			      trigger_enter_autocmds, trigger_leave_autocmds);
+    (void)win_enter_ext(tp->tp_curwin, WEE_CURWIN_INVALID
+		  | (trigger_enter_autocmds ? WEE_TRIGGER_ENTER_AUTOCMDS : 0)
+		  | (trigger_leave_autocmds ? WEE_TRIGGER_LEAVE_AUTOCMDS : 0));
     prevwin = next_prevwin;
 
     last_status(FALSE);		// status line may appear or disappear
@@ -4737,34 +4751,32 @@ win_goto_hor(
     void
 win_enter(win_T *wp, int undo_sync)
 {
-    win_enter_ext(wp, undo_sync, FALSE, FALSE, TRUE, TRUE);
+    (void)win_enter_ext(wp, (undo_sync ? WEE_UNDO_SYNC : 0)
+		    | WEE_TRIGGER_ENTER_AUTOCMDS | WEE_TRIGGER_LEAVE_AUTOCMDS);
 }
 
 /*
- * Make window wp the current window.
- * Can be called with "curwin_invalid" TRUE, which means that curwin has just
- * been closed and isn't valid.
+ * Make window "wp" the current window.
+ * Can be called with "flags" containing WEE_CURWIN_INVALID, which means that
+ * curwin has just been closed and isn't valid.
+ * Returns TRUE when dont_parse_messages was decremented.
  */
-    static void
-win_enter_ext(
-    win_T	*wp,
-    int		undo_sync,
-    int		curwin_invalid,
-    int		trigger_new_autocmds,
-    int		trigger_enter_autocmds,
-    int		trigger_leave_autocmds)
+    static int
+win_enter_ext(win_T *wp, int flags)
 {
     int		other_buffer = FALSE;
+    int		curwin_invalid = (flags & WEE_CURWIN_INVALID);
+    int		did_decrement = FALSE;
 
     if (wp == curwin && !curwin_invalid)	// nothing to do
-	return;
+	return FALSE;
 
 #ifdef FEAT_JOB_CHANNEL
     if (!curwin_invalid)
 	leaving_window(curwin);
 #endif
 
-    if (!curwin_invalid && trigger_leave_autocmds)
+    if (!curwin_invalid && (flags & WEE_TRIGGER_LEAVE_AUTOCMDS))
     {
 	/*
 	 * Be careful: If autocommands delete the window, return now.
@@ -4774,20 +4786,20 @@ win_enter_ext(
 	    apply_autocmds(EVENT_BUFLEAVE, NULL, NULL, FALSE, curbuf);
 	    other_buffer = TRUE;
 	    if (!win_valid(wp))
-		return;
+		return FALSE;
 	}
 	apply_autocmds(EVENT_WINLEAVE, NULL, NULL, FALSE, curbuf);
 	if (!win_valid(wp))
-	    return;
+	    return FALSE;
 #ifdef FEAT_EVAL
 	// autocmds may abort script processing
 	if (aborting())
-	    return;
+	    return FALSE;
 #endif
     }
 
     // sync undo before leaving the current buffer
-    if (undo_sync && curbuf != wp->w_buffer)
+    if ((flags & WEE_UNDO_SYNC) && curbuf != wp->w_buffer)
 	u_sync(FALSE);
 
     // Might need to scroll the old window before switching, e.g., when the
@@ -4808,6 +4820,16 @@ win_enter_ext(
     if (!virtual_active())
 	curwin->w_cursor.coladd = 0;
     changed_line_abv_curs();	// assume cursor position needs updating
+
+    // Now it is OK to parse messages again, which may be needed in
+    // autocommands.
+#ifdef MESSAGE_QUEUE
+    if (flags & WEE_ALLOW_PARSE_MESSAGES)
+    {
+	--dont_parse_messages;
+	did_decrement = TRUE;
+    }
+#endif
 
     if (curwin->w_localdir != NULL || curtab->tp_localdir != NULL)
     {
@@ -4844,9 +4866,9 @@ win_enter_ext(
     entering_window(curwin);
 #endif
     // Careful: autocommands may close the window and make "wp" invalid
-    if (trigger_new_autocmds)
+    if (flags & WEE_TRIGGER_NEW_AUTOCMDS)
 	apply_autocmds(EVENT_WINNEW, NULL, NULL, FALSE, curbuf);
-    if (trigger_enter_autocmds)
+    if (flags & WEE_TRIGGER_ENTER_AUTOCMDS)
     {
 	apply_autocmds(EVENT_WINENTER, NULL, NULL, FALSE, curbuf);
 	if (other_buffer)
@@ -4884,6 +4906,8 @@ win_enter_ext(
 
     // Change directories when the 'acd' option is set.
     DO_AUTOCHDIR;
+
+    return did_decrement;
 }
 
 
@@ -5115,8 +5139,9 @@ win_free(
 
 		// If there already is an entry with "wi_win" set to NULL it
 		// must be removed, it would never be used.
+		// Skip "wip" itself, otherwise Coverity complains.
 		for (wip2 = buf->b_wininfo; wip2 != NULL; wip2 = wip2->wi_next)
-		    if (wip2->wi_win == NULL)
+		    if (wip2 != wip && wip2->wi_win == NULL)
 		    {
 			if (wip2->wi_next != NULL)
 			    wip2->wi_next->wi_prev = wip2->wi_prev;
@@ -5299,12 +5324,7 @@ frame_remove(frame_T *frp)
     if (frp->fr_prev != NULL)
 	frp->fr_prev->fr_next = frp->fr_next;
     else
-    {
 	frp->fr_parent->fr_child = frp->fr_next;
-	// special case: topframe->fr_child == frp
-	if (topframe->fr_child == frp)
-	    topframe->fr_child = frp->fr_next;
-    }
     if (frp->fr_next != NULL)
 	frp->fr_next->fr_prev = frp->fr_prev;
 }
@@ -5918,13 +5938,13 @@ win_setminheight(void)
     while (p_wmh > 0)
     {
 	room = Rows - p_ch;
-	needed = frame_minheight(topframe, NULL);
+	needed = min_rows() - 1;  // 1 was added for the cmdline
 	if (room >= needed)
 	    break;
 	--p_wmh;
 	if (first)
 	{
-	    emsg(_(e_noroom));
+	    emsg(_(e_not_enough_room));
 	    first = FALSE;
 	}
     }
@@ -5950,7 +5970,7 @@ win_setminwidth(void)
 	--p_wmw;
 	if (first)
 	{
-	    emsg(_(e_noroom));
+	    emsg(_(e_not_enough_room));
 	    first = FALSE;
 	}
     }
@@ -6442,7 +6462,7 @@ command_height(void)
 	    {
 		if (frp == NULL)
 		{
-		    emsg(_(e_noroom));
+		    emsg(_(e_not_enough_room));
 		    p_ch = old_p_ch;
 		    curtab->tp_ch_used = p_ch;
 		    cmdline_row = Rows - p_ch;
@@ -6533,7 +6553,7 @@ last_status_rec(frame_T *fr, int statusline)
 	    {
 		if (fp == topframe)
 		{
-		    emsg(_(e_noroom));
+		    emsg(_(e_not_enough_room));
 		    return;
 		}
 		// In a column of frames: go to frame above.  If already at

@@ -13,9 +13,7 @@ source shared.vim
 
 func Check_X11_Connection()
   if has('x11')
-    if empty($DISPLAY)
-      throw 'Skipped: $DISPLAY is not set'
-    endif
+    CheckEnv DISPLAY
     try
       call remote_send('xxx', '')
     catch
@@ -42,6 +40,14 @@ func Test_client_server()
   " Takes a short while for the server to be active.
   " When using valgrind it takes much longer.
   call WaitForAssert({-> assert_match(name, serverlist())})
+
+  if !has('win32')
+    if RunVim([], [], '--serverlist >Xtest_serverlist')
+      let lines = readfile('Xtest_serverlist')
+      call assert_true(index(lines, 'XVIMTEST') >= 0)
+    endif
+    call delete('Xtest_serverlist')
+  endif
 
   eval name->remote_foreground()
 
@@ -81,6 +87,7 @@ func Test_client_server()
   call writefile(['one', 'two'], 'Xclientfile')
   call system(cmd)
   call WaitForAssert({-> assert_equal('two', remote_expr(name, "getline(2)", "", 2))})
+  call delete('Xclientfile')
 
   " Expression evaluated locally.
   if v:servername == ''

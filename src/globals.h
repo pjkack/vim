@@ -230,13 +230,16 @@ EXTERN int	did_endif INIT(= FALSE);    // just had ":endif"
 EXTERN int	did_emsg;		    // set by emsg() when the message
 					    // is displayed or thrown
 #ifdef FEAT_EVAL
+EXTERN int	did_emsg_silent INIT(= 0);  // incremented by emsg() when
+					    // emsg_silent was set and did_emsg
+					    // is not incremented
 EXTERN int	did_emsg_def;		    // set by emsg() when emsg_silent
 					    // is set before calling a function
 EXTERN int	did_emsg_cumul;		    // cumulative did_emsg, increased
 					    // when did_emsg is reset.
 EXTERN int	called_vim_beep;	    // set if vim_beep() is called
-EXTERN int	did_uncaught_emsg;	    // emsg() was called and did not
-					    // cause an exception
+EXTERN int	uncaught_emsg;		    // number of times emsg() was
+					    // called and did show a message
 #endif
 EXTERN int	did_emsg_syntax;	    // did_emsg set because of a
 					    // syntax error
@@ -415,7 +418,10 @@ EXTERN type_T t_blob INIT6(VAR_BLOB, 0, 0, TTFLAG_STATIC, NULL, NULL);
 EXTERN type_T t_job INIT6(VAR_JOB, 0, 0, TTFLAG_STATIC, NULL, NULL);
 EXTERN type_T t_channel INIT6(VAR_CHANNEL, 0, 0, TTFLAG_STATIC, NULL, NULL);
 
-EXTERN type_T t_func_unknown INIT6(VAR_FUNC, -1, 0, TTFLAG_STATIC, &t_unknown, NULL);
+// Special value used for @#.
+EXTERN type_T t_number_or_string INIT6(VAR_STRING, 0, 0, TTFLAG_STATIC, NULL, NULL);
+
+EXTERN type_T t_func_unknown INIT6(VAR_FUNC, -1, -1, TTFLAG_STATIC, &t_unknown, NULL);
 EXTERN type_T t_func_void INIT6(VAR_FUNC, -1, 0, TTFLAG_STATIC, &t_void, NULL);
 EXTERN type_T t_func_any INIT6(VAR_FUNC, -1, 0, TTFLAG_STATIC, &t_any, NULL);
 EXTERN type_T t_func_number INIT6(VAR_FUNC, -1, 0, TTFLAG_STATIC, &t_number, NULL);
@@ -433,7 +439,10 @@ EXTERN type_T t_dict_empty INIT6(VAR_DICT, 0, 0, TTFLAG_STATIC, &t_unknown, NULL
 EXTERN type_T t_list_bool INIT6(VAR_LIST, 0, 0, TTFLAG_STATIC, &t_bool, NULL);
 EXTERN type_T t_list_number INIT6(VAR_LIST, 0, 0, TTFLAG_STATIC, &t_number, NULL);
 EXTERN type_T t_list_string INIT6(VAR_LIST, 0, 0, TTFLAG_STATIC, &t_string, NULL);
+EXTERN type_T t_list_job INIT6(VAR_LIST, 0, 0, TTFLAG_STATIC, &t_job, NULL);
 EXTERN type_T t_list_dict_any INIT6(VAR_LIST, 0, 0, TTFLAG_STATIC, &t_dict_any, NULL);
+EXTERN type_T t_list_list_any INIT6(VAR_LIST, 0, 0, TTFLAG_STATIC, &t_list_any, NULL);
+EXTERN type_T t_list_list_string INIT6(VAR_LIST, 0, 0, TTFLAG_STATIC, &t_list_string, NULL);
 
 EXTERN type_T t_dict_bool INIT6(VAR_DICT, 0, 0, TTFLAG_STATIC, &t_bool, NULL);
 EXTERN type_T t_dict_number INIT6(VAR_DICT, 0, 0, TTFLAG_STATIC, &t_number, NULL);
@@ -737,6 +746,10 @@ EXTERN int	popup_visible INIT(= FALSE);
 EXTERN int	text_prop_frozen INIT(= 0);
 #endif
 
+// When set the popup menu will redraw soon using the pum_win_ values. Do not
+// draw over the poup menu area to avoid flicker.
+EXTERN int	pum_will_redraw INIT(= FALSE);
+
 /*
  * The window layout is kept in a tree of frames.  topframe points to the top
  * of the tree.
@@ -869,6 +882,8 @@ EXTERN int	VIsual_active INIT(= FALSE);
 				// whether Visual mode is active
 EXTERN int	VIsual_select INIT(= FALSE);
 				// whether Select mode is active
+EXTERN int	restart_VIsual_select INIT(= 0);
+				// restart Select mode when next cmd finished
 EXTERN int	VIsual_reselect;
 				// whether to restart the selection after a
 				// Select mode mapping or menu
@@ -1303,6 +1318,7 @@ EXTERN int  wild_menu_showing INIT(= 0);
 #ifdef MSWIN
 EXTERN char_u	toupper_tab[256];	// table for toupper()
 EXTERN char_u	tolower_tab[256];	// table for tolower()
+EXTERN int	found_register_arg INIT(= FALSE);
 #endif
 
 #ifdef FEAT_LINEBREAK
@@ -1341,26 +1357,16 @@ EXTERN char_u	*homedir INIT(= NULL);
 // directory is not a local directory, globaldir is NULL.
 EXTERN char_u	*globaldir INIT(= NULL);
 
-// Characters from 'listchars' option
-EXTERN int	lcs_eol INIT(= '$');
-EXTERN int	lcs_ext INIT(= NUL);
-EXTERN int	lcs_prec INIT(= NUL);
-EXTERN int	lcs_nbsp INIT(= NUL);
-EXTERN int	lcs_space INIT(= NUL);
-EXTERN int	lcs_tab1 INIT(= NUL);
-EXTERN int	lcs_tab2 INIT(= NUL);
-EXTERN int	lcs_tab3 INIT(= NUL);
-EXTERN int	lcs_trail INIT(= NUL);
-#ifdef FEAT_CONCEAL
-EXTERN int	lcs_conceal INIT(= ' ');
-#endif
-
 // Characters from 'fillchars' option
 EXTERN int	fill_stl INIT(= ' ');
 EXTERN int	fill_stlnc INIT(= ' ');
 EXTERN int	fill_vert INIT(= ' ');
 EXTERN int	fill_fold INIT(= '-');
+EXTERN int	fill_foldopen INIT(= '-');
+EXTERN int	fill_foldclosed INIT(= '+');
+EXTERN int	fill_foldsep INIT(= '|');
 EXTERN int	fill_diff INIT(= '-');
+EXTERN int	fill_eob INIT(= '~');
 
 #ifdef FEAT_FOLDING
 EXTERN int	disable_fold_update INIT(= 0);
@@ -1384,6 +1390,9 @@ EXTERN char_u no_lines_msg[]	INIT(= N_("--No lines in buffer--"));
  */
 EXTERN long	sub_nsubs;	// total number of substitutions
 EXTERN linenr_T	sub_nlines;	// total number of lines changed
+
+// Used when a compiled :substitute has an expression.
+EXTERN struct subs_expr_S	*substitute_instr INIT(= NULL);
 
 // table to store parsed 'wildmode'
 EXTERN char_u	wim_flags[4];
@@ -1576,11 +1585,6 @@ EXTERN int netbeansSuppressNoLines INIT(= 0); // skip "No lines in buffer"
  */
 EXTERN char e_abort[]		INIT(= N_("E470: Command aborted"));
 EXTERN char e_argreq[]		INIT(= N_("E471: Argument required"));
-EXTERN char e_backslash[]	INIT(= N_("E10: \\ should be followed by /, ? or &"));
-#ifdef FEAT_CMDWIN
-EXTERN char e_cmdwin[]	INIT(= N_("E11: Invalid in command-line window; <CR> executes, CTRL-C quits"));
-#endif
-EXTERN char e_curdir[]	INIT(= N_("E12: Command not allowed from exrc/vimrc in current dir or tag search"));
 #ifdef FEAT_EVAL
 EXTERN char e_endif[]		INIT(= N_("E171: Missing :endif"));
 EXTERN char e_catch[]		INIT(= N_("E603: :catch without :try"));
@@ -1593,7 +1597,6 @@ EXTERN char e_endfor[]		INIT(= N_("E170: Missing :endfor"));
 EXTERN char e_while[]		INIT(= N_("E588: :endwhile without :while"));
 EXTERN char e_for[]		INIT(= N_("E588: :endfor without :for"));
 #endif
-EXTERN char e_exists[]	INIT(= N_("E13: File exists (add ! to override)"));
 EXTERN char e_failed[]	INIT(= N_("E472: Command failed"));
 #if defined(FEAT_GUI) && defined(FEAT_XFONTSET)
 EXTERN char e_fontset[]	INIT(= N_("E234: Unknown fontset: %s"));
@@ -1613,13 +1616,6 @@ EXTERN char e_invarg2[]		INIT(= N_("E475: Invalid argument: %s"));
 EXTERN char e_duparg2[]		INIT(= N_("E983: Duplicate argument: %s"));
 EXTERN char e_invargval[]	INIT(= N_("E475: Invalid value for argument %s"));
 EXTERN char e_invargNval[]	INIT(= N_("E475: Invalid value for argument %s: %s"));
-#ifdef FEAT_EVAL
-EXTERN char e_invexpr2[]	INIT(= N_("E15: Invalid expression: %s"));
-#endif
-EXTERN char e_invrange[]	INIT(= N_("E16: Invalid range"));
-#if defined(UNIX) || defined(FEAT_SYN_HL) || defined(FEAT_SPELL)
-EXTERN char e_isadir2[]		INIT(= N_("E17: \"%s\" is a directory"));
-#endif
 #ifdef FEAT_SPELL
 EXTERN char e_no_spell[]	INIT(= N_("E756: Spell checking is not possible"));
 #endif
@@ -1638,40 +1634,16 @@ EXTERN char e_fsync[]		INIT(= N_("E667: Fsync failed"));
 	|| defined(DYNAMIC_MZSCHEME) \
 	|| defined(DYNAMIC_LUA) \
 	|| defined(FEAT_TERMINAL)
-EXTERN char e_loadlib[]	INIT(= N_("E370: Could not load library %s"));
+EXTERN char e_loadlib[]	INIT(= N_("E370: Could not load library %s: %s"));
 EXTERN char e_loadfunc[]	INIT(= N_("E448: Could not load library function %s"));
 #endif
-EXTERN char e_markinval[]	INIT(= N_("E19: Mark has invalid line number"));
-EXTERN char e_marknotset[]	INIT(= N_("E20: Mark not set"));
-EXTERN char e_modifiable[]	INIT(= N_("E21: Cannot make changes, 'modifiable' is off"));
-EXTERN char e_nesting[]	INIT(= N_("E22: Scripts nested too deep"));
-EXTERN char e_noalt[]		INIT(= N_("E23: No alternate file"));
-EXTERN char e_noabbr[]	INIT(= N_("E24: No such abbreviation"));
 EXTERN char e_nobang[]	INIT(= N_("E477: No ! allowed"));
-#if !defined(FEAT_GUI) || defined(VIMDLL)
-EXTERN char e_nogvim[]	INIT(= N_("E25: GUI cannot be used: Not enabled at compile time"));
-#endif
-#ifndef FEAT_RIGHTLEFT
-EXTERN char e_nohebrew[]	INIT(= N_("E26: Hebrew cannot be used: Not enabled at compile time\n"));
-#endif
-EXTERN char e_nofarsi[]		INIT(= N_("E27: Farsi support has been removed\n"));
 #ifndef FEAT_ARABIC
 EXTERN char e_noarabic[]	INIT(= N_("E800: Arabic cannot be used: Not enabled at compile time\n"));
 #endif
-#if defined(FEAT_SEARCH_EXTRA) || defined(FEAT_SYN_HL)
-EXTERN char e_nogroup[]	INIT(= N_("E28: No such highlight group name: %s"));
-#endif
-EXTERN char e_noinstext[]	INIT(= N_("E29: No inserted text yet"));
-EXTERN char e_nolastcmd[]	INIT(= N_("E30: No previous command line"));
-EXTERN char e_nomap[]		INIT(= N_("E31: No such mapping"));
 EXTERN char e_nomatch[]	INIT(= N_("E479: No match"));
 EXTERN char e_nomatch2[]	INIT(= N_("E480: No match: %s"));
-EXTERN char e_noname[]	INIT(= N_("E32: No file name"));
-EXTERN char e_nopresub[]	INIT(= N_("E33: No previous substitute regular expression"));
-EXTERN char e_noprev[]	INIT(= N_("E34: No previous command"));
-EXTERN char e_noprevre[]	INIT(= N_("E35: No previous regular expression"));
 EXTERN char e_norange[]	INIT(= N_("E481: No range allowed"));
-EXTERN char e_noroom[]	INIT(= N_("E36: Not enough room"));
 #ifdef FEAT_CLIENTSERVER
 EXTERN char e_noserver[]	INIT(= N_("E247: no registered server named \"%s\""));
 #endif
@@ -1679,17 +1651,9 @@ EXTERN char e_notcreate[]	INIT(= N_("E482: Can't create file %s"));
 EXTERN char e_notmp[]		INIT(= N_("E483: Can't get temp file name"));
 EXTERN char e_notopen[]		INIT(= N_("E484: Can't open file %s"));
 EXTERN char e_notread[]		INIT(= N_("E485: Can't read file %s"));
-EXTERN char e_null[]		INIT(= N_("E38: Null argument"));
-#if defined(FEAT_DIGRAPHS) || defined(FEAT_TIMERS) || defined(FEAT_EVAL)
-EXTERN char e_number_exp[]	INIT(= N_("E39: Number expected"));
-#endif
-#ifdef FEAT_QUICKFIX
-EXTERN char e_openerrf[]	INIT(= N_("E40: Can't open errorfile %s"));
-#endif
 #if defined(FEAT_GUI_GTK) || defined(FEAT_GUI_X11)
 EXTERN char e_opendisp[]	INIT(= N_("E233: cannot open display"));
 #endif
-EXTERN char e_outofmem[]	INIT(= N_("E41: Out of memory!"));
 EXTERN char e_patnotf[]		INIT(= N_("Pattern not found"));
 EXTERN char e_patnotf2[]	INIT(= N_("E486: Pattern not found: %s"));
 EXTERN char e_positive[]	INIT(= N_("E487: Argument must be positive"));
@@ -1698,19 +1662,16 @@ EXTERN char e_prev_dir[]	INIT(= N_("E459: Cannot go back to previous directory")
 #endif
 
 #ifdef FEAT_QUICKFIX
-EXTERN char e_quickfix[]	INIT(= N_("E42: No Errors"));
 EXTERN char e_loclist[]		INIT(= N_("E776: No location list"));
 #endif
-EXTERN char e_re_damg[]		INIT(= N_("E43: Damaged match string"));
-EXTERN char e_re_corr[]		INIT(= N_("E44: Corrupted regexp program"));
-EXTERN char e_readonly[]	INIT(= N_("E45: 'readonly' option is set (add ! to override)"));
 #ifdef FEAT_EVAL
 EXTERN char e_letwrong[]	INIT(= N_("E734: Wrong variable type for %s="));
 EXTERN char e_illvar[]		INIT(= N_("E461: Illegal variable name: %s"));
 EXTERN char e_cannot_mod[]	INIT(= N_("E995: Cannot modify existing variable"));
-EXTERN char e_readonlyvar[]	INIT(= N_("E46: Cannot change read-only variable \"%s\""));
 EXTERN char e_readonlysbx[]	INIT(= N_("E794: Cannot set variable in the sandbox: \"%s\""));
 EXTERN char e_stringreq[]	INIT(= N_("E928: String required"));
+EXTERN char e_numberreq[]	INIT(= N_("E889: Number required"));
+EXTERN char e_boolreq[]		INIT(= N_("E839: Bool required"));
 EXTERN char e_emptykey[]	INIT(= N_("E713: Cannot use empty key for Dictionary"));
 EXTERN char e_dictreq[]		INIT(= N_("E715: Dictionary required"));
 EXTERN char e_listidx[]		INIT(= N_("E684: list index out of range: %ld"));
@@ -1726,18 +1687,10 @@ EXTERN char e_list_end[]	INIT(= N_("E697: Missing end of List ']': %s"));
 EXTERN char e_listdictarg[]	INIT(= N_("E712: Argument of %s must be a List or Dictionary"));
 EXTERN char e_listdictblobarg[]	INIT(= N_("E896: Argument of %s must be a List, Dictionary or Blob"));
 EXTERN char e_modulus[]		INIT(= N_("E804: Cannot use '%' with Float"));
-EXTERN char e_inval_string[]	INIT(= N_("E908: using an invalid value as a String"));
 EXTERN char e_const_option[]	INIT(= N_("E996: Cannot lock an option"));
 EXTERN char e_unknown_option[]	INIT(= N_("E113: Unknown option: %s"));
-EXTERN char e_letunexp[]	INIT(= N_("E18: Unexpected characters in :let"));
 EXTERN char e_reduceempty[]	INIT(= N_("E998: Reduce of an empty %s with no initial value"));
 EXTERN char e_no_dict_key[]	INIT(= N_("E857: Dictionary key \"%s\" required"));
-#endif
-#ifdef FEAT_QUICKFIX
-EXTERN char e_readerrf[]	INIT(= N_("E47: Error while reading errorfile"));
-#endif
-#ifdef HAVE_SANDBOX
-EXTERN char e_sandbox[]		INIT(= N_("E48: Not allowed in sandbox"));
 #endif
 EXTERN char e_secure[]		INIT(= N_("E523: Not allowed here"));
 EXTERN char e_textlock[]	INIT(= N_("E578: Not allowed to change text here"));
@@ -1746,7 +1699,6 @@ EXTERN char e_textwinlock[]	INIT(= N_("E565: Not allowed to change text or chang
 	|| defined(UNIX) || defined(VMS)
 EXTERN char e_screenmode[]	INIT(= N_("E359: Screen mode setting not supported"));
 #endif
-EXTERN char e_scroll[]	INIT(= N_("E49: Invalid scroll size"));
 EXTERN char e_shellempty[]	INIT(= N_("E91: 'shell' option is empty"));
 #if defined(FEAT_SIGN_ICONS) && !defined(FEAT_GUI_GTK)
 EXTERN char e_signdata[]	INIT(= N_("E255: Couldn't read in sign data!"));
@@ -1818,9 +1770,12 @@ EXTERN char e_nowhitespace[]	INIT(= N_("E274: No white space allowed before pare
 
 EXTERN char e_lock_unlock[]	INIT(= N_("E940: Cannot lock or unlock variable %s"));
 #endif
+
 #if defined(FEAT_GUI) || defined(FEAT_TERMGUICOLORS)
 EXTERN char e_alloc_color[]	INIT(= N_("E254: Cannot allocate color %s"));
 #endif
+EXTERN char e_chan_or_job_req[]	INIT(= N_("E706: Channel or Job required"));
+EXTERN char e_jobreq[]		INIT(= N_("E693: Job required"));
 
 EXTERN char top_bot_msg[] INIT(= N_("search hit TOP, continuing at BOTTOM"));
 EXTERN char bot_top_msg[] INIT(= N_("search hit BOTTOM, continuing at TOP"));
@@ -1869,6 +1824,7 @@ EXTERN int  nfa_fail_for_testing INIT(= FALSE);
 EXTERN int  no_query_mouse_for_testing INIT(= FALSE);
 EXTERN int  ui_delay_for_testing INIT(= 0);
 EXTERN int  reset_term_props_on_termresponse INIT(= FALSE);
+EXTERN long override_sysinfo_uptime INIT(= -1);
 
 EXTERN int  in_free_unref_items INIT(= FALSE);
 #endif
@@ -1879,6 +1835,8 @@ EXTERN int  timer_busy INIT(= 0);   // when timer is inside vgetc() then > 0
 #endif
 #ifdef FEAT_EVAL
 EXTERN int  input_busy INIT(= 0);   // when inside get_user_input() then > 0
+
+EXTERN typval_T	*lval_root INIT(= NULL);
 #endif
 
 #ifdef FEAT_BEVAL_TERM
@@ -1906,7 +1864,8 @@ EXTERN listitem_T range_list_item;
 // Passed to an eval() function to enable evaluation.
 EXTERN evalarg_T EVALARG_EVALUATE
 # ifdef DO_INIT
-	= {EVAL_EVALUATE, 0, NULL, NULL, NULL, {0, 0, 0, 0, NULL}, NULL, NULL}
+	= {EVAL_EVALUATE, 0, NULL, NULL, NULL, NULL, {0, 0, 0, 0, NULL},
+					  {0, 0, 0, 0, NULL}, NULL, NULL, NULL}
 # endif
 	;
 #endif
@@ -1944,7 +1903,7 @@ EXTERN int channel_need_redraw INIT(= FALSE);
 #endif
 
 #define FOR_ALL_LIST_ITEMS(l, li) \
-    for ((li) = (l)->lv_first; (li) != NULL; (li) = (li)->li_next)
+    for ((li) = (l) == NULL ? NULL : (l)->lv_first; (li) != NULL; (li) = (li)->li_next)
 
 // While executing a regexp and set to OPTION_MAGIC_ON or OPTION_MAGIC_OFF this
 // overrules p_magic.  Otherwise set to OPTION_MAGIC_NOT_SET.

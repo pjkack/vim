@@ -184,11 +184,13 @@
 #  define load_dll(n) dlopen((n), RTLD_LAZY|RTLD_GLOBAL)
 #  define symbol_from_dll dlsym
 #  define close_dll dlclose
+#  define load_dll_error dlerror
 # else
 #  define RUBY_PROC FARPROC
 #  define load_dll vimLoadLib
 #  define symbol_from_dll GetProcAddress
 #  define close_dll FreeLibrary
+#  define load_dll_error GetWin32Error
 # endif
 #endif
 
@@ -436,7 +438,7 @@ static VALUE (*dll_rb_hash_new) (void);
 static VALUE (*dll_rb_inspect) (VALUE);
 static VALUE (*dll_rb_int2inum) (long);
 static ID (*dll_rb_intern) (const char*);
-# if VIM_SIZEOF_INT < VIM_SIZEOF_LONG // 64 bits only
+# if RUBY_VERSION >= 30 || VIM_SIZEOF_INT < VIM_SIZEOF_LONG
 static long (*dll_rb_fix2int) (VALUE);
 static long (*dll_rb_num2int) (VALUE);
 static unsigned long (*dll_rb_num2uint) (VALUE);
@@ -524,7 +526,11 @@ static void (*dll_rb_gc_writebarrier_unprotect)(VALUE obj);
 # endif
 
 # if RUBY_VERSION >= 30
+#  ifdef _MSC_VER
+static void (*dll_ruby_malloc_size_overflow)(size_t, size_t);
+#  else
 NORETURN(static void (*dll_ruby_malloc_size_overflow)(size_t, size_t));
+#  endif
 # endif
 
 # if RUBY_VERSION >= 26
@@ -554,7 +560,7 @@ rb_int2big_stub(SIGNED_VALUE x)
 {
     return dll_rb_int2big(x);
 }
-#   if VIM_SIZEOF_INT < VIM_SIZEOF_LONG
+#   if RUBY_VERSION >= 30 || VIM_SIZEOF_INT < VIM_SIZEOF_LONG
     long
 rb_fix2int_stub(VALUE x)
 {
@@ -693,7 +699,7 @@ static struct
     {"rb_inspect", (RUBY_PROC*)&dll_rb_inspect},
     {"rb_int2inum", (RUBY_PROC*)&dll_rb_int2inum},
     {"rb_intern", (RUBY_PROC*)&dll_rb_intern},
-# if VIM_SIZEOF_INT < VIM_SIZEOF_LONG // 64 bits only
+# if RUBY_VERSION >= 30 || VIM_SIZEOF_INT < VIM_SIZEOF_LONG
     {"rb_fix2int", (RUBY_PROC*)&dll_rb_fix2int},
     {"rb_num2int", (RUBY_PROC*)&dll_rb_num2int},
     {"rb_num2uint", (RUBY_PROC*)&dll_rb_num2uint},
@@ -802,7 +808,7 @@ ruby_runtime_link_init(char *libname, int verbose)
     if (!hinstRuby)
     {
 	if (verbose)
-	    semsg(_(e_loadlib), libname);
+	    semsg(_(e_loadlib), libname, load_dll_error());
 	return FAIL;
     }
 

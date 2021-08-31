@@ -148,6 +148,8 @@ readfile(
     char_u	*p;
     off_T	filesize = 0;
     int		skip_read = FALSE;
+    off_T       filesize_disk = 0;      // file size read from disk
+    off_T       filesize_count = 0;     // counter
 #ifdef FEAT_CRYPT
     char_u	*cryptkey = NULL;
     int		did_ask_for_key = FALSE;
@@ -215,6 +217,7 @@ readfile(
     int		using_b_ffname;
     int		using_b_fname;
     static char *msg_is_a_directory = N_("is a directory");
+    int         eof;
 
     au_did_filetype = FALSE; // reset before triggering any autocommands
 
@@ -405,6 +408,7 @@ readfile(
 	{
 	    buf_store_time(curbuf, &st, fname);
 	    curbuf->b_mtime_read = curbuf->b_mtime;
+	    filesize_disk = st.st_size;
 #ifdef UNIX
 	    /*
 	     * Use the protection bits of the original file for the swap file.
@@ -1080,6 +1084,7 @@ retry:
     {
 	linerest = 0;
 	filesize = 0;
+	filesize_count = 0;
 	skip_count = lines_to_skip;
 	read_count = lines_to_read;
 	conv_restlen = 0;
@@ -1204,6 +1209,7 @@ retry:
 		     * Read bytes from curbuf.  Used for converting text read
 		     * from stdin.
 		     */
+		    eof = FALSE;
 		    if (read_buf_lnum > from)
 			size = 0;
 		    else
@@ -1252,6 +1258,7 @@ retry:
 				    if (!curbuf->b_p_eol)
 					--tlen;
 				    size = tlen;
+				    eof = TRUE;
 				    break;
 				}
 			    }
@@ -1263,7 +1270,23 @@ retry:
 		    /*
 		     * Read bytes from the file.
 		     */
+# ifdef FEAT_SODIUM
+		    // Let the crypt layer work with a buffer size of 8192
+		    if (filesize == 0)
+			// set size to 8K + Sodium Crypt Metadata
+			size = WRITEBUFSIZE + crypt_get_max_header_len()
+		     + crypto_secretstream_xchacha20poly1305_HEADERBYTES
+		     + crypto_secretstream_xchacha20poly1305_ABYTES;
+
+		    else if (filesize > 0 && (curbuf->b_cryptstate != NULL &&
+			 curbuf->b_cryptstate->method_nr == CRYPT_M_SOD))
+			size = WRITEBUFSIZE + crypto_secretstream_xchacha20poly1305_ABYTES;
+# endif
+		    eof = size;
 		    size = read_eintr(fd, ptr, size);
+		    filesize_count += size;
+		    // hit end of file
+		    eof = (size < eof || filesize_count == filesize_disk);
 		}
 
 #ifdef FEAT_CRYPT
@@ -1271,9 +1294,17 @@ retry:
 		 * At start of file: Check for magic number of encryption.
 		 */
 		if (filesize == 0 && size > 0)
+		{
 		    cryptkey = check_for_cryptkey(cryptkey, ptr, &size,
 						  &filesize, newfile, sfname,
 						  &did_ask_for_key);
+# ifdef CRYPT_NOT_INPLACE
+		    if (curbuf->b_cryptstate != NULL
+				 && !crypt_works_inplace(curbuf->b_cryptstate))
+			// reading undo file requires crypt_decode_inplace()
+			read_undo_file = FALSE;
+# endif
+		}
 		/*
 		 * Decrypt the read bytes.  This is done before checking for
 		 * EOF because the crypt layer may be buffering.
@@ -1285,7 +1316,8 @@ retry:
 		    if (crypt_works_inplace(curbuf->b_cryptstate))
 		    {
 # endif
-			crypt_decode_inplace(curbuf->b_cryptstate, ptr, size);
+			crypt_decode_inplace(curbuf->b_cryptstate, ptr,
+								    size, eof);
 # ifdef CRYPT_NOT_INPLACE
 		    }
 		    else
@@ -1294,8 +1326,16 @@ retry:
 			int	decrypted_size;
 
 			decrypted_size = crypt_decode_alloc(
-				    curbuf->b_cryptstate, ptr, size, &newptr);
+				    curbuf->b_cryptstate, ptr, size,
+								 &newptr, eof);
 
+			if (decrypted_size < 0)
+			{
+			    // error message already given
+			    error = TRUE;
+			    vim_free(newptr);
+			    break;
+			}
 			// If the crypt layer is buffering, not producing
 			// anything yet, need to read more.
 			if (decrypted_size == 0)
@@ -1325,6 +1365,7 @@ retry:
 			    if (newptr != NULL)
 				mch_memmove(new_buffer + linerest, newptr,
 							      decrypted_size);
+			    vim_free(newptr);
 			}
 
 			if (new_buffer != NULL)
@@ -1334,6 +1375,7 @@ retry:
 			    new_buffer = NULL;
 			    line_start = buffer;
 			    ptr = buffer + linerest;
+			    real_size = size;
 			}
 			size = decrypted_size;
 		    }
@@ -2875,15 +2917,16 @@ check_for_cryptkey(
 	{
 	    int header_len;
 
-	    curbuf->b_cryptstate = crypt_create_from_header(
-						       method, cryptkey, ptr);
-	    crypt_set_cm_option(curbuf, method);
-
-	    // Remove cryptmethod specific header from the text.
 	    header_len = crypt_get_header_len(method);
 	    if (*sizep <= header_len)
 		// invalid header, buffer can't be encrypted
 		return NULL;
+
+	    curbuf->b_cryptstate = crypt_create_from_header(
+							method, cryptkey, ptr);
+	    crypt_set_cm_option(curbuf, method);
+
+	    // Remove cryptmethod specific header from the text.
 	    *filesizep += header_len;
 	    *sizep -= header_len;
 	    mch_memmove(ptr, ptr + header_len, (size_t)*sizep);
@@ -3733,7 +3776,7 @@ vim_rename(char_u *from, char_u *to)
 			return 0;
 		    // Strange, the second step failed.  Try moving the
 		    // file back and return failure.
-		    mch_rename(tempname, (char *)from);
+		    (void)mch_rename(tempname, (char *)from);
 		    return -1;
 		}
 		// If it fails for one temp name it will most likely fail
@@ -5073,7 +5116,7 @@ vim_tempname(
 	/*
 	 * Try the entries in TEMPDIRNAMES to create the temp directory.
 	 */
-	for (i = 0; i < (int)(sizeof(tempdirs) / sizeof(char *)); ++i)
+	for (i = 0; i < (int)ARRAY_LENGTH(tempdirs); ++i)
 	{
 # ifndef HAVE_MKDTEMP
 	    size_t	itmplen;
@@ -5176,6 +5219,7 @@ vim_tempname(
     WCHAR	*chartab = L"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
     char_u	*retval;
     char_u	*p;
+    char_u	*shname;
     long	i;
 
     wcscpy(itmp, L"");
@@ -5199,9 +5243,12 @@ vim_tempname(
 
     // Backslashes in a temp file name cause problems when filtering with
     // "sh".  NOTE: This also checks 'shellcmdflag' to help those people who
-    // didn't set 'shellslash'.
+    // didn't set 'shellslash' but only if not using PowerShell.
     retval = utf16_to_enc(itmp, NULL);
-    if (*p_shcf == '-' || p_ssl)
+    shname = gettail(p_sh);
+    if ((*p_shcf == '-' && !(strstr((char *)shname, "powershell") != NULL
+			     || strstr((char *)shname, "pwsh") != NULL ))
+								    || p_ssl)
 	for (p = retval; *p; ++p)
 	    if (*p == '\\')
 		*p = '/';

@@ -511,6 +511,8 @@ func Test_python3_window()
   10new
   py3 vim.current.window.height = 5
   call assert_equal(5, winheight(0))
+  py3 vim.current.window.height = 3.2
+  call assert_equal(3, winheight(0))
 
   " Test for setting the window width
   10vnew
@@ -573,6 +575,9 @@ func Test_python3_list()
   py3 ll = vim.bindeval('l')
   py3 ll[2] = 8
   call assert_equal([1, 2, 8], l)
+
+  " iterating over list from Python
+  py3 print([x for x in vim.Function("getline")(1, 2)])
 
   " Using dict as an index
   call AssertException(['py3 ll[{}] = 10'],
@@ -1004,8 +1009,12 @@ func Test_python3_vim_bindeval()
   call assert_equal(v:none, py3eval("vim.bindeval('v:none')"))
 
   " channel/job
-  call assert_equal(v:none, py3eval("vim.bindeval('test_null_channel()')"))
-  call assert_equal(v:none, py3eval("vim.bindeval('test_null_job()')"))
+  if has('channel')
+    call assert_equal(v:none, py3eval("vim.bindeval('test_null_channel()')"))
+  endif
+  if has('job')
+    call assert_equal(v:none, py3eval("vim.bindeval('test_null_job()')"))
+  endif
 endfunc
 
 " threading

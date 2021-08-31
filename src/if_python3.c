@@ -125,10 +125,12 @@ typedef PySliceObject PySliceObject_T;
 #  endif
 #  define close_dll dlclose
 #  define symbol_from_dll dlsym
+#  define load_dll_error dlerror
 # else
 #  define load_dll vimLoadLib
 #  define close_dll FreeLibrary
 #  define symbol_from_dll GetProcAddress
+#  define load_dll_error GetWin32Error
 # endif
 /*
  * Wrapper defines
@@ -183,6 +185,9 @@ typedef PySliceObject PySliceObject_T;
 # define PyMapping_Check py3_PyMapping_Check
 # ifndef PyMapping_Keys
 #  define PyMapping_Keys py3_PyMapping_Keys
+# endif
+# if PY_VERSION_HEX >= 0x030a00b2
+#  define PyIter_Check py3_PyIter_Check
 # endif
 # define PyIter_Next py3_PyIter_Next
 # define PyObject_GetIter py3_PyObject_GetIter
@@ -358,6 +363,9 @@ static PyObject* (*py3_PyDict_GetItemString)(PyObject *, const char *);
 static int (*py3_PyDict_Next)(PyObject *, Py_ssize_t *, PyObject **, PyObject **);
 static PyObject* (*py3_PyLong_FromLong)(long);
 static PyObject* (*py3_PyDict_New)(void);
+# if PY_VERSION_HEX >= 0x030a00b2
+static int (*py3_PyIter_Check)(PyObject *o);
+# endif
 static PyObject* (*py3_PyIter_Next)(PyObject *);
 static PyObject* (*py3_PyObject_GetIter)(PyObject *);
 static PyObject* (*py3_PyObject_Repr)(PyObject *);
@@ -538,6 +546,9 @@ static struct
     {"PyDict_Next", (PYTHON_PROC*)&py3_PyDict_Next},
     {"PyMapping_Check", (PYTHON_PROC*)&py3_PyMapping_Check},
     {"PyMapping_Keys", (PYTHON_PROC*)&py3_PyMapping_Keys},
+# if PY_VERSION_HEX >= 0x030a00b2
+    {"PyIter_Check", (PYTHON_PROC*)&py3_PyIter_Check},
+# endif
     {"PyIter_Next", (PYTHON_PROC*)&py3_PyIter_Next},
     {"PyObject_GetIter", (PYTHON_PROC*)&py3_PyObject_GetIter},
     {"PyObject_Repr", (PYTHON_PROC*)&py3_PyObject_Repr},
@@ -671,6 +682,15 @@ py3_PyType_HasFeature(PyTypeObject *type, unsigned long feature)
 #  define PyType_HasFeature(t,f) py3_PyType_HasFeature(t,f)
 # endif
 
+# if PY_VERSION_HEX >= 0x030a00b2
+    static inline int
+py3__PyObject_TypeCheck(PyObject *ob, PyTypeObject *type)
+{
+    return Py_IS_TYPE(ob, type) || PyType_IsSubtype(Py_TYPE(ob), type);
+}
+#  define _PyObject_TypeCheck(o,t) py3__PyObject_TypeCheck(o,t)
+# endif
+
 # ifdef MSWIN
 /*
  * Look up the library "libname" using the InstallPath registry key.
@@ -777,7 +797,7 @@ py3_runtime_link_init(char *libname, int verbose)
     if (!hinstPy3)
     {
 	if (verbose)
-	    semsg(_(e_loadlib), libname);
+	    semsg(_(e_loadlib), libname, load_dll_error());
 	return FAIL;
     }
 

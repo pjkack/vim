@@ -445,9 +445,12 @@ func Test_list_mappings()
   " Remove default mappings
   imapclear
 
-  inoremap <C-M> CtrlM
+  " reset 'isident' to check it isn't used
+  set isident=
+  inoremap <C-m> CtrlM
   inoremap <A-S> AltS
   inoremap <S-/> ShiftSlash
+  set isident&
   call assert_equal([
 	\ 'i  <S-/>       * ShiftSlash',
 	\ 'i  <M-S>       * AltS',
@@ -482,7 +485,36 @@ func Test_list_mappings()
   call assert_equal(['n  ,k            <Nop>'],
         \ execute('nmap ,k')->trim()->split("\n"))
 
+  " map with space at the beginning
+  exe "nmap \<C-V> w <Nop>"
+  call assert_equal(['n  <Space>w      <Nop>'],
+        \ execute("nmap \<C-V> w")->trim()->split("\n"))
+
   nmapclear
+endfunc
+
+func Test_expr_map_gets_cursor()
+  new
+  call setline(1, ['one', 'some w!rd'])
+  func StoreColumn()
+    let g:exprLine = line('.')
+    let g:exprCol = col('.')
+    return 'x'
+  endfunc
+  nnoremap <expr> x StoreColumn()
+  2
+  nmap ! f!<Ignore>x
+  call feedkeys("!", 'xt')
+  call assert_equal('some wrd', getline(2))
+  call assert_equal(2, g:exprLine)
+  call assert_equal(7, g:exprCol)
+
+  bwipe!
+  unlet g:exprLine
+  unlet g:exprCol
+  delfunc StoreColumn
+  nunmap x
+  nunmap !
 endfunc
 
 func Test_expr_map_restore_cursor()
@@ -1363,6 +1395,40 @@ func Test_map_cmdkey_redo()
   call delete('Xcmdtext')
   delfunc SelectDash
   ounmap i-
+endfunc
+
+" Test for using <script> with a map to remap characters in rhs
+func Test_script_local_remap()
+  new
+  inoremap <buffer> <SID>xyz mno
+  inoremap <buffer> <script> abc st<SID>xyzre
+  normal iabc
+  call assert_equal('stmnore', getline(1))
+  bwipe!
+endfunc
+
+func Test_abbreviate_multi_byte()
+  new
+  iabbrev foo bar
+  call feedkeys("ifoo…\<Esc>", 'xt')
+  call assert_equal("bar…", getline(1))
+  iunabbrev foo
+  bwipe!
+endfunc
+
+" Test for abbreviations with 'latin1' encoding
+func Test_abbreviate_latin1_encoding()
+  set encoding=latin1
+  call assert_fails('abbr ab#$c ABC', 'E474:')
+  new
+  iabbr <buffer> #i #include
+  iabbr <buffer> ## #enddef
+  exe "normal i#i\<C-]>"
+  call assert_equal('#include', getline(1))
+  exe "normal 0Di##\<C-]>"
+  call assert_equal('#enddef', getline(1))
+  %bw!
+  set encoding=utf-8
 endfunc
 
 " vim: shiftwidth=2 sts=2 expandtab

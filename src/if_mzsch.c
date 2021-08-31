@@ -139,7 +139,7 @@ static char *string_to_line(Scheme_Object *obj);
 # define OUTPUT_LEN_TYPE long
 #endif
 static void do_output(char *mesg, OUTPUT_LEN_TYPE len);
-static void do_printf(char *format, ...);
+static void do_printf(char *format, ...) ATTRIBUTE_FORMAT_PRINTF(1, 2);
 static void do_flush(void);
 static Scheme_Object *_apply_thunk_catch_exceptions(
 	Scheme_Object *, Scheme_Object **);
@@ -668,14 +668,14 @@ mzscheme_runtime_link_init(char *sch_dll, char *gc_dll, int verbose)
     if (!hMzGC)
     {
 	if (verbose)
-	    semsg(_(e_loadlib), gc_dll);
+	    semsg(_(e_loadlib), gc_dll, GetWin32Error());
 	return FAIL;
     }
 
     if (!hMzSch)
     {
 	if (verbose)
-	    semsg(_(e_loadlib), sch_dll);
+	    semsg(_(e_loadlib), sch_dll, GetWin32Error());
 	return FAIL;
     }
 
@@ -3799,7 +3799,7 @@ make_modules(void)
     mod = scheme_primitive_module(vimext_symbol, environment);
     MZ_GC_CHECK();
     // all prims made closed so they can access their own names
-    for (i = 0; i < (int)(sizeof(prims)/sizeof(prims[0])); i++)
+    for (i = 0; i < (int)ARRAY_LENGTH(prims); i++)
     {
 	Vim_Prim *prim = prims + i;
 	closed_prim = scheme_make_closed_prim_w_arity(prim->prim, prim, prim->name,

@@ -1,4 +1,4 @@
-*options.txt*	For Vim version 8.2.  Last change: 2020 Dec 21
+*options.txt*	For Vim version 8.2.  Last change: 2021 Jul 22
 
 
 		  VIM REFERENCE MANUAL	  by Bram Moolenaar
@@ -438,7 +438,7 @@ the system, mostly it is something like 256 or 1024 characters.
 				  CTRL-?	CTRL-H
 				not CTRL-?	CTRL-?
 
-			(CTRL-? is 0177 octal, 0x7f hex)
+			(CTRL-? is 0o177 octal, 0x7f hex)
 
 			If your delete key terminal code is wrong, but the
 			code for backspace is alright, you can put this in
@@ -540,6 +540,15 @@ chance that a normal word like "lex:" is caught.  There is one exception:
 "vi:" and "vim:" can also be at the start of the line (for compatibility with
 version 3.0).  Using "ex:" at the start of the line will be ignored (this
 could be short for "example:").
+
+If the modeline is disabled within a modeline, subsequent modelines will be
+ignored.  This is to allow turning off modeline on a per-file basis.  This is
+useful when a line looks like a modeline but isn't.  For example, it would be
+good to start a YAML file containing strings like "vim:" with
+    # vim: nomodeline ~
+so as to avoid modeline misdetection.  Following options on the same line
+after modeline deactivation, if any, are still evaluated (but you would
+normally not have any).
 
 							*modeline-local*
 The options are set like with ":setlocal": The new value only applies to the
@@ -748,6 +757,15 @@ A jump table for the options with a short description can be found at |Q_op|.
 	It will change to the directory containing the file which was opened
 	or selected.
 	Note: When this option is on some plugins may not work.
+
+			*'autoshelldir'* *'asd'* *'noautoshelldir'* *'noasd'*
+'autoshelldir' 'asd'	boolean (default off)
+			global
+	When on, Vim will change the current working directory whenever you
+	change the directory of the shell running in a terminal window. You
+	need proper setting-up, so whenever the shell's pwd changes an OSC 7
+	escape sequence will be emitted. For example, on Linux, you can source
+	/etc/profile.d/vte.sh in your shell profile if you use bash or zsh.
 
 				*'arabic'* *'arab'* *'noarabic'* *'noarab'*
 'arabic' 'arab'		boolean (default off)
@@ -1317,7 +1335,12 @@ A jump table for the options with a short description can be found at |Q_op|.
 			    continuation (positive).
 		sbr	    Display the 'showbreak' value before applying the
 			    additional indent.
-	The default value for min is 20 and shift is 0.
+		list:{n}    Adds an additional indent for lines that match a
+			    numbered or bulleted list (using the
+			    'formatlistpat' setting).
+		list:-1	    Uses the length of a match with 'formatlistpat'
+			    for indentation.
+	The default value for min is 20, shift and list is 0.
 
 						*'browsedir'* *'bsdir'*
 'browsedir' 'bsdir'	string	(default: "last")
@@ -1568,7 +1591,11 @@ A jump table for the options with a short description can be found at |Q_op|.
 			{only in GUI versions or when the |+xterm_clipboard|
 			feature is included}
 	This option is a list of comma separated names.
-	These names are recognized:
+	Note: if one of the items is "exclude:", then you can't add an item
+	after that.  Therefore do append an item with += but use ^= to
+	prepend, e.g.: >
+		set clipboard^=unnamed
+<	These names are recognized:
 
 						*clipboard-unnamed*
 	unnamed		When included, Vim will use the clipboard register '*'
@@ -2371,6 +2398,23 @@ A jump table for the options with a short description can be found at |Q_op|.
 			you write the file the encrypted bytes will be
 			different.  The whole undo file is encrypted, not just
 			the pieces of text.
+					*E1193* *E1194* *E1195* *E1196*
+					*E1197* *E1198* *E1199* *E1200* *E1201*
+	   xchacha20	XChaCha20 Cipher with Poly1305 Message Authentication
+			Code.  Medium strong till strong encryption.
+			Encryption is provided by the libsodium library, it
+			requires Vim to be built with |+sodium|
+			It adds a seed and a message authentication code (MAC)
+			to the file.  This needs at least a Vim 8.2.3022 to
+			read the encrypted file.
+			Encryption of swap files is not supported, therefore
+			no swap file will be used when xchacha20 encryption is
+			enabled.
+			Encryption of undo files is not yet supported,
+			therefore no undo file will currently be written.
+			CURRENTLY EXPERIMENTAL: Files written with this method
+			might have to be read back with the same version of
+			Vim if the binary format changes later.
 
 	You should use "blowfish2", also to re-encrypt older files.
 
@@ -2677,6 +2721,8 @@ A jump table for the options with a short description can be found at |Q_op|.
 		foldcolumn:{n}	Set the 'foldcolumn' option to {n} when
 				starting diff mode.  Without this 2 is used.
 
+		followwrap	Follow the 'wrap' option and leave as it is.
+
 		internal	Use the internal diff library.  This is
 				ignored when 'diffexpr' is set.  *E960*
 				When running out of memory when writing a
@@ -2813,7 +2859,8 @@ A jump table for the options with a short description can be found at |Q_op|.
 	|setcellwidths()| function to change the behavior.
 
 					*'encoding'* *'enc'* *E543*
-'encoding' 'enc'	string (default: "latin1" or value from $LANG)
+'encoding' 'enc'	string (default for MS-Windows: "utf-8",
+				otherwise: value from $LANG or "latin1")
 			global
 	Sets the character encoding used inside Vim.  It applies to text in
 	the buffers, registers, Strings in expressions, text stored in the
@@ -3100,9 +3147,10 @@ A jump table for the options with a short description can be found at |Q_op|.
 	because Vim cannot detect an error, thus the encoding is always
 	accepted.
 	The special value "default" can be used for the encoding from the
-	environment.  This is the default value for 'encoding'.  It is useful
-	when 'encoding' is set to "utf-8" and your environment uses a
-	non-latin1 encoding, such as Russian.
+	environment.  On MS-Windows this is the system encoding.  Otherwise
+	this is the default value for 'encoding'.  It is useful when
+	'encoding' is set to "utf-8" and your environment uses a non-latin1
+	encoding, such as Russian.
 	When 'encoding' is "utf-8" and a file contains an illegal byte
 	sequence it won't be recognized as UTF-8.  You can use the |8g8|
 	command to find the illegal byte sequence.
@@ -3229,7 +3277,7 @@ A jump table for the options with a short description can be found at |Q_op|.
 	Only normal file name characters can be used, "/\*?[|<>" are illegal.
 
 						*'fillchars'* *'fcs'*
-'fillchars' 'fcs'	string	(default "vert:|,fold:-")
+'fillchars' 'fcs'	string	(default "vert:|,fold:-,eob:~")
 			global
 			{not available when compiled without the |+folding|
 			feature}
@@ -3241,7 +3289,11 @@ A jump table for the options with a short description can be found at |Q_op|.
 	  stlnc:c	' ' or '='	statusline of the non-current windows
 	  vert:c	'|'		vertical separators |:vsplit|
 	  fold:c	'-'		filling 'foldtext'
+	  foldopen:c	'-'		mark the beginning of a fold
+	  foldclose:c	'+'		show a closed fold
+	  foldsep:c	'|'		open fold middle character
 	  diff:c	'-'		deleted lines of the 'diff' option
+	  eob:c		'~'		empty lines below the end of a buffer
 
 	Any one that is omitted will fall back to the default.  For "stl" and
 	"stlnc" the space will be used when there is highlighting, '^' or '='
@@ -3252,7 +3304,8 @@ A jump table for the options with a short description can be found at |Q_op|.
 <	This is similar to the default, except that these characters will also
 	be used when there is highlighting.
 
-	for "stl" and "stlnc" only single-byte values are supported.
+	For "stl" and "stlnc" single-byte and multibyte characters are
+	supported.  But double-width characters are not supported.
 
 	The highlighting used for these items:
 	  item		highlight group ~
@@ -3261,6 +3314,7 @@ A jump table for the options with a short description can be found at |Q_op|.
 	  vert:c	VertSplit		|hl-VertSplit|
 	  fold:c	Folded			|hl-Folded|
 	  diff:c	DiffDelete		|hl-DiffDelete|
+	  eob:c		EndOfBuffer		|hl-EndOfBuffer|
 
 		*'fixendofline'* *'fixeol'* *'nofixendofline'* *'nofixeol'*
 'fixendofline' 'fixeol'	boolean	(default on)
@@ -3273,7 +3327,7 @@ A jump table for the options with a short description can be found at |Q_op|.
 	See the 'endofline' option.
 
 					*'fkmap'* *'fk'* *'nofkmap'* *'nofk'*
-'fkmap' 'fk'		boolean (default off)			*E198*
+'fkmap' 'fk'		boolean (default off)
 			global
 			{only available when compiled with the |+rightleft|
 			feature}
@@ -3844,7 +3898,7 @@ A jump table for the options with a short description can be found at |Q_op|.
 								*'go-v'*
 	  'v'	Use a vertical button layout for dialogs.  When not included,
 		a horizontal layout is preferred, but when it doesn't fit a
-		vertical layout is used anyway.
+		vertical layout is used anyway.  Not supported in GTK 3.
 								*'go-p'*
 	  'p'	Use Pointer callbacks for X11 GUI.  This is required for some
 		window managers.  If the cursor is not blinking or hollow at
@@ -4127,7 +4181,7 @@ A jump table for the options with a short description can be found at |Q_op|.
 	the window.  This happens only when the 'icon' option is on.
 	Only works if the terminal supports setting window icon text
 	(currently only X11 GUI and terminals with a non-empty 't_IS' option).
-	Does not work for MS Windows.
+	Does not work for MS-Windows.
 	When Vim was compiled with HAVE_X11 defined, the original icon will be
 	restored if possible |X11|.
 	When this option contains printf-style '%' items, they will be
@@ -4543,7 +4597,8 @@ A jump table for the options with a short description can be found at |Q_op|.
 	Keywords are used in searching and recognizing with many commands:
 	"w", "*", "[i", etc.  It is also used for "\k" in a |pattern|.  See
 	'isfname' for a description of the format of this option.  For '@'
-	characters above 255 check the "word" character class.
+	characters above 255 check the "word" character class (any character
+	that is not white space or punctuation).
 	For C programs you could use "a-z,A-Z,48-57,_,.,-,>".
 	For a help file it is set to all non-blank printable characters except
 	'*', '"' and '|' (so that CTRL-] on a command finds the help for that
@@ -4846,7 +4901,7 @@ A jump table for the options with a short description can be found at |Q_op|.
 
 						*'listchars'* *'lcs'*
 'listchars' 'lcs'	string	(default "eol:$")
-			global
+			global or local to window |global-local|
 	Strings to use in 'list' mode and for the |:list| command.  It is a
 	comma separated list of string settings.
 							*lcs-eol*
@@ -4877,7 +4932,13 @@ A jump table for the options with a short description can be found at |Q_op|.
 							*lcs-space*
 	  space:c	Character to show for a space.  When omitted, spaces
 			are left blank.
-							*lcs-trail*
+							*lcs-lead*
+	  lead:c	Character to show for leading spaces.  When omitted,
+			leading spaces are blank.  Overrides the "space"
+			setting for leading spaces.  You can combine it with
+			"tab:", for example: >
+				:set listchars+=tab:>-,lead:.
+<							*lcs-trail*
 	  trail:c	Character to show for trailing spaces.  When omitted,
 			trailing spaces are blank.  Overrides the "space"
 			setting for trailing spaces.
@@ -5009,7 +5070,7 @@ A jump table for the options with a short description can be found at |Q_op|.
 	jump between two double quotes.
 	The characters must be separated by a colon.
 	The pairs must be separated by a comma.  Example for including '<' and
-	'>' (HTML): >
+	'>' (for HTML): >
 		:set mps+=<:>
 
 <	A more exotic example, to jump between the '=' and ';' in an
@@ -5221,7 +5282,7 @@ A jump table for the options with a short description can be found at |Q_op|.
 	NOTE: This option is set to the Vi default value when 'compatible' is
 	set and to the Vim default value when 'compatible' is reset.
 
-						*'mouse'* *E538*
+						*'mouse'*
 'mouse'			string	(default "", "a" for GUI and Win32,
 					set to "a" or "nvi" in |defaults.vim|)
 			global
@@ -5565,19 +5626,21 @@ A jump table for the options with a short description can be found at |Q_op|.
 		- abbreviations are disabled
 		- 'autoindent' is reset
 		- 'expandtab' is reset
-		- 'formatoptions' is used like it is empty
+		- 'hkmap' is reset
 		- 'revins' is reset
 		- 'ruler' is reset
 		- 'showmatch' is reset
-		- 'smartindent' is reset
 		- 'smarttab' is reset
 		- 'softtabstop' is set to 0
 		- 'textwidth' is set to 0
 		- 'wrapmargin' is set to 0
+		- 'varsofttabstop' is made empty
 	These options keep their value, but their effect is disabled:
 		- 'cindent'
+		- 'formatoptions' is used like it is empty
 		- 'indentexpr'
 		- 'lisp'
+		- 'smartindent'
 	NOTE: When you start editing another file while the 'paste' option is
 	on, settings from the modelines or autocommands may change the
 	settings again, causing trouble when pasting text.  You might want to
@@ -6226,7 +6289,7 @@ A jump table for the options with a short description can be found at |Q_op|.
 <
 				*'runtimepath'* *'rtp'* *vimfiles*
 'runtimepath' 'rtp'	string	(default:
-					Unix: "$HOME/.vim,
+					Unix:  "$HOME/.vim,
 						$VIM/vimfiles,
 						$VIMRUNTIME,
 						$VIM/vimfiles/after,
@@ -6236,7 +6299,7 @@ A jump table for the options with a short description can be found at |Q_op|.
 						$VIMRUNTIME,
 						$VIM/vimfiles/after,
 						home:vimfiles/after"
-					PC:    "$HOME/vimfiles,
+					MS-Windows: "$HOME/vimfiles,
 						$VIM/vimfiles,
 						$VIMRUNTIME,
 						$VIM/vimfiles/after,
@@ -6248,8 +6311,8 @@ A jump table for the options with a short description can be found at |Q_op|.
 						$VIM/vimfiles,
 						$VIMRUNTIME,
 						$VIM/vimfiles/after,
-						$BE_USER_SETTINGS/vim/after")
-					VMS: "sys$login:vimfiles,
+						$BE_USER_SETTINGS/vim/after"
+					VMS:   "sys$login:vimfiles,
 						$VIM/vimfiles,
 						$VIMRUNTIME,
 						$VIM/vimfiles/after,
@@ -6484,6 +6547,7 @@ A jump table for the options with a short description can be found at |Q_op|.
 			global values for local options)
 	   options	all options and mappings (also global values for local
 			options)
+	   skiprtp	exclude 'runtimepath' and 'packpath' from the options
 	   resize	size of the Vim window: 'lines' and 'columns'
 	   sesdir	the directory in which the session file is located
 			will become the current directory (useful with
@@ -6544,23 +6608,25 @@ A jump table for the options with a short description can be found at |Q_op|.
 
 						*'shellcmdflag'* *'shcf'*
 'shellcmdflag' 'shcf'	string	(default: "-c";
-				 Win32, when 'shell' does not contain "sh"
+				 Win32, when 'shell' contains "powershell":
+				 "-Command", or when it does not contain "sh"
 				 somewhere: "/c")
 			global
 	Flag passed to the shell to execute "!" and ":!" commands; e.g.,
-	"bash.exe -c ls" or "cmd.exe /c dir".  For MS-Windows, the default is
-	set according to the value of 'shell', to reduce the need to set this
-	option by the user.
+	"bash.exe -c ls", "powershell.exe -Command dir", or "cmd.exe /c dir".
+	For MS-Windows, the default is set according to the value of 'shell',
+	to reduce the need to set this option by the user.
 	On Unix it can have more than one flag.  Each white space separated
 	part is passed as an argument to the shell command.
 	See |option-backslash| about including spaces and backslashes.
-	Also see |dos-shell| for MS-Windows.
+	Also see |dos-shell| and |dos-powershell| for MS-Windows.
 	This option cannot be set from a |modeline| or in the |sandbox|, for
 	security reasons.
 
 						*'shellpipe'* *'sp'*
-'shellpipe' 'sp'	string	(default ">", ">%s 2>&1", "| tee", "|& tee" or
-				 "2>&1| tee")
+'shellpipe' 'sp'	string	(default ">", ">%s 2>&1", "| tee", "|& tee"
+				 "2>&1| tee", or
+				 "2>&1 | Out-File -Encoding default")
 			global
 			{not available when compiled without the |+quickfix|
 			feature}
@@ -6570,16 +6636,19 @@ A jump table for the options with a short description can be found at |Q_op|.
 	The name of the temporary file can be represented by "%s" if necessary
 	(the file name is appended automatically if no %s appears in the value
 	of this option).
-	For the Amiga the default is ">".  For MS-Windows the default is
-	">%s 2>&1".  The output is directly saved in a file and not echoed to
-	the screen.
+	For the Amiga the default is ">".  For MS-Windows using powershell the
+	default is "2>&1 | Out-File -Encoding default", otherwise the default
+	is ">%s 2>&1".  The output is directly saved in a file and not echoed
+	to the screen.
 	For Unix the default is "| tee".  The stdout of the compiler is saved
 	in a file and echoed to the screen.  If the 'shell' option is "csh" or
 	"tcsh" after initializations, the default becomes "|& tee".  If the
 	'shell' option is "sh", "ksh", "mksh", "pdksh", "zsh", "zsh-beta",
-	"bash" or "fish" the default becomes "2>&1| tee".  This means that
-	stderr is also included.  Before using the 'shell' option a path is
-	removed, thus "/bin/sh" uses "sh".
+	"bash", "fish", "ash" or "dash" the default becomes "2>&1| tee".  This
+	means that stderr is also included.  Before using the 'shell' option a
+	path is removed, thus "/bin/sh" uses "sh".
+	For Unix and MS-Windows, when the 'shell' option is "pwsh" the default
+	becomes ">%s 2>&1" and the output is not echoed to the screen.
 	The initialization of this option is done after reading the ".vimrc"
 	and the other initializations, so that when the 'shell' option is set
 	there, the 'shellpipe' option changes automatically, unless it was
@@ -6595,8 +6664,7 @@ A jump table for the options with a short description can be found at |Q_op|.
 	security reasons.
 
 						*'shellquote'* *'shq'*
-'shellquote' 'shq'	string	(default: ""; Win32, when 'shell'
-					contains "sh" somewhere: "\"")
+'shellquote' 'shq'	string	(default: "")
 			global
 	Quoting character(s), put around the command passed to the shell, for
 	the "!" and ":!" commands.  The redirection is kept outside of the
@@ -6604,14 +6672,13 @@ A jump table for the options with a short description can be found at |Q_op|.
 	probably not useful to set both options.
 	This is an empty string by default.  Only known to be useful for
 	third-party shells on MS-Windows-like systems, such as the MKS Korn
-	Shell or bash, where it should be "\"".  The default is adjusted
-	according the value of 'shell', to reduce the need to set this option
-	by the user.  See |dos-shell|.
+	Shell or bash, where it should be "\"".  See |dos-shell|.
 	This option cannot be set from a |modeline| or in the |sandbox|, for
 	security reasons.
 
 						*'shellredir'* *'srr'*
-'shellredir' 'srr'	string	(default ">", ">&" or ">%s 2>&1")
+'shellredir' 'srr'	string	(default ">", ">&", ">%s 2>&1", or
+				 "2>&1 | Out-File -Encoding default")
 			global
 	String to be used to put the output of a filter command in a temporary
 	file.  See also |:!|.  See |option-backslash| about including spaces
@@ -6622,10 +6689,12 @@ A jump table for the options with a short description can be found at |Q_op|.
 	The default is ">".  For Unix, if the 'shell' option is "csh" or
 	"tcsh" during initializations, the default becomes ">&".  If the
 	'shell' option is "sh", "ksh", "mksh", "pdksh", "zsh", "zsh-beta",
-	"bash" or "fish", the default becomes ">%s 2>&1".  This means that
-	stderr is also included.  For Win32, the Unix checks are done and
-	additionally "cmd" is checked for, which makes the default ">%s 2>&1".
-	Also, the same names with ".exe" appended are checked for.
+	"bash", "fish", or "pwsh", the default becomes ">%s 2>&1".  This means
+	that stderr is also included.  For Win32, the Unix checks are done and
+	additionally "cmd" is checked for, which makes the default ">%s 2>&1",
+	and "powershell" is checked for which makes the default
+	"2>&1 | Out-File -Encoding default" (see |dos-powershell|).  Also, the
+	same names with ".exe" appended are checked for.
 	The initialization of this option is done after reading the ".vimrc"
 	and the other initializations, so that when the 'shell' option is set
 	there, the 'shellredir' option changes automatically unless it was
@@ -6640,9 +6709,9 @@ A jump table for the options with a short description can be found at |Q_op|.
 			global
 			{only for MS-Windows}
 	When set, a forward slash is used when expanding file names.  This is
-	useful when a Unix-like shell is used instead of cmd.exe.  Backward
-	slashes can still be typed, but they are changed to forward slashes by
-	Vim.
+	useful when a Unix-like shell is used instead of cmd.exe, pwsh.exe, or
+	powershell.exe.  Backward slashes can still be typed, but they are
+	changed to forward slashes by Vim.
 	Note that setting or resetting this option has no effect for some
 	existing file names, thus this option needs to be set before opening
 	any file for best results.  This might change in the future.
@@ -6696,6 +6765,8 @@ A jump table for the options with a short description can be found at |Q_op|.
 						*'shellxquote'* *'sxq'*
 'shellxquote' 'sxq'	string	(default: "";
 					for Win32, when 'shell' is cmd.exe: "("
+					for Win32, when 'shell' is
+					powershell.exe: "\""
 					for Win32, when 'shell' contains "sh"
 					somewhere: "\""
 					for Unix, when using system(): "\"")
@@ -6708,11 +6779,12 @@ A jump table for the options with a short description can be found at |Q_op|.
 	then ')"' is appended.
 	When the value is '(' then also see 'shellxescape'.
 	This is an empty string by default on most systems, but is known to be
-	useful for on Win32 version, either for cmd.exe which automatically
-	strips off the first and last quote on a command, or 3rd-party shells
-	such as the MKS Korn Shell or bash, where it should be "\"".  The
-	default is adjusted according the value of 'shell', to reduce the need
-	to set this option by the user.  See |dos-shell|.
+	useful for on Win32 version, either for cmd.exe, powershell.exe, or
+	pwsh.exe which automatically strips off the first and last quote on a
+	command, or 3rd-party shells such as the MKS Korn Shell or bash, where
+	it should be "\"".  The default is adjusted according the value of
+	'shell', to reduce the need to set this option by the user.  See
+	|dos-shell|.
 	This option cannot be set from a |modeline| or in the |sandbox|, for
 	security reasons.
 
@@ -7310,6 +7382,18 @@ A jump table for the options with a short description can be found at |Q_op|.
 	      Note that there is no '%' before the closing '}'.  The
 	      expression cannot contain a '}' character, call a function to
 	      work around that.  See |stl-%{| below.
+	{% -  This is almost same as { except the result of the expression is
+	      re-evaluated as a statusline format string.  Thus if the
+	      return value of expr contains % items they will get expanded.
+	      The expression can contain the } character, the end of
+	      expression is denoted by %}.
+	      The For example: >
+		func! Stl_filename() abort
+		    return "%t"
+		endfunc
+<	        `stl=%{Stl_filename()}`   results in `"%t"`
+	        `stl=%{%Stl_filename()%}` results in `"Name of current file"`
+	} -   End of `{%` expression
 	( -   Start of item group.  Can be used for setting the width and
 	      alignment of a section.  Must be followed by %) somewhere.
 	) -   End of item group.  No width fields allowed.
@@ -7453,6 +7537,8 @@ A jump table for the options with a short description can be found at |Q_op|.
 'switchbuf' 'swb'	string	(default "")
 			global
 	This option controls the behavior when switching between buffers.
+	Mostly for |quickfix| commands some values are also used for other
+	commands, as mentioned below.
 	Possible values (comma separated list):
 	   useopen	If included, jump to the first open window that
 			contains the specified buffer (if there is one).
@@ -8566,12 +8652,16 @@ A jump table for the options with a short description can be found at |Q_op|.
 
 					    *'virtualedit'* *'ve'*
 'virtualedit' 've'	string	(default "")
-			global
+			global or local to window |global-local|
 	A comma separated list of these words:
 	    block	Allow virtual editing in Visual block mode.
 	    insert	Allow virtual editing in Insert mode.
 	    all		Allow virtual editing in all modes.
 	    onemore	Allow the cursor to move just past the end of the line
+	    none	When used as the local value, do not allow virtual
+			editing even when the global value is set.  When used
+			as the global value, "none" is the same as "".
+	    NONE	Alternative spelling of "none".
 
 	Virtual editing means that the cursor can be positioned where there is
 	no actual character.  This can be halfway into a tab or beyond the end
@@ -8588,6 +8678,7 @@ A jump table for the options with a short description can be found at |Q_op|.
 	The `g$` command will move to the end of the screen line.
 	It doesn't make sense to combine "all" with "onemore", but you will
 	not get a warning for it.
+	When combined with other words, "none" is ignored.
 	NOTE: This option is set to "" when 'compatible' is set.
 
 			*'visualbell'* *'vb'* *'novisualbell'* *'novb'* *beep*
@@ -8763,23 +8854,31 @@ A jump table for the options with a short description can be found at |Q_op|.
 	part specifies what to do for each consecutive use of 'wildchar'.  The
 	first part specifies the behavior for the first use of 'wildchar',
 	The second part for the second use, etc.
-	These are the possible values for each part:
+
+	Each part consists of a colon separated list consisting of the
+	following possible values:
 	""		Complete only the first match.
 	"full"		Complete the next full match.  After the last match,
 			the original string is used and then the first match
-			again.
+			again.  Will also start 'wildmenu' if it is enabled.
 	"longest"	Complete till longest common string.  If this doesn't
 			result in a longer string, use the next part.
-	"longest:full"	Like "longest", but also start 'wildmenu' if it is
-			enabled.
 	"list"		When more than one match, list all matches.
+	"lastused"	When completing buffer names and more than one buffer
+			matches, sort buffers by time last used (other than
+			the current buffer).
+	When there is only a single match, it is fully completed in all cases.
+
+	Examples of useful colon-separated values:
+	"longest:full"	Like "longest", but also start 'wildmenu' if it is
+			enabled.  Will not complete to the next full match.
 	"list:full"	When more than one match, list all matches and
 			complete first match.
 	"list:longest"	When more than one match, list all matches and
 			complete till longest common string.
-	"list:lastused" When more than one buffer matches, sort buffers
-			by time last used (other than the current buffer).
-	When there is only a single match, it is fully completed in all cases.
+	"list:lastused" When more than one buffer matches, list all matches
+			and sort buffers by time last used (other than the
+			current buffer).
 
 	Examples: >
 		:set wildmode=full
@@ -8838,15 +8937,15 @@ A jump table for the options with a short description can be found at |Q_op|.
 						*'window'* *'wi'*
 'window' 'wi'		number  (default screen height - 1)
 			global
-	Window height.  Do not confuse this with the height of the Vim window,
-	use 'lines' for that.
-	Used for |CTRL-F| and |CTRL-B| when there is only one window and the
-	value is smaller than 'lines' minus one.  The screen will scroll
-	'window' minus two lines, with a minimum of one.
+	Window height used for |CTRL-F| and |CTRL-B| when there is only one
+	window and the value is smaller than 'lines' minus one.  The screen
+	will scroll 'window' minus two lines, with a minimum of one.
 	When 'window' is equal to 'lines' minus one CTRL-F and CTRL-B scroll
 	in a much smarter way, taking care of wrapping lines.
 	When resizing the Vim window, the value is smaller than 1 or more than
 	or equal to 'lines' it will be set to 'lines' minus 1.
+	Note: Do not confuse this with the height of the Vim window, use
+	'lines' for that.
 
 						*'winheight'* *'wh'* *E591*
 'winheight' 'wh'	number	(default 1)

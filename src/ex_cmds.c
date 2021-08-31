@@ -450,7 +450,7 @@ ex_sort(exarg_T *eap)
 	    unique = TRUE;
 	else if (*p == '"')	// comment start
 	    break;
-	else if (check_nextcmd(p) != NULL)
+	else if (eap->nextcmd == NULL && check_nextcmd(p) != NULL)
 	{
 	    eap->nextcmd = check_nextcmd(p);
 	    break;
@@ -466,7 +466,7 @@ ex_sort(exarg_T *eap)
 	    {
 		if (last_search_pat() == NULL)
 		{
-		    emsg(_(e_noprevre));
+		    emsg(_(e_no_previous_regular_expression));
 		    goto sortend;
 		}
 		regmatch.regprog = vim_regcomp(last_search_pat(), RE_MAGIC);
@@ -935,7 +935,7 @@ do_bang(
 	{
 	    if (prevcmd == NULL)
 	    {
-		emsg(_(e_noprev));
+		emsg(_(e_no_previous_command));
 		vim_free(newcmd);
 		return;
 	    }
@@ -1360,8 +1360,8 @@ do_shell(
 #endif
 #ifdef MSWIN
     int		winstart = FALSE;
-    int		keep_termcap = FALSE;
 #endif
+    int		keep_termcap = !termcap_active;
 
     /*
      * Disallow shell commands for "rvim".
@@ -1395,9 +1395,7 @@ do_shell(
     msg_putchar('\r');			// put cursor at start of line
     if (!autocmd_busy)
     {
-#ifdef MSWIN
 	if (!keep_termcap)
-#endif
 	    stoptermcap();
     }
 #ifdef MSWIN
@@ -1488,9 +1486,7 @@ do_shell(
 	}
 #endif // FEAT_GUI_MSWIN
 
-#ifdef MSWIN
 	if (!keep_termcap)	// if keep_termcap is TRUE didn't stop termcap
-#endif
 	    starttermcap();	// start termcap if not done by wait_return()
 
 	/*
@@ -1860,6 +1856,19 @@ ex_write(exarg_T *eap)
 	(void)do_write(eap);
 }
 
+#ifdef UNIX
+    static int
+check_writable(char_u *fname)
+{
+    if (mch_nodetype(fname) == NODE_OTHER)
+    {
+	semsg(_("E503: \"%s\" is not a file or writable device"), fname);
+	return FAIL;
+    }
+    return OK;
+}
+#endif
+
 /*
  * write current buffer to file 'eap->arg'
  * if 'eap->append' is TRUE, append to the file
@@ -1946,7 +1955,11 @@ do_write(exarg_T *eap)
 #ifdef FEAT_QUICKFIX
 		bt_dontwrite_msg(curbuf) ||
 #endif
-		check_fname() == FAIL || check_readonly(&eap->forceit, curbuf)))
+		check_fname() == FAIL
+#ifdef UNIX
+		|| check_writable(curbuf->b_ffname) == FAIL
+#endif
+		|| check_readonly(&eap->forceit, curbuf)))
 	goto theend;
 
     if (!other)
@@ -2107,7 +2120,7 @@ check_overwrite(
 	    // with UNIX it is possible to open a directory
 	    if (mch_isdir(ffname))
 	    {
-		semsg(_(e_isadir2), ffname);
+		semsg(_(e_src_is_directory), ffname);
 		return FAIL;
 	    }
 #endif
@@ -2124,7 +2137,7 @@ check_overwrite(
 	    else
 #endif
 	    {
-		emsg(_(e_exists));
+		emsg(_(e_file_exists));
 		return FAIL;
 	    }
 	}
@@ -2343,7 +2356,7 @@ check_readonly(int *forceit, buf_T *buf)
 	else
 #endif
 	if (buf->b_p_ro)
-	    emsg(_(e_readonly));
+	    emsg(_(e_readonly_option_is_set_add_bang_to_override));
 	else
 	    semsg(_("E505: \"%s\" is read-only (add ! to override)"),
 		    buf->b_fname);
@@ -2635,6 +2648,8 @@ do_ecmd(
      */
     if (other_file)
     {
+	int prev_alt_fnum = curwin->w_alt_fnum;
+
 	if (!(flags & (ECMD_ADDBUF | ECMD_ALTBUF)))
 	{
 	    if ((cmdmod.cmod_flags & CMOD_KEEPALT) == 0)
@@ -2678,6 +2693,10 @@ do_ecmd(
 	}
 	if (buf == NULL)
 	    goto theend;
+	if (curwin->w_alt_fnum == buf->b_fnum && prev_alt_fnum != 0)
+	    // reusing the buffer, keep the old alternate file
+	    curwin->w_alt_fnum = prev_alt_fnum;
+
 	if (buf->b_ml.ml_mfp == NULL)		// no memfile yet
 	{
 	    oldbuf = FALSE;
@@ -2714,6 +2733,13 @@ do_ecmd(
 	 */
 	if (buf != curbuf)
 	{
+	    bufref_T	save_au_new_curbuf;
+#ifdef FEAT_CMDWIN
+	    int		save_cmdwin_type = cmdwin_type;
+
+	    // BufLeave applies to the old buffer.
+	    cmdwin_type = 0;
+#endif
 	    /*
 	     * Be careful: The autocommands may delete any buffer and change
 	     * the current buffer.
@@ -2726,18 +2752,24 @@ do_ecmd(
 	     */
 	    if (buf->b_fname != NULL)
 		new_name = vim_strsave(buf->b_fname);
+	    save_au_new_curbuf = au_new_curbuf;
 	    set_bufref(&au_new_curbuf, buf);
 	    apply_autocmds(EVENT_BUFLEAVE, NULL, NULL, FALSE, curbuf);
+#ifdef FEAT_CMDWIN
+	    cmdwin_type = save_cmdwin_type;
+#endif
 	    if (!bufref_valid(&au_new_curbuf))
 	    {
 		// new buffer has been deleted
 		delbuf_msg(new_name);	// frees new_name
+		au_new_curbuf = save_au_new_curbuf;
 		goto theend;
 	    }
 #ifdef FEAT_EVAL
 	    if (aborting())	    // autocmds may abort script processing
 	    {
 		vim_free(new_name);
+		au_new_curbuf = save_au_new_curbuf;
 		goto theend;
 	    }
 #endif
@@ -2746,6 +2778,8 @@ do_ecmd(
 	    else
 	    {
 		win_T	    *the_curwin = curwin;
+		int	    did_decrement;
+		buf_T	    *was_curbuf = curbuf;
 
 		// Set the w_closing flag to avoid that autocommands close the
 		// window.  And set b_locked for the same reason.
@@ -2758,10 +2792,12 @@ do_ecmd(
 		// Close the link to the current buffer. This will set
 		// oldwin->w_buffer to NULL.
 		u_sync(FALSE);
-		close_buffer(oldwin, curbuf,
+		did_decrement = close_buffer(oldwin, curbuf,
 			 (flags & ECMD_HIDE) ? 0 : DOBUF_UNLOAD, FALSE, FALSE);
 
-		the_curwin->w_closing = FALSE;
+		// Autocommands may have closed the window.
+		if (win_valid(the_curwin))
+		    the_curwin->w_closing = FALSE;
 		--buf->b_locked;
 
 #ifdef FEAT_EVAL
@@ -2769,6 +2805,7 @@ do_ecmd(
 		if (aborting() && curwin->w_buffer != NULL)
 		{
 		    vim_free(new_name);
+		    au_new_curbuf = save_au_new_curbuf;
 		    goto theend;
 		}
 #endif
@@ -2777,10 +2814,19 @@ do_ecmd(
 		{
 		    // new buffer has been deleted
 		    delbuf_msg(new_name);	// frees new_name
+		    au_new_curbuf = save_au_new_curbuf;
 		    goto theend;
 		}
 		if (buf == curbuf)		// already in new buffer
+		{
+		    // close_buffer() has decremented the window count,
+		    // increment it again here and restore w_buffer.
+		    if (did_decrement && buf_valid(was_curbuf))
+			++was_curbuf->b_nwindows;
+		    if (win_valid_any_tab(oldwin) && oldwin->w_buffer == NULL)
+			oldwin->w_buffer = was_curbuf;
 		    auto_buf = TRUE;
+		}
 		else
 		{
 #ifdef FEAT_SYN_HL
@@ -2814,8 +2860,7 @@ do_ecmd(
 #endif
 	    }
 	    vim_free(new_name);
-	    au_new_curbuf.br_buf = NULL;
-	    au_new_curbuf.br_buf_free_count = 0;
+	    au_new_curbuf = save_au_new_curbuf;
 	}
 
 	curwin->w_pcmark.lnum = 1;
@@ -3547,7 +3592,7 @@ check_secure(void)
     if (secure)
     {
 	secure = 2;
-	emsg(_(e_curdir));
+	emsg(_(e_command_not_allowed_from_vimrc_in_current_dir_or_tag_search));
 	return TRUE;
     }
 #ifdef HAVE_SANDBOX
@@ -3557,7 +3602,7 @@ check_secure(void)
      */
     if (sandbox != 0)
     {
-	emsg(_(e_sandbox));
+	emsg(_(e_not_allowed_in_sandbox));
 	return TRUE;
     }
 #endif
@@ -3580,6 +3625,40 @@ typedef struct {
     int	do_number;	// list last line with line nr
     int	do_ic;		// ignore case flag
 } subflags_T;
+
+/*
+ * Skip over the "sub" part in :s/pat/sub/ where "delimiter" is the separating
+ * character.
+ */
+    char_u *
+skip_substitute(char_u *start, int delimiter)
+{
+    char_u *p = start;
+
+    while (p[0])
+    {
+	if (p[0] == delimiter)		// end delimiter found
+	{
+	    *p++ = NUL;			// replace it with a NUL
+	    break;
+	}
+	if (p[0] == '\\' && p[1] != 0)	// skip escaped characters
+	    ++p;
+	MB_PTR_ADV(p);
+    }
+    return p;
+}
+
+    static int
+check_regexp_delim(int c)
+{
+    if (isalpha(c))
+    {
+	emsg(_("E146: Regular expressions can't be delimited by letters"));
+	return FAIL;
+    }
+    return OK;
+}
 
 /*
  * Perform a substitution from line eap->line1 to line eap->line2 using the
@@ -3643,11 +3722,9 @@ ex_substitute(exarg_T *eap)
 		&& vim_strchr((char_u *)"0123456789cegriIp|\"", *cmd) == NULL)
     {
 				// don't accept alphanumeric for separator
-	if (isalpha(*cmd))
-	{
-	    emsg(_("E146: Regular expressions can't be delimited by letters"));
+	if (check_regexp_delim(*cmd) == FAIL)
 	    return;
-	}
+
 	/*
 	 * undocumented vi feature:
 	 *  "\/sub/" and "\?sub?" use last used search pattern (almost like
@@ -3658,7 +3735,7 @@ ex_substitute(exarg_T *eap)
 	    ++cmd;
 	    if (vim_strchr((char_u *)"/?&", *cmd) == NULL)
 	    {
-		emsg(_(e_backslash));
+		emsg(_(e_backslash_should_be_followed_by));
 		return;
 	    }
 	    if (*cmd != '&')
@@ -3682,18 +3759,7 @@ ex_substitute(exarg_T *eap)
 	 * Vim we want to use '\n' to find/substitute a NUL.
 	 */
 	sub = cmd;	    // remember the start of the substitution
-
-	while (cmd[0])
-	{
-	    if (cmd[0] == delimiter)		// end delimiter found
-	    {
-		*cmd++ = NUL;			// replace it with a NUL
-		break;
-	    }
-	    if (cmd[0] == '\\' && cmd[1] != 0)	// skip escaped characters
-		++cmd;
-	    MB_PTR_ADV(cmd);
-	}
+	cmd = skip_substitute(cmd, delimiter);
 
 	if (!eap->skip)
 	{
@@ -3703,7 +3769,7 @@ ex_substitute(exarg_T *eap)
 	    {
 		if (old_sub == NULL)	// there is no previous command
 		{
-		    emsg(_(e_nopresub));
+		    emsg(_(e_no_previous_substitute_regular_expression));
 		    return;
 		}
 		sub = old_sub;
@@ -3719,7 +3785,7 @@ ex_substitute(exarg_T *eap)
     {
 	if (old_sub == NULL)	// there is no previous command
 	{
-	    emsg(_(e_nopresub));
+	    emsg(_(e_no_previous_substitute_regular_expression));
 	    return;
 	}
 	pat = NULL;		// search_regcomp() will use previous pattern
@@ -3741,6 +3807,8 @@ ex_substitute(exarg_T *eap)
     {
 	linenr_T    joined_lines_count;
 
+	if (eap->skip)
+	    return;
 	curwin->w_cursor.lnum = eap->line1;
 	if (*cmd == 'l')
 	    eap->flags = EXFLAG_LIST;
@@ -3868,7 +3936,7 @@ ex_substitute(exarg_T *eap)
     cmd = skipwhite(cmd);
     if (*cmd && *cmd != '"')	    // if not end-of-line or comment
     {
-	eap->nextcmd = check_nextcmd(cmd);
+	set_nextcmd(eap, cmd);
 	if (eap->nextcmd == NULL)
 	{
 	    semsg(_(e_trailing_arg), cmd);
@@ -3882,7 +3950,7 @@ ex_substitute(exarg_T *eap)
     if (!subflags.do_count && !curbuf->b_p_ma)
     {
 	// Substitution is not allowed in non-'modifiable' buffer
-	emsg(_(e_modifiable));
+	emsg(_(e_cannot_make_changes_modifiable_is_off));
 	return;
     }
 
@@ -4129,6 +4197,7 @@ ex_substitute(exarg_T *eap)
 			    if (curwin->w_cursor.col < 0)
 				curwin->w_cursor.col = 0;
 			    getvcol(curwin, &curwin->w_cursor, NULL, NULL, &ec);
+			    curwin->w_cursor.col = regmatch.startpos[0].col;
 			    if (subflags.do_number || curwin->w_p_nu)
 			    {
 				int numw = number_width(curwin) + 1;
@@ -4152,6 +4221,7 @@ ex_substitute(exarg_T *eap)
 			{
 			    char_u *orig_line = NULL;
 			    int    len_change = 0;
+			    int	   save_p_lz = p_lz;
 #ifdef FEAT_FOLDING
 			    int save_p_fen = curwin->w_p_fen;
 
@@ -4161,6 +4231,9 @@ ex_substitute(exarg_T *eap)
 			    // Remove the inversion afterwards.
 			    temp = RedrawingDisabled;
 			    RedrawingDisabled = 0;
+
+			    // avoid calling update_screen() in vgetorpeek()
+			    p_lz = FALSE;
 
 			    if (new_start != NULL)
 			    {
@@ -4237,6 +4310,7 @@ ex_substitute(exarg_T *eap)
 			    msg_didout = FALSE;	// don't scroll up
 			    msg_col = 0;
 			    gotocmdline(TRUE);
+			    p_lz = save_p_lz;
 
 			    // restore the line
 			    if (orig_line != NULL)
@@ -4835,7 +4909,7 @@ ex_global(exarg_T *eap)
 	++cmd;
 	if (vim_strchr((char_u *)"/?&", *cmd) == NULL)
 	{
-	    emsg(_(e_backslash));
+	    emsg(_(e_backslash_should_be_followed_by));
 	    return;
 	}
 	if (*cmd == '&')
@@ -4848,6 +4922,10 @@ ex_global(exarg_T *eap)
     else if (*cmd == NUL)
     {
 	emsg(_("E148: Regular expression missing from global"));
+	return;
+    }
+    else if (check_regexp_delim(*cmd) == FAIL)
+    {
 	return;
     }
     else
@@ -5219,6 +5297,16 @@ ex_drop(exarg_T *eap)
     char_u *
 skip_vimgrep_pat(char_u *p, char_u **s, int *flags)
 {
+    return skip_vimgrep_pat_ext(p, s, flags, NULL, NULL);
+}
+
+/*
+ * As skip_vimgrep_pat() and store the character overwritten by NUL in "cp"
+ * and the pointer to it in "nulp".
+ */
+    char_u *
+skip_vimgrep_pat_ext(char_u *p, char_u **s, int *flags, char_u **nulp, int *cp)
+{
     int		c;
 
     if (vim_isIDc(*p))
@@ -5228,7 +5316,14 @@ skip_vimgrep_pat(char_u *p, char_u **s, int *flags)
 	    *s = p;
 	p = skiptowhite(p);
 	if (s != NULL && *p != NUL)
+	{
+	    if (nulp != NULL)
+	    {
+		*nulp = p;
+		*cp = *p;
+	    }
 	    *p++ = NUL;
+	}
     }
     else
     {
@@ -5242,18 +5337,27 @@ skip_vimgrep_pat(char_u *p, char_u **s, int *flags)
 
 	// Truncate the pattern.
 	if (s != NULL)
+	{
+	    if (nulp != NULL)
+	    {
+		*nulp = p;
+		*cp = *p;
+	    }
 	    *p = NUL;
+	}
 	++p;
 
 	// Find the flags
-	while (*p == 'g' || *p == 'j')
+	while (*p == 'g' || *p == 'j' || *p == 'f')
 	{
 	    if (flags != NULL)
 	    {
 		if (*p == 'g')
 		    *flags |= VGR_GLOBAL;
-		else
+		else if (*p == 'j')
 		    *flags |= VGR_NOJUMP;
+		else
+		    *flags |= VGR_FUZZY;
 	    }
 	    ++p;
 	}

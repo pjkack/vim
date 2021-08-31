@@ -127,7 +127,11 @@ typedef enum {
 #define ENC_UCSBOM	"ucs-bom"	// check for BOM at start of file
 
 // default value for 'encoding'
-#define ENC_DFLT	"latin1"
+#ifdef MSWIN
+# define ENC_DFLT	"utf-8"
+#else
+# define ENC_DFLT	"latin1"
+#endif
 
 // end-of-line style
 #define EOL_UNKNOWN	-1	// not defined yet
@@ -382,6 +386,9 @@ EXTERN long	p_aleph;	// 'aleph'
 EXTERN char_u	*p_ambw;	// 'ambiwidth'
 #ifdef FEAT_AUTOCHDIR
 EXTERN int	p_acd;		// 'autochdir'
+#endif
+#ifdef FEAT_AUTOSHELLDIR
+EXTERN int	p_asd;		// 'autoshelldir'
 #endif
 EXTERN int	p_ai;		// 'autoindent'
 EXTERN int	p_bin;		// 'binary'
@@ -861,6 +868,7 @@ EXTERN unsigned	ssop_flags;
 # define SSOP_CURSOR		0x4000
 # define SSOP_TABPAGES		0x8000
 # define SSOP_TERMINAL		0x10000
+# define SSOP_SKIP_RTP		0x20000
 #endif
 EXTERN char_u	*p_sh;		// 'shell'
 EXTERN char_u	*p_shcf;	// 'shellcmdflag'
@@ -1044,6 +1052,8 @@ EXTERN unsigned ve_flags;
 #define VE_INSERT	6	// includes "all"
 #define VE_ALL		4
 #define VE_ONEMORE	8
+#define VE_NONE		16	// "none"
+#define VE_NONEU	32      // "NONE"
 EXTERN long	p_verbose;	// 'verbose'
 #ifdef IN_OPTION_C
 char_u	*p_vfile = (char_u *)""; // used before options are initialized
@@ -1220,6 +1230,7 @@ enum
     , BV_VSTS
     , BV_VTS
 #endif
+    , BV_VE
     , BV_COUNT	    // must be the last one
 };
 
@@ -1231,6 +1242,7 @@ enum
 enum
 {
     WV_LIST = 0
+    , WV_LCS
 #ifdef FEAT_ARABIC
     , WV_ARAB
 #endif

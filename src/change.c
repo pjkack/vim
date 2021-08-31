@@ -241,6 +241,9 @@ f_listener_add(typval_T *argvars, typval_T *rettv)
     listener_T	*lnr;
     buf_T	*buf = curbuf;
 
+    if (in_vim9script() && check_for_opt_buffer_arg(argvars, 1) == FAIL)
+	return;
+
     callback = get_callback(&argvars[0]);
     if (callback.cb_name == NULL)
 	return;
@@ -278,6 +281,9 @@ f_listener_flush(typval_T *argvars, typval_T *rettv UNUSED)
 {
     buf_T	*buf = curbuf;
 
+    if (in_vim9script() && check_for_opt_buffer_arg(argvars, 0) == FAIL)
+	return;
+
     if (argvars[0].v_type != VAR_UNKNOWN)
     {
 	buf = get_buf_arg(&argvars[0]);
@@ -296,9 +302,13 @@ f_listener_remove(typval_T *argvars, typval_T *rettv)
     listener_T	*lnr;
     listener_T	*next;
     listener_T	*prev;
-    int		id = tv_get_number(argvars);
+    int		id;
     buf_T	*buf;
 
+    if (in_vim9script() && check_for_number_arg(argvars, 0) == FAIL)
+	return;
+
+    id = tv_get_number(argvars);
     FOR_ALL_BUFFERS(buf)
     {
 	prev = NULL;
@@ -563,9 +573,12 @@ changed_common(
 		changed_cline_bef_curs_win(wp);
 	    if (wp->w_botline >= lnum)
 	    {
-		// Assume that botline doesn't change (inserted lines make
-		// other lines scroll down below botline).
-		approximate_botline_win(wp);
+		if (xtra < 0)
+		    invalidate_botline_win(wp);
+		else
+		    // Assume that botline doesn't change (inserted lines make
+		    // other lines scroll down below botline).
+		    approximate_botline_win(wp);
 	    }
 
 	    // Check if any w_lines[] entries have become invalid.
@@ -758,7 +771,7 @@ deleted_lines_mark(linenr_T lnum, long count)
 /*
  * Marks the area to be redrawn after a change.
  */
-    static void
+    void
 changed_lines_buf(
     buf_T	*buf,
     linenr_T	lnum,	    // first line with change
@@ -1251,7 +1264,7 @@ del_bytes(
 	// fixpos is TRUE, we don't want to end up positioned at the NUL,
 	// unless "restart_edit" is set or 'virtualedit' contains "onemore".
 	if (col > 0 && fixpos && restart_edit == 0
-					      && (ve_flags & VE_ONEMORE) == 0)
+					      && (get_ve_flags() & VE_ONEMORE) == 0)
 	{
 	    --curwin->w_cursor.col;
 	    curwin->w_cursor.coladd = 0;

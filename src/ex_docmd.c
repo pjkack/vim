@@ -300,6 +300,7 @@ static void	ex_tag_cmd(exarg_T *eap, char_u *name);
 # define ex_endwhile		ex_ni
 # define ex_eval		ex_ni
 # define ex_execute		ex_ni
+# define ex_incdec		ex_ni
 # define ex_finally		ex_ni
 # define ex_finish		ex_ni
 # define ex_function		ex_ni
@@ -610,7 +611,7 @@ do_cmdline_cmd(char_u *cmd)
  * Execute the "+cmd" argument of "edit +cmd fname" and the like.
  * This allows for using a range without ":" in Vim9 script.
  */
-    int
+    static int
 do_cmd_argument(char_u *cmd)
 {
     return do_cmdline(cmd, NULL, NULL,
@@ -676,8 +677,6 @@ do_cmdline(
 #endif
     static int	call_depth = 0;		// recursiveness
 #ifdef FEAT_EVAL
-    ESTACK_CHECK_DECLARATION
-
     // For every pair of do_cmdline()/do_one_cmd() calls, use an extra memory
     // location for storing error messages to be converted to an exception.
     // This ensures that the do_errthrow() call in do_one_cmd() does not
@@ -709,11 +708,8 @@ do_cmdline(
     ++call_depth;
 
 #ifdef FEAT_EVAL
+    CLEAR_FIELD(cstack);
     cstack.cs_idx = -1;
-    cstack.cs_looplevel = 0;
-    cstack.cs_trylevel = 0;
-    cstack.cs_emsg_silent_list = NULL;
-    cstack.cs_lflags = 0;
     ga_init2(&lines_ga, (int)sizeof(wcmd_T), 10);
 
     real_cookie = getline_cookie(fgetline, cookie);
@@ -879,7 +875,7 @@ do_cmdline(
 	    if (do_profiling == PROF_YES)
 	    {
 		if (getline_is_func)
-		    func_line_start(real_cookie);
+		    func_line_start(real_cookie, SOURCING_LNUM);
 		else if (getline_equal(fgetline, cookie, getsourceline))
 		    script_line_start();
 	    }
@@ -934,7 +930,7 @@ do_cmdline(
 	    next_cmdline = vim_strsave(next_cmdline);
 	    if (next_cmdline == NULL)
 	    {
-		emsg(_(e_outofmem));
+		emsg(_(e_out_of_memory));
 		retval = FAIL;
 		break;
 	    }
@@ -1190,7 +1186,8 @@ do_cmdline(
      */
     while (!((got_int
 #ifdef FEAT_EVAL
-		    || (did_emsg && force_abort) || did_throw
+		    || (did_emsg && (force_abort || in_vim9script()))
+		    || did_throw
 #endif
 	     )
 #ifdef FEAT_EVAL
@@ -1224,8 +1221,10 @@ do_cmdline(
 	/*
 	 * If a sourced file or executed function ran to its end, report the
 	 * unclosed conditional.
+	 * In Vim9 script do not give a second error, executing aborts after
+	 * the first one.
 	 */
-	if (!got_int && !did_throw
+	if (!got_int && !did_throw && !(did_emsg && in_vim9script())
 		&& ((getline_equal(fgetline, cookie, getsourceline)
 			&& !source_finished(fgetline, cookie))
 		    || (getline_equal(fgetline, cookie, get_func_line)
@@ -1280,63 +1279,7 @@ do_cmdline(
 	 * commands are executed.
 	 */
 	if (did_throw)
-	{
-	    void	*p = NULL;
-	    msglist_T	*messages = NULL, *next;
-
-	    /*
-	     * If the uncaught exception is a user exception, report it as an
-	     * error.  If it is an error exception, display the saved error
-	     * message now.  For an interrupt exception, do nothing; the
-	     * interrupt message is given elsewhere.
-	     */
-	    switch (current_exception->type)
-	    {
-		case ET_USER:
-		    vim_snprintf((char *)IObuff, IOSIZE,
-			    _("E605: Exception not caught: %s"),
-			    current_exception->value);
-		    p = vim_strsave(IObuff);
-		    break;
-		case ET_ERROR:
-		    messages = current_exception->messages;
-		    current_exception->messages = NULL;
-		    break;
-		case ET_INTERRUPT:
-		    break;
-	    }
-
-	    estack_push(ETYPE_EXCEPT, current_exception->throw_name,
-						current_exception->throw_lnum);
-	    ESTACK_CHECK_SETUP
-	    current_exception->throw_name = NULL;
-
-	    discard_current_exception();	// uses IObuff if 'verbose'
-	    suppress_errthrow = TRUE;
-	    force_abort = TRUE;
-
-	    if (messages != NULL)
-	    {
-		do
-		{
-		    next = messages->next;
-		    emsg(messages->msg);
-		    vim_free(messages->msg);
-		    vim_free(messages->sfile);
-		    vim_free(messages);
-		    messages = next;
-		}
-		while (messages != NULL);
-	    }
-	    else if (p != NULL)
-	    {
-		emsg(p);
-		vim_free(p);
-	    }
-	    vim_free(SOURCING_NAME);
-	    ESTACK_CHECK_NOW
-	    estack_pop();
-	}
+	    handle_did_throw();
 
 	/*
 	 * On an interrupt or an aborting error not converted to an exception,
@@ -1456,7 +1399,75 @@ do_cmdline(
     return retval;
 }
 
-#ifdef FEAT_EVAL
+#if defined(FEAT_EVAL) || defined(PROTO)
+/*
+ * Handle when "did_throw" is set after executing commands.
+ */
+    void
+handle_did_throw()
+{
+    char	*p = NULL;
+    msglist_T	*messages = NULL;
+    ESTACK_CHECK_DECLARATION
+
+    /*
+     * If the uncaught exception is a user exception, report it as an
+     * error.  If it is an error exception, display the saved error
+     * message now.  For an interrupt exception, do nothing; the
+     * interrupt message is given elsewhere.
+     */
+    switch (current_exception->type)
+    {
+	case ET_USER:
+	    vim_snprintf((char *)IObuff, IOSIZE,
+		    _("E605: Exception not caught: %s"),
+		    current_exception->value);
+	    p = (char *)vim_strsave(IObuff);
+	    break;
+	case ET_ERROR:
+	    messages = current_exception->messages;
+	    current_exception->messages = NULL;
+	    break;
+	case ET_INTERRUPT:
+	    break;
+    }
+
+    estack_push(ETYPE_EXCEPT, current_exception->throw_name,
+					current_exception->throw_lnum);
+    ESTACK_CHECK_SETUP
+    current_exception->throw_name = NULL;
+
+    discard_current_exception();	// uses IObuff if 'verbose'
+    suppress_errthrow = TRUE;
+    force_abort = TRUE;
+
+    if (messages != NULL)
+    {
+	do
+	{
+	    msglist_T	*next = messages->next;
+	    int		save_compiling = estack_compiling;
+
+	    estack_compiling = messages->msg_compiling;
+	    emsg(messages->msg);
+	    vim_free(messages->msg);
+	    vim_free(messages->sfile);
+	    vim_free(messages);
+	    messages = next;
+	    estack_compiling = save_compiling;
+	}
+	while (messages != NULL);
+    }
+    else if (p != NULL)
+    {
+	emsg(p);
+	vim_free(p);
+    }
+    vim_free(SOURCING_NAME);
+    ESTACK_CHECK_NOW
+    estack_pop();
+}
+
 /*
  * Obtain a line when inside a ":while" or ":for" loop.
  */
@@ -1753,7 +1764,7 @@ do_one_cmd(
     int		starts_with_colon = FALSE;
 #ifdef FEAT_EVAL
     int		may_have_range;
-    int		vim9script = in_vim9script();
+    int		vim9script;
     int		did_set_expr_line = FALSE;
 #endif
     int		sourcing = flags & DOCMD_VERBOSE;
@@ -1801,7 +1812,9 @@ do_one_cmd(
     if (parse_command_modifiers(&ea, &errormsg, &cmdmod, FALSE) == FAIL)
 	goto doend;
     apply_cmdmod(&cmdmod);
-
+#ifdef FEAT_EVAL
+    vim9script = in_vim9script();
+#endif
     after_modifier = ea.cmd;
 
 #ifdef FEAT_EVAL
@@ -1843,14 +1856,14 @@ do_one_cmd(
 	if (ea.cmd == cmd + 1 && *cmd == '$')
 	    // should be "$VAR = val"
 	    --ea.cmd;
-	p = find_ex_command(&ea, NULL, lookup_scriptvar, NULL);
+	p = find_ex_command(&ea, NULL, lookup_scriptitem, NULL);
 	if (ea.cmdidx == CMD_SIZE)
 	{
 	    char_u *ar = skip_range(ea.cmd, TRUE, NULL);
 
 	    // If a ':' before the range is missing, give a clearer error
 	    // message.
-	    if (ar > ea.cmd)
+	    if (ar > ea.cmd && !ea.skip)
 	    {
 		semsg(_(e_colon_required_before_range_str), ea.cmd);
 		goto doend;
@@ -1971,12 +1984,16 @@ do_one_cmd(
 	/*
 	 * strange vi behaviour:
 	 * ":3"		jumps to line 3
-	 * ":3|..."	prints line 3
-	 * ":|"		prints current line
+	 * ":3|..."	prints line 3  (not in Vim9 script)
+	 * ":|"		prints current line  (not in Vim9 script)
 	 */
 	if (ea.skip)	    // skip this if inside :if
 	    goto doend;
-	if (*ea.cmd == '|' || (exmode_active && ea.line1 != ea.line2))
+	if ((*ea.cmd == '|' || (exmode_active && ea.line1 != ea.line2))
+#ifdef FEAT_EVAL
+		&& !vim9script
+#endif
+	   )
 	{
 	    ea.cmdidx = CMD_print;
 	    ea.argt = EX_RANGE+EX_COUNT+EX_TRLBAR;
@@ -1999,7 +2016,7 @@ do_one_cmd(
 	    }
 
 	    if (ea.line2 < 0)
-		errormsg = _(e_invrange);
+		errormsg = _(e_invalid_range);
 	    else
 	    {
 		if (ea.line2 == 0)
@@ -2038,7 +2055,7 @@ do_one_cmd(
     if (p == NULL)
     {
 	if (!ea.skip)
-	    errormsg = _("E464: Ambiguous use of user-defined command");
+	    errormsg = _(e_ambiguous_use_of_user_defined_command);
 	goto doend;
     }
     // Check for wrong commands.
@@ -2114,7 +2131,7 @@ do_one_cmd(
 	if (sandbox != 0 && !(ea.argt & EX_SBOXOK))
 	{
 	    // Command not allowed in sandbox.
-	    errormsg = _(e_sandbox);
+	    errormsg = _(e_not_allowed_in_sandbox);
 	    goto doend;
 	}
 #endif
@@ -2126,7 +2143,7 @@ do_one_cmd(
 	if (!curbuf->b_p_ma && (ea.argt & EX_MODIFY))
 	{
 	    // Command not allowed in non-'modifiable' buffer
-	    errormsg = _(e_modifiable);
+	    errormsg = _(e_cannot_make_changes_modifiable_is_off);
 	    goto doend;
 	}
 
@@ -2136,7 +2153,7 @@ do_one_cmd(
 	    if (cmdwin_type != 0 && !(ea.argt & EX_CMDWIN))
 	    {
 		// Command not allowed in the command line window
-		errormsg = _(e_cmdwin);
+		errormsg = _(e_invalid_in_cmdline_window);
 		goto doend;
 	    }
 #endif
@@ -2310,22 +2327,27 @@ do_one_cmd(
 	ea.do_ecmd_cmd = getargcmd(&ea.arg);
 
     /*
-     * Check for '|' to separate commands and '"' or '#' to start comments.
-     * Don't do this for ":read !cmd" and ":write !cmd".
-     */
-    if ((ea.argt & EX_TRLBAR) && !ea.usefilter)
-	separate_nextcmd(&ea);
-
-    /*
-     * Check for <newline> to end a shell command.
+     * For commands that do not use '|' inside their argument: Check for '|' to
+     * separate commands and '"' or '#' to start comments.
+     *
+     * Otherwise: Check for <newline> to end a shell command.
      * Also do this for ":read !cmd", ":write !cmd" and ":global".
+     * Also do this inside a { - } block after :command and :autocmd.
      * Any others?
      */
+    if ((ea.argt & EX_TRLBAR) && !ea.usefilter)
+    {
+	separate_nextcmd(&ea);
+    }
     else if (ea.cmdidx == CMD_bang
 	    || ea.cmdidx == CMD_terminal
 	    || ea.cmdidx == CMD_global
 	    || ea.cmdidx == CMD_vglobal
-	    || ea.usefilter)
+	    || ea.usefilter
+#ifdef FEAT_EVAL
+	    || inside_block(&ea)
+#endif
+	    )
     {
 	for (p = ea.arg; *p; ++p)
 	{
@@ -2386,7 +2408,7 @@ do_one_cmd(
      * count, it's a buffer name.
      */
     if ((ea.argt & EX_COUNT) && VIM_ISDIGIT(*ea.arg)
-	    && (!(ea.argt & EX_BUFNAME) || *(p = skipdigits(ea.arg)) == NUL
+	    && (!(ea.argt & EX_BUFNAME) || *(p = skipdigits(ea.arg + 1)) == NUL
 							  || VIM_ISWHITE(*p)))
     {
 	n = getdigits(&ea.arg);
@@ -2605,8 +2627,12 @@ do_one_cmd(
 
 #ifdef FEAT_EVAL
     // Set flag that any command was executed, used by ex_vim9script().
+    // Not if this was a command that wasn't executed or :endif.
     if (getline_equal(ea.getline, ea.cookie, getsourceline)
-						    && current_sctx.sc_sid > 0)
+	    && current_sctx.sc_sid > 0
+	    && ea.cmdidx != CMD_endif
+	    && (cstack->cs_idx < 0
+		    || (cstack->cs_flags[cstack->cs_idx] & CSF_ACTIVE)))
 	SCRIPT_ITEM(current_sctx.sc_sid)->sn_state = SN_STATE_HAD_COMMAND;
 
     /*
@@ -2691,6 +2717,58 @@ ex_errmsg(char *msg, char_u *arg)
 }
 
 /*
+ * Check for an Ex command with optional tail.
+ * If there is a match advance "pp" to the argument and return TRUE.
+ * If "noparen" is TRUE do not recognize the command followed by "(".
+ */
+    static int
+checkforcmd_opt(
+    char_u	**pp,		// start of command
+    char	*cmd,		// name of command
+    int		len,		// required length
+    int		noparen)
+{
+    int		i;
+
+    for (i = 0; cmd[i] != NUL; ++i)
+	if (((char_u *)cmd)[i] != (*pp)[i])
+	    break;
+    if (i >= len && !isalpha((*pp)[i])
+			   && (*pp)[i] != '_' && (!noparen || (*pp)[i] != '('))
+    {
+	*pp = skipwhite(*pp + i);
+	return TRUE;
+    }
+    return FALSE;
+}
+
+/*
+ * Check for an Ex command with optional tail.
+ * If there is a match advance "pp" to the argument and return TRUE.
+ */
+    int
+checkforcmd(
+    char_u	**pp,		// start of command
+    char	*cmd,		// name of command
+    int		len)		// required length
+{
+    return checkforcmd_opt(pp, cmd, len, FALSE);
+}
+
+/*
+ * Check for an Ex command with optional tail, not followed by "(".
+ * If there is a match advance "pp" to the argument and return TRUE.
+ */
+    int
+checkforcmd_noparen(
+    char_u	**pp,		// start of command
+    char	*cmd,		// name of command
+    int		len)		// required length
+{
+    return checkforcmd_opt(pp, cmd, len, TRUE);
+}
+
+/*
  * Parse and skip over command modifiers:
  * - update eap->cmd
  * - store flags in "cmod".
@@ -2751,63 +2829,87 @@ parse_command_modifiers(
 	}
 
 	p = skip_range(eap->cmd, TRUE, NULL);
+
+	// In Vim9 script a variable can shadow a command modifier:
+	//   verbose = 123
+	//   verbose += 123
+	//   silent! verbose = func()
+	//   verbose.member = 2
+	//   verbose[expr] = 2
+	// But not:
+	//   verbose [a, b] = list
+	if (in_vim9script())
+	{
+	    char_u *s, *n;
+
+	    for (s = p; ASCII_ISALPHA(*s); ++s)
+		;
+	    n = skipwhite(s);
+	    if (vim_strchr((char_u *)".=", *n) != NULL
+		    || *s == '['
+		    || (*n != NUL && n[1] == '='))
+		break;
+	}
+
 	switch (*p)
 	{
 	    // When adding an entry, also modify cmd_exists().
-	    case 'a':	if (!checkforcmd(&eap->cmd, "aboveleft", 3))
+	    case 'a':	if (!checkforcmd_noparen(&eap->cmd, "aboveleft", 3))
 			    break;
 			cmod->cmod_split |= WSP_ABOVE;
 			continue;
 
-	    case 'b':	if (checkforcmd(&eap->cmd, "belowright", 3))
+	    case 'b':	if (checkforcmd_noparen(&eap->cmd, "belowright", 3))
 			{
 			    cmod->cmod_split |= WSP_BELOW;
 			    continue;
 			}
-			if (checkforcmd(&eap->cmd, "browse", 3))
+			if (checkforcmd_opt(&eap->cmd, "browse", 3, TRUE))
 			{
 #ifdef FEAT_BROWSE_CMD
 			    cmod->cmod_flags |= CMOD_BROWSE;
 #endif
 			    continue;
 			}
-			if (!checkforcmd(&eap->cmd, "botright", 2))
+			if (!checkforcmd_noparen(&eap->cmd, "botright", 2))
 			    break;
 			cmod->cmod_split |= WSP_BOT;
 			continue;
 
-	    case 'c':	if (!checkforcmd(&eap->cmd, "confirm", 4))
+	    case 'c':	if (!checkforcmd_opt(&eap->cmd, "confirm", 4, TRUE))
 			    break;
 #if defined(FEAT_GUI_DIALOG) || defined(FEAT_CON_DIALOG)
 			cmod->cmod_flags |= CMOD_CONFIRM;
 #endif
 			continue;
 
-	    case 'k':	if (checkforcmd(&eap->cmd, "keepmarks", 3))
+	    case 'k':	if (checkforcmd_noparen(&eap->cmd, "keepmarks", 3))
 			{
 			    cmod->cmod_flags |= CMOD_KEEPMARKS;
 			    continue;
 			}
-			if (checkforcmd(&eap->cmd, "keepalt", 5))
+			if (checkforcmd_noparen(&eap->cmd, "keepalt", 5))
 			{
 			    cmod->cmod_flags |= CMOD_KEEPALT;
 			    continue;
 			}
-			if (checkforcmd(&eap->cmd, "keeppatterns", 5))
+			if (checkforcmd_noparen(&eap->cmd, "keeppatterns", 5))
 			{
 			    cmod->cmod_flags |= CMOD_KEEPPATTERNS;
 			    continue;
 			}
-			if (!checkforcmd(&eap->cmd, "keepjumps", 5))
+			if (!checkforcmd_noparen(&eap->cmd, "keepjumps", 5))
 			    break;
 			cmod->cmod_flags |= CMOD_KEEPJUMPS;
 			continue;
 
 	    case 'f':	// only accept ":filter {pat} cmd"
 			{
-			    char_u *reg_pat;
+			    char_u  *reg_pat;
+			    char_u  *nulp = NULL;
+			    int	    c = 0;
 
-			    if (!checkforcmd(&p, "filter", 4)
+			    if (!checkforcmd_noparen(&p, "filter", 4)
 						|| *p == NUL || ends_excmd(*p))
 				break;
 			    if (*p == '!')
@@ -2826,7 +2928,8 @@ parse_command_modifiers(
 				p = skip_vimgrep_pat(p, NULL, NULL);
 			    else
 				// NOTE: This puts a NUL after the pattern.
-				p = skip_vimgrep_pat(p, &reg_pat, NULL);
+				p = skip_vimgrep_pat_ext(p, &reg_pat, NULL,
+								    &nulp, &c);
 			    if (p == NULL || *p == NUL)
 				break;
 			    if (!skip_only)
@@ -2835,51 +2938,65 @@ parse_command_modifiers(
 						vim_regcomp(reg_pat, RE_MAGIC);
 				if (cmod->cmod_filter_regmatch.regprog == NULL)
 				    break;
+				// restore the character overwritten by NUL
+				if (nulp != NULL)
+				    *nulp = c;
 			    }
 			    eap->cmd = p;
 			    continue;
 			}
 
 			// ":hide" and ":hide | cmd" are not modifiers
-	    case 'h':	if (p != eap->cmd || !checkforcmd(&p, "hide", 3)
+	    case 'h':	if (p != eap->cmd || !checkforcmd_noparen(&p, "hide", 3)
 					       || *p == NUL || ends_excmd(*p))
 			    break;
 			eap->cmd = p;
 			cmod->cmod_flags |= CMOD_HIDE;
 			continue;
 
-	    case 'l':	if (checkforcmd(&eap->cmd, "lockmarks", 3))
+	    case 'l':	if (checkforcmd_noparen(&eap->cmd, "lockmarks", 3))
 			{
 			    cmod->cmod_flags |= CMOD_LOCKMARKS;
 			    continue;
 			}
+			if (checkforcmd_noparen(&eap->cmd, "legacy", 3))
+			{
+			    if (ends_excmd2(p, eap->cmd))
+			    {
+				*errormsg =
+				      _(e_legacy_must_be_followed_by_command);
+				return FAIL;
+			    }
+			    cmod->cmod_flags |= CMOD_LEGACY;
+			    continue;
+			}
 
-			if (!checkforcmd(&eap->cmd, "leftabove", 5))
+			if (!checkforcmd_noparen(&eap->cmd, "leftabove", 5))
 			    break;
 			cmod->cmod_split |= WSP_ABOVE;
 			continue;
 
-	    case 'n':	if (checkforcmd(&eap->cmd, "noautocmd", 3))
+	    case 'n':	if (checkforcmd_noparen(&eap->cmd, "noautocmd", 3))
 			{
 			    cmod->cmod_flags |= CMOD_NOAUTOCMD;
 			    continue;
 			}
-			if (!checkforcmd(&eap->cmd, "noswapfile", 3))
+			if (!checkforcmd_noparen(&eap->cmd, "noswapfile", 3))
 			    break;
 			cmod->cmod_flags |= CMOD_NOSWAPFILE;
 			continue;
 
-	    case 'r':	if (!checkforcmd(&eap->cmd, "rightbelow", 6))
+	    case 'r':	if (!checkforcmd_noparen(&eap->cmd, "rightbelow", 6))
 			    break;
 			cmod->cmod_split |= WSP_BELOW;
 			continue;
 
-	    case 's':	if (checkforcmd(&eap->cmd, "sandbox", 3))
+	    case 's':	if (checkforcmd_noparen(&eap->cmd, "sandbox", 3))
 			{
 			    cmod->cmod_flags |= CMOD_SANDBOX;
 			    continue;
 			}
-			if (!checkforcmd(&eap->cmd, "silent", 3))
+			if (!checkforcmd_noparen(&eap->cmd, "silent", 3))
 			    break;
 			cmod->cmod_flags |= CMOD_SILENT;
 			if (*eap->cmd == '!' && !VIM_ISWHITE(eap->cmd[-1]))
@@ -2890,7 +3007,7 @@ parse_command_modifiers(
 			}
 			continue;
 
-	    case 't':	if (checkforcmd(&p, "tab", 3))
+	    case 't':	if (checkforcmd_noparen(&p, "tab", 3))
 			{
 			    if (!skip_only)
 			    {
@@ -2903,7 +3020,7 @@ parse_command_modifiers(
 				{
 				    if (tabnr < 0 || tabnr > LAST_TAB_NR)
 				    {
-					*errormsg = _(e_invrange);
+					*errormsg = _(e_invalid_range);
 					return FAIL;
 				    }
 				    cmod->cmod_tab = tabnr + 1;
@@ -2912,22 +3029,33 @@ parse_command_modifiers(
 			    eap->cmd = p;
 			    continue;
 			}
-			if (!checkforcmd(&eap->cmd, "topleft", 2))
+			if (!checkforcmd_noparen(&eap->cmd, "topleft", 2))
 			    break;
 			cmod->cmod_split |= WSP_TOP;
 			continue;
 
-	    case 'u':	if (!checkforcmd(&eap->cmd, "unsilent", 3))
+	    case 'u':	if (!checkforcmd_noparen(&eap->cmd, "unsilent", 3))
 			    break;
 			cmod->cmod_flags |= CMOD_UNSILENT;
 			continue;
 
-	    case 'v':	if (checkforcmd(&eap->cmd, "vertical", 4))
+	    case 'v':	if (checkforcmd_noparen(&eap->cmd, "vertical", 4))
 			{
 			    cmod->cmod_split |= WSP_VERT;
 			    continue;
 			}
-			if (!checkforcmd(&p, "verbose", 4))
+			if (checkforcmd_noparen(&eap->cmd, "vim9cmd", 4))
+			{
+			    if (ends_excmd2(p, eap->cmd))
+			    {
+				*errormsg =
+				      _(e_vim9cmd_must_be_followed_by_command);
+				return FAIL;
+			    }
+			    cmod->cmod_flags |= CMOD_VIM9CMD;
+			    continue;
+			}
+			if (!checkforcmd_noparen(&p, "verbose", 4))
 			    break;
 			if (vim_isdigit(*eap->cmd))
 			    cmod->cmod_verbose = atoi((char *)eap->cmd);
@@ -2940,6 +3068,35 @@ parse_command_modifiers(
     }
 
     return OK;
+}
+
+/*
+ * Return TRUE if "cmod" has anything set.
+ */
+    int
+has_cmdmod(cmdmod_T *cmod, int ignore_silent)
+{
+    return (cmod->cmod_flags != 0 && (!ignore_silent
+		|| (cmod->cmod_flags
+		      & ~(CMOD_SILENT | CMOD_ERRSILENT | CMOD_UNSILENT)) != 0))
+	    || cmod->cmod_split != 0
+	    || cmod->cmod_verbose != 0
+	    || cmod->cmod_tab != 0
+	    || cmod->cmod_filter_regmatch.regprog != NULL;
+}
+
+/*
+ * If Vim9 script and "cmdmod" has anything set give an error and return TRUE.
+ */
+    int
+cmdmod_error(int ignore_silent)
+{
+    if (in_vim9script() && has_cmdmod(&cmdmod, ignore_silent))
+    {
+	emsg(_(e_misplaced_command_modifier));
+	return TRUE;
+    }
+    return FALSE;
 }
 
 /*
@@ -3108,14 +3265,14 @@ parse_cmd_address(exarg_T *eap, char **errormsg, int silent)
 			{
 			    // there is no Vim command which uses '%' and
 			    // ADDR_WINDOWS or ADDR_TABS
-			    *errormsg = _(e_invrange);
+			    *errormsg = _(e_invalid_range);
 			    return FAIL;
 			}
 			break;
 		    case ADDR_TABS_RELATIVE:
 		    case ADDR_UNSIGNED:
 		    case ADDR_QUICKFIX:
-			*errormsg = _(e_invrange);
+			*errormsg = _(e_invalid_range);
 			return FAIL;
 		    case ADDR_ARGUMENTS:
 			if (ARGCOUNT == 0)
@@ -3147,7 +3304,7 @@ parse_cmd_address(exarg_T *eap, char **errormsg, int silent)
 		// '*' - visual area
 		if (eap->addr_type != ADDR_LINES)
 		{
-		    *errormsg = _(e_invrange);
+		    *errormsg = _(e_invalid_range);
 		    return FAIL;
 		}
 
@@ -3195,29 +3352,6 @@ parse_cmd_address(exarg_T *eap, char **errormsg, int silent)
 	    eap->addr_count = 0;
     }
     return OK;
-}
-
-/*
- * Check for an Ex command with optional tail.
- * If there is a match advance "pp" to the argument and return TRUE.
- */
-    int
-checkforcmd(
-    char_u	**pp,		// start of command
-    char	*cmd,		// name of command
-    int		len)		// required length
-{
-    int		i;
-
-    for (i = 0; cmd[i] != NUL; ++i)
-	if (((char_u *)cmd)[i] != (*pp)[i])
-	    break;
-    if (i >= len && !isalpha((*pp)[i]) && (*pp)[i] != '_')
-    {
-	*pp = skipwhite(*pp + i);
-	return TRUE;
-    }
-    return FALSE;
 }
 
 /*
@@ -3284,14 +3418,17 @@ skip_option_env_lead(char_u *start)
 find_ex_command(
 	exarg_T *eap,
 	int	*full UNUSED,
-	int	(*lookup)(char_u *, size_t, void *, cctx_T *) UNUSED,
+	int	(*lookup)(char_u *, size_t, int cmd, cctx_T *) UNUSED,
 	cctx_T	*cctx UNUSED)
 {
     int		len;
     char_u	*p;
     int		i;
+#ifndef FEAT_EVAL
+    int		vim9 = FALSE;
+#else
+    int		vim9 = in_vim9script();
 
-#ifdef FEAT_EVAL
     /*
      * Recognize a Vim9 script function/method call and assignment:
      * "lvar = value", "lvar(arg)", "[1, 2 3]->Func()"
@@ -3301,11 +3438,41 @@ find_ex_command(
     {
 	char_u *pskip = skip_option_env_lead(eap->cmd);
 
-	if (vim_strchr((char_u *)"{('[\"@", *p) != NULL
+	if (vim_strchr((char_u *)"{('[\"@&$", *p) != NULL
 	       || ((p = to_name_const_end(pskip)) > eap->cmd && *p != NUL))
 	{
-	    int oplen;
-	    int heredoc;
+	    int	    oplen;
+	    int	    heredoc;
+	    char_u  *swp;
+
+	    if (*eap->cmd == '&'
+		    || *eap->cmd == '$'
+		    || (eap->cmd[0] == '@'
+					&& (valid_yank_reg(eap->cmd[1], FALSE)
+						       || eap->cmd[1] == '@')))
+	    {
+		if (*eap->cmd == '&')
+		{
+		    p = eap->cmd + 1;
+		    if (STRNCMP("l:", p, 2) == 0 || STRNCMP("g:", p, 2) == 0)
+			p += 2;
+		    p = to_name_end(p, FALSE);
+		}
+		else if (*eap->cmd == '$')
+		    p = to_name_end(eap->cmd + 1, FALSE);
+		else
+		    p = eap->cmd + 2;
+		if (ends_excmd(*skipwhite(p)))
+		{
+		    // "&option <NL>", "$ENV <NL>" and "@r <NL>" are the start
+		    // of an expression.
+		    eap->cmdidx = CMD_eval;
+		    return eap->cmd;
+		}
+		// "&option" can be followed by "->" or "=", check below
+	    }
+
+	    swp = skipwhite(p);
 
 	    if (
 		// "(..." is an expression.
@@ -3323,7 +3490,7 @@ find_ex_command(
 			 || eap->cmd[1] == ':'
 			    )
 			    // "varname->func()" is an expression.
-			: (*p == '-' && p[1] == '>')))
+			: (*swp == '-' && swp[1] == '>')))
 	    {
 		if (*eap->cmd == '{' && ends_excmd(*skipwhite(eap->cmd + 1)))
 		{
@@ -3339,24 +3506,28 @@ find_ex_command(
 			    // "varname[]" is an expression.
 			    *p == '['
 			    // "varname.key" is an expression.
-			 || (*p == '.' && ASCII_ISALPHA(p[1]))))
+			 || (*p == '.' && (ASCII_ISALPHA(p[1])
+							     || p[1] == '_'))))
 	    {
-		char_u	*after = p;
+		char_u	*after = eap->cmd;
 
 		// When followed by "=" or "+=" then it is an assignment.
+		// Skip over the whole thing, it can be:
+		//	name.member = val
+		//	name[a : b] = val
+		//	name[idx] = val
+		//	name[idx].member = val
+		//	etc.
+		eap->cmdidx = CMD_eval;
 		++emsg_silent;
-		if (*after == '.')
-		    after = skipwhite(after + 1);
 		if (skip_expr(&after, NULL) == OK)
+		{
 		    after = skipwhite(after);
-		else
-		    after = (char_u *)"";
-		if (*after == '=' || (*after != NUL && after[1] == '=')
+		    if (*after == '=' || (*after != NUL && after[1] == '=')
 					 || (after[0] == '.' && after[1] == '.'
 							   && after[2] == '='))
-		    eap->cmdidx = CMD_var;
-		else
-		    eap->cmdidx = CMD_eval;
+			eap->cmdidx = CMD_var;
+		}
 		--emsg_silent;
 		return eap->cmd;
 	    }
@@ -3370,6 +3541,8 @@ find_ex_command(
 	    // can't be an assignment.
 	    if (*eap->cmd == '[')
 	    {
+		char_u	    *eq;
+
 		p = to_name_const_end(eap->cmd);
 		if (p == eap->cmd && *p == '[')
 		{
@@ -3378,12 +3551,19 @@ find_ex_command(
 
 		    p = skip_var_list(eap->cmd, TRUE, &count, &semicolon, TRUE);
 		}
-		if (p == NULL || p == eap->cmd || *skipwhite(p) != '=')
+		eq = p;
+		if (eq != NULL)
+		{
+		    eq = skipwhite(eq);
+		    if (vim_strchr((char_u *)"+-*/%", *eq) != NULL)
+			++eq;
+		}
+		if (p == NULL || p == eap->cmd || *eq != '=')
 		{
 		    eap->cmdidx = CMD_eval;
 		    return eap->cmd;
 		}
-		if (p > eap->cmd && *skipwhite(p) == '=')
+		if (p > eap->cmd && *eq == '=')
 		{
 		    eap->cmdidx = CMD_var;
 		    return eap->cmd;
@@ -3392,9 +3572,10 @@ find_ex_command(
 
 	    // Recognize an assignment if we recognize the variable name:
 	    // "g:var = expr"
-	    // "var = expr"  where "var" is a local var name.
-	    if (*eap->cmd == '@')
-		p = eap->cmd + 2;
+	    // "@r = expr"
+	    // "&opt = expr"
+	    // "var = expr"  where "var" is a variable name or we are skipping
+	    // (variable declaration might have been skipped).
 	    oplen = assignment_len(skipwhite(p), &heredoc);
 	    if (oplen > 0)
 	    {
@@ -3402,7 +3583,8 @@ find_ex_command(
 			|| *eap->cmd == '&'
 			|| *eap->cmd == '$'
 			|| *eap->cmd == '@'
-			|| lookup(eap->cmd, p - eap->cmd, NULL, cctx) == OK)
+			|| eap->skip
+			|| lookup(eap->cmd, p - eap->cmd, TRUE, cctx) == OK)
 		{
 		    eap->cmdidx = CMD_var;
 		    return eap->cmd;
@@ -3417,25 +3599,44 @@ find_ex_command(
 		return eap->cmd;
 	    }
 	}
+
+	// If it is an ID it might be a variable with an operator on the next
+	// line, if the variable exists it can't be an Ex command.
+	if (p > eap->cmd && ends_excmd(*skipwhite(p))
+		&& (lookup(eap->cmd, p - eap->cmd, TRUE, cctx) == OK
+		    || (ASCII_ISALPHA(eap->cmd[0]) && eap->cmd[1] == ':')))
+	{
+	    eap->cmdidx = CMD_eval;
+	    return eap->cmd;
+	}
+
+	// Check for "++nr" and "--nr".
+	if (p == eap->cmd && p[0] == p[1] && (*p == '+' || *p == '-'))
+	{
+	    eap->cmdidx = *p == '+' ? CMD_increment : CMD_decrement;
+	    return eap->cmd + 2;
+	}
     }
 #endif
 
     /*
      * Isolate the command and search for it in the command table.
      * Exceptions:
-     * - the 'k' command can directly be followed by any character.
+     * - The 'k' command can directly be followed by any character.
+     *   But it is not used in Vim9 script.
      * - the 's' command can be followed directly by 'c', 'g', 'i', 'I' or 'r'
      *	    but :sre[wind] is another command, as are :scr[iptnames],
      *	    :scs[cope], :sim[alt], :sig[ns] and :sil[ent].
      * - the "d" command can directly be followed by 'l' or 'p' flag.
      */
     p = eap->cmd;
-    if (*p == 'k')
+    if (!vim9 && *p == 'k')
     {
 	eap->cmdidx = CMD_k;
 	++p;
     }
-    else if (p[0] == 's'
+    else if (!vim9
+	    && p[0] == 's'
 	    && ((p[1] == 'c' && (p[2] == NUL || (p[2] != 's' && p[2] != 'r'
 			&& (p[3] == NUL || (p[3] != 'i' && p[4] != 'p')))))
 		|| p[1] == 'g'
@@ -3458,7 +3659,7 @@ find_ex_command(
 	}
 	else if (*p == '9' && STRNCMP("vim9", eap->cmd, 4) == 0)
 	{
-	    // include "9" for "vim9script"
+	    // include "9" for "vim9*" commands; "vim9cmd" and "vim9script".
 	    ++p;
 	    while (ASCII_ISALPHA(*p))
 		++p;
@@ -3468,7 +3669,7 @@ find_ex_command(
 	if (p == eap->cmd && vim_strchr((char_u *)"@*!=><&~#}", *p) != NULL)
 	    ++p;
 	len = (int)(p - eap->cmd);
-	if (*eap->cmd == 'd' && (p[-1] == 'l' || p[-1] == 'p'))
+	if (!vim9 && *eap->cmd == 'd' && (p[-1] == 'l' || p[-1] == 'p'))
 	{
 	    // Check for ":dl", ":dell", etc. to ":deletel": that's
 	    // :delete with the 'l' flag.  Same for 'p'.
@@ -3544,12 +3745,17 @@ find_ex_command(
 	eap->cmdidx = CMD_finally;
 
 #ifdef FEAT_EVAL
-    if (eap->cmdidx != CMD_SIZE && in_vim9script()
-	    && !IS_WHITE_OR_NUL(*p) && *p != '\n' && *p != '!'
-	    && (cmdnames[eap->cmdidx].cmd_argt & EX_NONWHITE_OK) == 0)
+    if (eap->cmdidx < CMD_SIZE
+	    && vim9
+	    && !IS_WHITE_OR_NUL(*p) && *p != '\n' && *p != '!' && *p != '|'
+	    && (eap->cmdidx < 0 ||
+		(cmdnames[eap->cmdidx].cmd_argt & EX_NONWHITE_OK) == 0))
     {
-	semsg(_(e_command_not_followed_by_white_space_str), eap->cmd);
+	char_u *cmd = vim_strnsave(eap->cmd, p - eap->cmd);
+
+	semsg(_(e_command_str_not_followed_by_white_space_str), cmd, eap->cmd);
 	eap->cmdidx = CMD_SIZE;
+	vim_free(cmd);
     }
 #endif
 
@@ -3599,8 +3805,8 @@ modifier_len(char_u *cmd)
     char_u	*p = cmd;
 
     if (VIM_ISDIGIT(*cmd))
-	p = skipwhite(skipdigits(cmd));
-    for (i = 0; i < (int)(sizeof(cmdmods) / sizeof(struct cmdmod)); ++i)
+	p = skipwhite(skipdigits(cmd + 1));
+    for (i = 0; i < (int)ARRAY_LENGTH(cmdmods); ++i)
     {
 	for (j = 0; p[j] != NUL; ++j)
 	    if (p[j] != cmdmods[i].name[j])
@@ -3627,7 +3833,7 @@ cmd_exists(char_u *name)
     char_u	*p;
 
     // Check command modifiers.
-    for (i = 0; i < (int)(sizeof(cmdmods) / sizeof(struct cmdmod)); ++i)
+    for (i = 0; i < (int)ARRAY_LENGTH(cmdmods); ++i)
     {
 	for (j = 0; name[j] != NUL; ++j)
 	    if (name[j] != cmdmods[i].name[j])
@@ -3648,6 +3854,53 @@ cmd_exists(char_u *name)
     if (*skipwhite(p) != NUL)
 	return 0;	// trailing garbage
     return (ea.cmdidx == CMD_SIZE ? 0 : (full ? 2 : 1));
+}
+
+/*
+ * "fullcommand" function
+ */
+    void
+f_fullcommand(typval_T *argvars, typval_T *rettv)
+{
+    exarg_T  ea;
+    char_u   *name;
+    char_u   *p;
+
+    rettv->v_type = VAR_STRING;
+    rettv->vval.v_string = NULL;
+
+    if (in_vim9script() && check_for_string_arg(argvars, 0) == FAIL)
+	return;
+
+    name = argvars[0].vval.v_string;
+    if (name == NULL)
+	return;
+
+    while (*name != NUL && *name == ':')
+	name++;
+    name = skip_range(name, TRUE, NULL);
+
+    ea.cmd = (*name == '2' || *name == '3') ? name + 1 : name;
+    ea.cmdidx = (cmdidx_T)0;
+    ea.addr_count = 0;
+    p = find_ex_command(&ea, NULL, NULL, NULL);
+    if (p == NULL || ea.cmdidx == CMD_SIZE)
+	return;
+    if (in_vim9script())
+    {
+	int	     res;
+
+	++emsg_silent;
+	res = not_in_vim9(&ea);
+	--emsg_silent;
+
+	if (res == FAIL)
+	    return;
+    }
+
+    rettv->vval.v_string = vim_strsave(IS_USER_CMDIDX(ea.cmdidx)
+				    ? get_user_commands(NULL, ea.useridx)
+				    : cmdnames[ea.cmdidx].cmd_name);
 }
 #endif
 
@@ -3731,7 +3984,7 @@ addr_error(cmd_addr_T addr_type)
     if (addr_type == ADDR_NONE)
 	emsg(_(e_norange));
     else
-	emsg(_(e_invrange));
+	emsg(_(e_invalid_range));
 }
 
 /*
@@ -4018,7 +4271,7 @@ get_address(
 		    i = RE_SEARCH;
 		else
 		{
-		    emsg(_(e_backslash));
+		    emsg(_(e_backslash_should_be_followed_by));
 		    cmd = NULL;
 		    goto error;
 		}
@@ -4120,7 +4373,7 @@ get_address(
 
 	    if (addr_type == ADDR_TABS_RELATIVE)
 	    {
-		emsg(_(e_invrange));
+		emsg(_(e_invalid_range));
 		cmd = NULL;
 		goto error;
 	    }
@@ -4268,7 +4521,7 @@ invalid_range(exarg_T *eap)
     if (       eap->line1 < 0
 	    || eap->line2 < 0
 	    || eap->line1 > eap->line2)
-	return _(e_invrange);
+	return _(e_invalid_range);
 
     if (eap->argt & EX_RANGE)
     {
@@ -4280,46 +4533,46 @@ invalid_range(exarg_T *eap)
 			    + (eap->cmdidx == CMD_diffget)
 #endif
 		   )
-		    return _(e_invrange);
+		    return _(e_invalid_range);
 		break;
 	    case ADDR_ARGUMENTS:
 		// add 1 if ARGCOUNT is 0
 		if (eap->line2 > ARGCOUNT + (!ARGCOUNT))
-		    return _(e_invrange);
+		    return _(e_invalid_range);
 		break;
 	    case ADDR_BUFFERS:
 		// Only a boundary check, not whether the buffers actually
 		// exist.
 		if (eap->line1 < 1 || eap->line2 > get_highest_fnum())
-		    return _(e_invrange);
+		    return _(e_invalid_range);
 		break;
 	    case ADDR_LOADED_BUFFERS:
 		buf = firstbuf;
 		while (buf->b_ml.ml_mfp == NULL)
 		{
 		    if (buf->b_next == NULL)
-			return _(e_invrange);
+			return _(e_invalid_range);
 		    buf = buf->b_next;
 		}
 		if (eap->line1 < buf->b_fnum)
-		    return _(e_invrange);
+		    return _(e_invalid_range);
 		buf = lastbuf;
 		while (buf->b_ml.ml_mfp == NULL)
 		{
 		    if (buf->b_prev == NULL)
-			return _(e_invrange);
+			return _(e_invalid_range);
 		    buf = buf->b_prev;
 		}
 		if (eap->line2 > buf->b_fnum)
-		    return _(e_invrange);
+		    return _(e_invalid_range);
 		break;
 	    case ADDR_WINDOWS:
 		if (eap->line2 > LAST_WIN_NR)
-		    return _(e_invrange);
+		    return _(e_invalid_range);
 		break;
 	    case ADDR_TABS:
 		if (eap->line2 > LAST_TAB_NR)
-		    return _(e_invrange);
+		    return _(e_invalid_range);
 		break;
 	    case ADDR_TABS_RELATIVE:
 	    case ADDR_OTHER:
@@ -4329,20 +4582,17 @@ invalid_range(exarg_T *eap)
 #ifdef FEAT_QUICKFIX
 		// No error for value that is too big, will use the last entry.
 		if (eap->line2 <= 0)
-		    return _(e_invrange);
+		    return _(e_invalid_range);
 #endif
 		break;
 	    case ADDR_QUICKFIX_VALID:
 #ifdef FEAT_QUICKFIX
 		if ((eap->line2 != 1 && eap->line2 > qf_get_valid_size(eap))
 			|| eap->line2 < 0)
-		    return _(e_invrange);
+		    return _(e_invalid_range);
 #endif
 		break;
 	    case ADDR_UNSIGNED:
-		if (eap->line2 < 0)
-		    return _(e_invrange);
-		break;
 	    case ADDR_NONE:
 		// Will give an error elsewhere.
 		break;
@@ -4998,10 +5248,11 @@ ex_autocmd(exarg_T *eap)
     if (secure)
     {
 	secure = 2;
-	eap->errmsg = _(e_curdir);
+	eap->errmsg =
+	      _(e_command_not_allowed_from_vimrc_in_current_dir_or_tag_search);
     }
     else if (eap->cmdidx == CMD_autocmd)
-	do_autocmd(eap->arg, eap->forceit);
+	do_autocmd(eap, eap->arg, eap->forceit);
     else
 	do_augroup(eap->arg, eap->forceit);
 }
@@ -5166,7 +5417,8 @@ ends_excmd2(char_u *cmd_start UNUSED, char_u *cmd)
 	return TRUE;
 #ifdef FEAT_EVAL
     if (in_vim9script())
-	return c == '#' && cmd[1] != '{'
+	//  # starts a comment, #{ might be a mistake, #{{ can start a fold
+	return c == '#' && (cmd[1] != '{' || cmd[2] == '{')
 				 && (cmd == cmd_start || VIM_ISWHITE(cmd[-1]));
 #endif
     return c == '"';
@@ -5204,6 +5456,21 @@ check_nextcmd(char_u *p)
 	return (s + 1);
     else
 	return NULL;
+}
+
+/*
+ * If "eap->nextcmd" is not set, check for a next command at "p".
+ */
+    void
+set_nextcmd(exarg_T *eap, char_u *arg)
+{
+    char_u *p = check_nextcmd(arg);
+
+    if (eap->nextcmd == NULL)
+	eap->nextcmd = p;
+    else if (p != NULL)
+	// cannot use "| command" inside a  {} block
+	semsg(_(e_cannot_use_bar_to_separate_commands_here_str), arg);
 }
 
 /*
@@ -5320,7 +5587,7 @@ not_exiting(void)
     settmode(TMODE_RAW);
 }
 
-    static int
+    int
 before_quit_autocmds(win_T *wp, int quit_all, int forceit)
 {
     apply_autocmds(EVENT_QUITPRE, NULL, NULL, FALSE, wp->w_buffer);
@@ -5394,7 +5661,7 @@ ex_quit(exarg_T *eap)
 #endif
 
     /*
-     * If there are more files or windows we won't exit.
+     * If there is only one relevant window we will exit.
      */
     if (check_more(FALSE, eap->forceit) == OK && only_one_window())
 	exiting = TRUE;
@@ -5652,7 +5919,7 @@ get_tabpage_arg(exarg_T *eap)
     {
 	if (unaccept_arg0 && eap->line2 == 0)
 	{
-	    eap->errmsg = _(e_invrange);
+	    eap->errmsg = _(e_invalid_range);
 	    tab_number = 0;
 	}
 	else
@@ -5662,7 +5929,7 @@ get_tabpage_arg(exarg_T *eap)
 	    {
 		--tab_number;
 		if (tab_number < unaccept_arg0)
-		    eap->errmsg = _(e_invrange);
+		    eap->errmsg = _(e_invalid_range);
 	    }
 	}
     }
@@ -5911,7 +6178,7 @@ ex_stop(exarg_T *eap)
 }
 
 /*
- * ":exit", ":xit" and ":wq": Write file and quite the current window.
+ * ":exit", ":xit" and ":wq": Write file and quit the current window.
  */
     static void
 ex_exit(exarg_T *eap)
@@ -5934,17 +6201,17 @@ ex_exit(exarg_T *eap)
 	return;
     }
 
-    if (before_quit_autocmds(curwin, FALSE, eap->forceit))
-	return;
-
     /*
-     * if more files or windows we won't exit
+     * we plan to exit if there is only one relevant window
      */
     if (check_more(FALSE, eap->forceit) == OK && only_one_window())
 	exiting = TRUE;
-    if (       ((eap->cmdidx == CMD_wq
-		    || curbufIsChanged())
-		&& do_write(eap) == FAIL)
+
+    // Write the buffer for ":wq" or when it was changed.
+    // Trigger QuitPre and ExitPre.
+    // Check if we can exit now, after autocommands have changed things.
+    if (((eap->cmdidx == CMD_wq || curbufIsChanged()) && do_write(eap) == FAIL)
+	    || before_quit_autocmds(curwin, FALSE, eap->forceit)
 	    || check_more(TRUE, eap->forceit) == FAIL
 	    || (only_one_window() && check_changed_any(eap->forceit, FALSE)))
     {
@@ -6374,7 +6641,7 @@ ex_tabnext(exarg_T *eap)
 		    tab_number = eap->line2;
 		    if (tab_number < 1)
 		    {
-			eap->errmsg = _(e_invrange);
+			eap->errmsg = _(e_invalid_range);
 			return;
 		    }
 		}
@@ -6542,6 +6809,10 @@ ex_open(exarg_T *eap)
     regmatch_T	regmatch;
     char_u	*p;
 
+#ifdef FEAT_EVAL
+    if (not_in_vim9(eap) == FAIL)
+	return;
+#endif
     curwin->w_cursor.lnum = eap->line2;
     beginline(BL_SOL | BL_FIX);
     if (*eap->arg == '/')
@@ -6764,7 +7035,7 @@ do_exedit(
     static void
 ex_nogui(exarg_T *eap)
 {
-    eap->errmsg = _(e_nogvim);
+    eap->errmsg = _(e_gui_cannot_be_used_not_enabled_at_compile_time);
 }
 #endif
 
@@ -7214,14 +7485,17 @@ ex_sleep(exarg_T *eap)
 	case NUL: len *= 1000L; break;
 	default: semsg(_(e_invarg2), eap->arg); return;
     }
-    do_sleep(len);
+
+    // Hide the cursor if invoked with !
+    do_sleep(len, eap->forceit);
 }
 
 /*
  * Sleep for "msec" milliseconds, but keep checking for a CTRL-C every second.
+ * Hide the cursor if "hide_cursor" is TRUE.
  */
     void
-do_sleep(long msec)
+do_sleep(long msec, int hide_cursor)
 {
     long	done = 0;
     long	wait_now;
@@ -7233,7 +7507,11 @@ do_sleep(long msec)
     ELAPSED_INIT(start_tv);
 # endif
 
-    cursor_on();
+    if (hide_cursor)
+        cursor_sleep();
+    else
+        cursor_on();
+
     out_flush_cursor(FALSE, FALSE);
     while (!got_int && done < msec)
     {
@@ -7282,6 +7560,9 @@ do_sleep(long msec)
     // input buffer, otherwise a following call to input() fails.
     if (got_int)
 	(void)vpeekc();
+
+    if (hide_cursor)
+        cursor_unsleep();
 }
 
 /*
@@ -7294,6 +7575,11 @@ ex_winsize(exarg_T *eap)
     char_u	*arg = eap->arg;
     char_u	*p;
 
+    if (!isdigit(*arg))
+    {
+	semsg(_(e_invarg2), arg);
+	return;
+    }
     w = getdigits(&arg);
     arg = skipwhite(arg);
     p = arg;
@@ -7324,7 +7610,7 @@ ex_wincmd(exarg_T *eap)
     else
 	p = eap->arg + 1;
 
-    eap->nextcmd = check_nextcmd(p);
+    set_nextcmd(eap, p);
     p = skipwhite(p);
     if (*p != NUL && *p != (
 #ifdef FEAT_EVAL
@@ -7506,7 +7792,7 @@ ex_copymove(exarg_T *eap)
      */
     if (n == MAXLNUM || n < 0 || n > curbuf->b_ml.ml_line_count)
     {
-	emsg(_(e_invrange));
+	emsg(_(e_invalid_range));
 	return;
     }
 
@@ -7954,7 +8240,7 @@ open_exfile(
     // with Unix it is possible to open a directory
     if (mch_isdir(fname))
     {
-	semsg(_(e_isadir2), fname);
+	semsg(_(e_src_is_directory), fname);
 	return NULL;
     }
 #endif
@@ -7978,6 +8264,10 @@ ex_mark(exarg_T *eap)
 {
     pos_T	pos;
 
+#ifdef FEAT_EVAL
+    if (not_in_vim9(eap) == FAIL)
+	return;
+#endif
     if (*eap->arg == NUL)		// No argument?
 	emsg(_(e_argreq));
     else if (eap->arg[1] != NUL)	// more than one character?
@@ -8042,7 +8332,7 @@ save_current_state(save_state_T *sst)
 restore_current_state(save_state_T *sst)
 {
     // Restore the previous typeahead.
-    restore_typeahead(&sst->tabuf);
+    restore_typeahead(&sst->tabuf, FALSE);
 
     msg_scroll = sst->save_msg_scroll;
     restart_edit = sst->save_restart_edit;
@@ -8354,7 +8644,7 @@ ex_findpat(exarg_T *eap)
 	    if (!ends_excmd2(eap->arg, p))
 		eap->errmsg = ex_errmsg(e_trailing_arg, p);
 	    else
-		eap->nextcmd = check_nextcmd(p);
+		set_nextcmd(eap, p);
 	}
     }
     if (!eap->skip)
@@ -8531,7 +8821,7 @@ find_cmdline_var(char_u *src, int *usedlen)
 #endif
     };
 
-    for (i = 0; i < (int)(sizeof(spec_str) / sizeof(char *)); ++i)
+    for (i = 0; i < (int)ARRAY_LENGTH(spec_str); ++i)
     {
 	len = (int)STRLEN(spec_str[i]);
 	if (STRNCMP(src, spec_str[i], len) == 0)
@@ -9101,7 +9391,7 @@ ex_digraphs(exarg_T *eap UNUSED)
     else
 	listdigraphs(eap->forceit);
 #else
-    emsg(_("E196: No digraphs in this version"));
+    emsg(_(e_no_digraphs_version));
 #endif
 }
 

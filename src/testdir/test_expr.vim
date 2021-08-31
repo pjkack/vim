@@ -127,6 +127,7 @@ func Test_getreg_empty_list()
   let y = x
   call add(x, 'foo')
   call assert_equal(['foo'], y)
+  call assert_fails('call getreg([])', 'E730:')
 endfunc
 
 func Test_loop_over_null_list()
@@ -500,6 +501,7 @@ func Test_funcref()
   let OneByRef = funcref("One", repeat(["foo"], 20))
   call assert_fails('let OneByRef = funcref("One", repeat(["foo"], 21))', 'E118:')
   call assert_fails('echo function("min") =~ function("min")', 'E694:')
+  call assert_fails('echo test_null_function()->funcref()', 'E475: Invalid argument: NULL')
 endfunc
 
 func Test_setmatches()

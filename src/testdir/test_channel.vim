@@ -115,6 +115,18 @@ func Ch_communicate(port)
   call WaitForAssert({-> assert_equal("added2", getline("$"))})
   call assert_equal('added1', getline(line('$') - 1))
 
+  " Request command "echoerr 'this is an error'".
+  " This will throw an exception, catch it here.
+  let caught = 'no'
+  try
+    call assert_equal('ok', ch_evalexpr(handle, 'echoerr'))
+  catch /this is an error/
+    let caught = 'yes'
+  endtry
+  if caught != 'yes'
+    call assert_report("Expected exception from error message")
+  endif
+
   " Request command "foo bar", which fails silently.
   call assert_equal('ok', ch_evalexpr(handle, 'bad command'))
   call WaitForAssert({-> assert_match("E492:.*foo bar", v:errmsg)})
@@ -240,6 +252,7 @@ endfunc
 
 func Test_communicate_ipv6()
   CheckIPv6
+
   call Test_communicate()
 endfunc
 
@@ -1705,6 +1718,10 @@ func Test_job_stop_immediately()
   endtry
 endfunc
 
+func Test_null_job_eval()
+  call assert_fails('eval test_null_job()->eval()', 'E121:')
+endfunc
+
 " This was leaking memory.
 func Test_partial_in_channel_cycle()
   let d = {}
@@ -2316,5 +2333,34 @@ func Test_cb_with_input()
 
   unlet g:wait_exit_cb
 endfunc
+
+function s:HandleBufEnter() abort
+  let queue = []
+  let job = job_start(['date'], {'callback': { j, d -> add(queue, d) }})
+  while empty(queue)
+    sleep! 10m
+  endwhile
+endfunction
+
+func Test_parse_messages_in_autocmd()
+  CheckUnix
+
+  " Check that in the BufEnter autocommand events are being handled
+  augroup bufenterjob
+    autocmd!
+    autocmd BufEnter Xbufenterjob call s:HandleBufEnter()
+  augroup END
+
+  only
+  split Xbufenterjob
+  wincmd p
+  redraw
+
+  close
+  augroup bufenterjob
+    autocmd!
+  augroup END
+endfunc
+
 
 " vim: shiftwidth=2 sts=2 expandtab

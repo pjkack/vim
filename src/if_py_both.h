@@ -2043,7 +2043,7 @@ DictionaryUpdate(DictionaryObject *self, PyObject *args, PyObject *kwargs)
 	    return NULL;
 
 	VimTryStart();
-	dict_extend(self->dict, tv.vval.v_dict, (char_u *) "force");
+	dict_extend(self->dict, tv.vval.v_dict, (char_u *) "force", NULL);
 	clear_tv(&tv);
 	if (VimTryEnd())
 	    return NULL;
@@ -2815,6 +2815,7 @@ typedef struct
 ListIterDestruct(listiterinfo_T *lii)
 {
     list_rem_watch(lii->list, &lii->lw);
+    list_unref(lii->list);
     PyMem_Free(lii);
 }
 
@@ -2850,6 +2851,7 @@ ListIter(ListObject *self)
     list_add_watch(l, &lii->lw);
     lii->lw.lw_item = l->lv_first;
     lii->list = l;
+    ++l->lv_refcount;
 
     return IterNew(lii,
 	    (destructorfun) ListIterDestruct, (nextfun) ListIterNext,
@@ -6423,6 +6425,7 @@ ConvertToPyObject(typval_T *tv)
 	case VAR_VOID:
 	case VAR_CHANNEL:
 	case VAR_JOB:
+	case VAR_INSTR:
 	    Py_INCREF(Py_None);
 	    return Py_None;
 	case VAR_BOOL:

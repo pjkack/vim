@@ -140,9 +140,6 @@ setpcmark(void)
     int		i;
     xfmark_T	*fm;
 #endif
-#ifdef JUMPLIST_ROTATE
-    xfmark_T	tempmark;
-#endif
 
     // for :global the mark is set only once
     if (global_busy || listcmd_busy || (cmdmod.cmod_flags & CMOD_KEEPJUMPS))
@@ -152,24 +149,6 @@ setpcmark(void)
     curwin->w_pcmark = curwin->w_cursor;
 
 #ifdef FEAT_JUMPLIST
-# ifdef JUMPLIST_ROTATE
-    /*
-     * If last used entry is not at the top, put it at the top by rotating
-     * the stack until it is (the newer entries will be at the bottom).
-     * Keep one entry (the last used one) at the top.
-     */
-    if (curwin->w_jumplistidx < curwin->w_jumplistlen)
-	++curwin->w_jumplistidx;
-    while (curwin->w_jumplistidx < curwin->w_jumplistlen)
-    {
-	tempmark = curwin->w_jumplist[curwin->w_jumplistlen - 1];
-	for (i = curwin->w_jumplistlen - 1; i > 0; --i)
-	    curwin->w_jumplist[i] = curwin->w_jumplist[i - 1];
-	curwin->w_jumplist[0] = tempmark;
-	++curwin->w_jumplistidx;
-    }
-# endif
-
     // If jumplist is full: remove oldest entry
     if (++curwin->w_jumplistlen > JUMPLISTSIZE)
     {
@@ -609,12 +588,12 @@ check_mark(pos_T *pos)
 	// lnum is negative if mark is in another file can can't get that
 	// file, error message already give then.
 	if (pos->lnum == 0)
-	    emsg(_(e_marknotset));
+	    emsg(_(e_mark_not_set));
 	return FAIL;
     }
     if (pos->lnum > curbuf->b_ml.ml_line_count)
     {
-	emsg(_(e_markinval));
+	emsg(_(e_mark_has_invalid_line_number));
 	return FAIL;
     }
     return OK;
@@ -1529,6 +1508,9 @@ f_getmarklist(typval_T *argvars, typval_T *rettv)
     buf_T	*buf = NULL;
 
     if (rettv_list_alloc(rettv) != OK)
+	return;
+
+    if (in_vim9script() && check_for_opt_buffer_arg(argvars, 0) == FAIL)
 	return;
 
     if (argvars[0].v_type == VAR_UNKNOWN)

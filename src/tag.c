@@ -1308,7 +1308,7 @@ find_tagfunc_tags(
     int         result = FAIL;
     typval_T	args[4];
     typval_T	rettv;
-    char_u      flagString[3];
+    char_u      flagString[4];
     dict_T	*d;
     taggy_T	*tag = &curwin->w_tagstack[curwin->w_tagstackidx];
 
@@ -1335,9 +1335,10 @@ find_tagfunc_tags(
     args[3].v_type = VAR_UNKNOWN;
 
     vim_snprintf((char *)flagString, sizeof(flagString),
-		 "%s%s",
+		 "%s%s%s",
 		 g_tag_at_cursor      ? "c": "",
-		 flags & TAG_INS_COMP ? "i": "");
+		 flags & TAG_INS_COMP ? "i": "",
+		 flags & TAG_REGEXP   ? "r": "");
 
     save_pos = curwin->w_cursor;
     result = call_vim_function(curbuf->b_p_tfu, 3, args, &rettv);
@@ -1679,6 +1680,7 @@ find_tags(
 
     help_save = curbuf->b_help;
     orgpat.pat = pat;
+    orgpat.regmatch.regprog = NULL;
     vimconv.vc_type = CONV_NONE;
 
     /*
@@ -3311,7 +3313,6 @@ jumpto_tag(
     int		forceit,	// :ta with !
     int		keep_help)	// keep help flag (FALSE for cscope)
 {
-    int		save_secure;
     optmagic_T	save_magic_overruled;
     int		save_p_ws, save_p_scs, save_p_ic;
     linenr_T	save_lnum;
@@ -3499,16 +3500,16 @@ jumpto_tag(
 	curwin->w_set_curswant = TRUE;
 	postponed_split = 0;
 
-	save_secure = secure;
-	secure = 1;
-#ifdef HAVE_SANDBOX
-	++sandbox;
-#endif
 	save_magic_overruled = magic_overruled;
 	magic_overruled = OPTION_MAGIC_OFF;	// always execute with 'nomagic'
 #ifdef FEAT_SEARCH_EXTRA
 	// Save value of no_hlsearch, jumping to a tag is not a real search
 	save_no_hlsearch = no_hlsearch;
+#endif
+#if defined(FEAT_PROP_POPUP) && defined(FEAT_QUICKFIX)
+	// getfile() may have cleared options, apply 'previewpopup' again.
+	if (g_do_tagpreview != 0 && *p_pvp != NUL)
+	    parse_previewpopup(curwin);
 #endif
 
 	/*
@@ -3615,22 +3616,28 @@ jumpto_tag(
 	}
 	else
 	{
+	    int		save_secure = secure;
+
+	    // Setup the sandbox for executing the command from the tags file.
+	    secure = 1;
+#ifdef HAVE_SANDBOX
+	    ++sandbox;
+#endif
 	    curwin->w_cursor.lnum = 1;		// start command in line 1
 	    do_cmdline_cmd(pbuf);
 	    retval = OK;
+
+	    // When the command has done something that is not allowed make
+	    // sure the error message can be seen.
+	    if (secure == 2)
+		wait_return(TRUE);
+	    secure = save_secure;
+#ifdef HAVE_SANDBOX
+	    --sandbox;
+#endif
 	}
 
-	/*
-	 * When the command has done something that is not allowed make sure
-	 * the error message can be seen.
-	 */
-	if (secure == 2)
-	    wait_return(TRUE);
-	secure = save_secure;
 	magic_overruled = save_magic_overruled;
-#ifdef HAVE_SANDBOX
-	--sandbox;
-#endif
 #ifdef FEAT_SEARCH_EXTRA
 	// restore no_hlsearch when keeping the old search pattern
 	if (search_options)
@@ -3818,7 +3825,7 @@ find_extra(char_u **pp)
     for (;;)
     {
 	if (VIM_ISDIGIT(*str))
-	    str = skipdigits(str);
+	    str = skipdigits(str + 1);
 	else if (*str == '/' || *str == '?')
 	{
 	    str = skip_regexp(str + 1, *str, FALSE);
@@ -3871,23 +3878,27 @@ expand_tags(
     char_u	***file)
 {
     int		i;
-    int		c;
-    int		tagnmflag;
-    char_u      tagnm[100];
+    int		extra_flag;
+    char_u	*name_buf;
+    size_t	name_buf_size = 100;
     tagptrs_T	t_p;
     int		ret;
 
+    name_buf = alloc(name_buf_size);
+    if (name_buf == NULL)
+	return FAIL;
+
     if (tagnames)
-	tagnmflag = TAG_NAMES;
+	extra_flag = TAG_NAMES;
     else
-	tagnmflag = 0;
+	extra_flag = 0;
     if (pat[0] == '/')
 	ret = find_tags(pat + 1, num_file, file,
-		TAG_REGEXP | tagnmflag | TAG_VERBOSE | TAG_NO_TAGFUNC,
+		TAG_REGEXP | extra_flag | TAG_VERBOSE | TAG_NO_TAGFUNC,
 		TAG_MANY, curbuf->b_ffname);
     else
 	ret = find_tags(pat, num_file, file,
-	      TAG_REGEXP | tagnmflag | TAG_VERBOSE | TAG_NO_TAGFUNC | TAG_NOIC,
+	      TAG_REGEXP | extra_flag | TAG_VERBOSE | TAG_NO_TAGFUNC | TAG_NOIC,
 		TAG_MANY, curbuf->b_ffname);
     if (ret == OK && !tagnames)
     {
@@ -3895,18 +3906,37 @@ expand_tags(
 	 // "<tagname>\0<kind>\0<filename>\0"
 	 for (i = 0; i < *num_file; i++)
 	 {
+	     size_t	len;
+
 	     parse_match((*file)[i], &t_p);
-	     c = (int)(t_p.tagname_end - t_p.tagname);
-	     mch_memmove(tagnm, t_p.tagname, (size_t)c);
-	     tagnm[c++] = 0;
-	     tagnm[c++] = (t_p.tagkind != NULL && *t_p.tagkind)
-							 ? *t_p.tagkind : 'f';
-	     tagnm[c++] = 0;
-	     mch_memmove((*file)[i] + c, t_p.fname, t_p.fname_end - t_p.fname);
-	     (*file)[i][c + (t_p.fname_end - t_p.fname)] = 0;
-	     mch_memmove((*file)[i], tagnm, (size_t)c);
+	     len = t_p.tagname_end - t_p.tagname;
+	     if (len > name_buf_size - 3)
+	     {
+		 char_u *buf;
+
+		 name_buf_size = len + 3;
+		 buf = vim_realloc(name_buf, name_buf_size);
+		 if (buf == NULL)
+		 {
+		     vim_free(name_buf);
+		     return FAIL;
+		 }
+		 name_buf = buf;
+	     }
+
+	     mch_memmove(name_buf, t_p.tagname, len);
+	     name_buf[len++] = 0;
+	     name_buf[len++] = (t_p.tagkind != NULL && *t_p.tagkind)
+							  ? *t_p.tagkind : 'f';
+	     name_buf[len++] = 0;
+	     mch_memmove((*file)[i] + len, t_p.fname,
+						    t_p.fname_end - t_p.fname);
+	     (*file)[i][len + (t_p.fname_end - t_p.fname)] = 0;
+	     mch_memmove((*file)[i], name_buf, len);
 	}
     }
+
+    vim_free(name_buf);
     return ret;
 }
 
@@ -4201,7 +4231,7 @@ tagstack_push_items(win_T *wp, list_T *l)
 	// parse 'from' for the cursor position before the tag jump
 	if ((di = dict_find(itemdict, (char_u *)"from", -1)) == NULL)
 	    continue;
-	if (list2fpos(&di->di_tv, &mark, &fnum, NULL) != OK)
+	if (list2fpos(&di->di_tv, &mark, &fnum, NULL, FALSE) != OK)
 	    continue;
 	if ((tagname =
 		dict_get_string(itemdict, (char_u *)"tagname", TRUE)) == NULL)

@@ -1,7 +1,5 @@
-:: command to build big Vim 64 bit with Python for Windows 7
-call "%VS140COMNTOOLS%..\..\VC\vcvarsall.bat" amd64
-set SDK_INCLUDE_DIR=%ProgramFiles(x86)%\Microsoft SDKs\Windows\v7.1A\Include
-set PATH=%ProgramFiles(x86)%\Microsoft SDKs\Windows\v7.1A\bin\x64;%PATH%
+:: command to build big Vim 64 bit with/without Python for Windows 7
+:: call "%ProgramFiles(x86)%\Microsoft Visual Studio\2019\Community\VC\Auxiliary\Build\vcvarsall.bat" x64
 set VIM_ADD_FEATURES=FEATURES=BIG GUI=yes DIRECTX=yes COLOR_EMOJI=yes TERMINAL=yes
 :: PYTHON=C:\python27 DYNAMIC_PYTHON=yes PYTHON_VER=27
 set VIM_REMOVE_FEATURES=CSCOPE=no NETBEANS=no XPM=no

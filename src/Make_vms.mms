@@ -306,6 +306,7 @@ ALL_LIBS = $(LIBS) $(GUI_LIB_DIR) $(GUI_LIB) $(XPM_LIB)\
 	   $(PERL_LIB) $(PYTHON_LIB) $(TCL_LIB) $(RUBY_LIB) $(LUA_LIB)
 
 SRC = \
+	alloc.c \
 	arabic.c \
 	arglist.c \
 	autocmd.c \
@@ -343,6 +344,7 @@ SRC = \
 	fileio.c \
 	filepath.c, \
 	findfile.c \
+	float.c \
 	fold.c \
 	getchar.c \
 	gui_xim.c \
@@ -392,6 +394,7 @@ SRC = \
 	spell.c \
 	spellfile.c \
 	spellsuggest.c \
+	strings.c \
 	syntax.c \
 	tag.c \
 	term.c \
@@ -423,6 +426,7 @@ SRC = \
 	$(XDIFF_SRC)
 
 OBJ = \
+	alloc.obj \
 	arabic.obj \
 	arglist.obj \
 	autocmd.obj \
@@ -460,6 +464,7 @@ OBJ = \
 	fileio.obj \
 	filepath.obj \
 	findfile.obj \
+	float.obj \
 	fold.obj \
 	getchar.obj \
 	gui_xim.obj \
@@ -510,6 +515,7 @@ OBJ = \
 	spell.obj \
 	spellfile.obj \
 	spellsuggest.obj \
+	strings.obj \
 	syntax.obj \
 	tag.obj \
 	term.obj \
@@ -734,6 +740,9 @@ lua_env :
 	-@ !
 .ENDIF
 
+alloc.obj : alloc.c vim.h [.auto]config.h feature.h os_unix.h \
+ ascii.h keymap.h term.h macros.h structs.h regexp.h gui.h beval.h \
+ [.proto]gui_beval.pro option.h ex_cmds.h proto.h errors.h globals.h
 arabic.obj : arabic.c vim.h
 arglist.obj : arglist.c vim.h [.auto]config.h feature.h os_unix.h
 autocmd.obj : autocmd.c vim.h [.auto]config.h feature.h os_unix.h
@@ -860,6 +869,9 @@ findfile.obj : findfile.c vim.h [.auto]config.h feature.h os_unix.h \
  ascii.h keymap.h term.h macros.h structs.h regexp.h \
  gui.h beval.h [.proto]gui_beval.pro option.h ex_cmds.h proto.h \
  errors.h globals.h
+float.obj : float.c vim.h [.auto]config.h feature.h os_unix.h   \
+ ascii.h keymap.h term.h macros.h structs.h regexp.h gui.h beval.h \
+ [.proto]gui_beval.pro option.h ex_cmds.h proto.h errors.h globals.h
 fold.obj : fold.c vim.h [.auto]config.h feature.h os_unix.h   \
  ascii.h keymap.h term.h macros.h structs.h regexp.h gui.h beval.h \
  [.proto]gui_beval.pro option.h ex_cmds.h proto.h errors.h globals.h
@@ -1040,6 +1052,10 @@ spellfile.obj : spellfile.c vim.h [.auto]config.h feature.h os_unix.h \
  regexp.h gui.h beval.h [.proto]gui_beval.pro alloc.h ex_cmds.h spell.h \
  proto.h errors.h globals.h
 spellsuggest.obj : spellsuggest.c vim.h [.auto]config.h feature.h os_unix.h \
+ ascii.h keymap.h term.h macros.h option.h structs.h \
+ regexp.h gui.h beval.h [.proto]gui_beval.pro alloc.h ex_cmds.h spell.h \
+ proto.h errors.h globals.h
+strings.obj : strings.c vim.h [.auto]config.h feature.h os_unix.h \
  ascii.h keymap.h term.h macros.h option.h structs.h \
  regexp.h gui.h beval.h [.proto]gui_beval.pro alloc.h ex_cmds.h spell.h \
  proto.h errors.h globals.h

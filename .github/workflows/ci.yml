@@ -7,7 +7,7 @@ on:
 
 jobs:
   linux:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-18.04
 
     env:
       CC: ${{ matrix.compiler }}
@@ -56,7 +56,7 @@ jobs:
 
       - name: Install packages
         run: |
-          sudo apt-get install -y \
+          sudo apt update && sudo apt install -y \
             autoconf \
             lcov \
             gettext \
@@ -71,7 +71,8 @@ jobs:
             cscope \
             libgtk2.0-dev \
             desktop-file-utils \
-            libtool-bin
+            libtool-bin \
+            libsodium-dev
 
       - name: Install clang-11
         if: matrix.compiler == 'clang'
@@ -208,6 +209,7 @@ jobs:
           TRAVIS_JOB_ID: ${{ github.run_id }}
         run: |
           sudo apt-get install -y python3-setuptools python3-wheel
+          sudo -H pip3 install pip -U
           # needed for https support for coveralls building cffi only works with gcc, not with clang
           CC=gcc pip3 install --user cpp-coveralls pyopenssl ndg-httpsclient pyasn1
           ~/.local/bin/coveralls -b "${SRCDIR}" -x .xs -e "${SRCDIR}"/if_perl.c -e "${SRCDIR}"/xxd -e "${SRCDIR}"/libvterm --encodings utf-8
@@ -227,7 +229,7 @@ jobs:
           done
 
   coveralls:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-18.04
 
     needs: linux
     if: always() && github.event_name != 'pull_request'
@@ -364,7 +366,7 @@ jobs:
             features: NORMAL
 
     steps:
-      - name: Initalize
+      - name: Initialize
         id: init
         shell: bash
         run: |

@@ -1020,8 +1020,9 @@ set_one_cmd_context(
 	p = cmd;
 	while (ASCII_ISALPHA(*p) || *p == '*')    // Allow * wild card
 	    ++p;
-	// a user command may contain digits
-	if (ASCII_ISUPPER(cmd[0]))
+	// A user command may contain digits.
+	// Include "9" for "vim9*" commands; "vim9cmd" and "vim9script".
+	if (ASCII_ISUPPER(cmd[0]) || STRNCMP("vim9", cmd, 4) == 0)
 	    while (ASCII_ISALNUM(*p) || *p == '*')
 		++p;
 	// for python 3.x: ":py3*" commands completion
@@ -1276,12 +1277,8 @@ set_one_cmd_context(
 		xp->xp_context = EXPAND_SHELLCMD;
 	}
 
-	// Check for environment variable
-	if (*xp->xp_pattern == '$'
-#if defined(MSWIN)
-		|| *xp->xp_pattern == '%'
-#endif
-		)
+	// Check for environment variable.
+	if (*xp->xp_pattern == '$')
 	{
 	    for (p = xp->xp_pattern + 1; *p != NUL; ++p)
 		if (!vim_isIDc(*p))
@@ -1295,7 +1292,7 @@ set_one_cmd_context(
 		    compl = EXPAND_ENV_VARS;
 	    }
 	}
-	// Check for user names
+	// Check for user names.
 	if (*xp->xp_pattern == '~')
 	{
 	    for (p = xp->xp_pattern + 1; *p != NUL && *p != '/'; ++p)
@@ -1369,6 +1366,8 @@ set_one_cmd_context(
 	case CMD_verbose:
 	case CMD_vertical:
 	case CMD_windo:
+	case CMD_vim9cmd:
+	case CMD_legacy:
 	    return arg;
 
 	case CMD_filter:
@@ -1554,9 +1553,11 @@ set_one_cmd_context(
 
 	case CMD_function:
 	case CMD_delfunction:
-	case CMD_disassemble:
 	    xp->xp_context = EXPAND_USER_FUNC;
 	    xp->xp_pattern = arg;
+	    break;
+	case CMD_disassemble:
+	    set_context_in_disassemble_cmd(xp, arg);
 	    break;
 
 	case CMD_echohl:
@@ -2068,7 +2069,9 @@ ExpandFromContext(
 
     // When expanding a function name starting with s:, match the <SNR>nr_
     // prefix.
-    if (xp->xp_context == EXPAND_USER_FUNC && STRNCMP(pat, "^s:", 3) == 0)
+    if ((xp->xp_context == EXPAND_USER_FUNC
+				       || xp->xp_context == EXPAND_DISASSEMBLE)
+	    && STRNCMP(pat, "^s:", 3) == 0)
     {
 	int len = (int)STRLEN(pat) + 20;
 
@@ -2117,6 +2120,7 @@ ExpandFromContext(
 	    {EXPAND_USER_VARS, get_user_var_name, FALSE, TRUE},
 	    {EXPAND_FUNCTIONS, get_function_name, FALSE, TRUE},
 	    {EXPAND_USER_FUNC, get_user_func_name, FALSE, TRUE},
+	    {EXPAND_DISASSEMBLE, get_disassemble_argument, FALSE, TRUE},
 	    {EXPAND_EXPRESSION, get_expr_name, FALSE, TRUE},
 # endif
 # ifdef FEAT_MENU
@@ -2154,7 +2158,7 @@ ExpandFromContext(
 	// Find a context in the table and call the ExpandGeneric() with the
 	// right function to do the expansion.
 	ret = FAIL;
-	for (i = 0; i < (int)(sizeof(tab) / sizeof(struct expgen)); ++i)
+	for (i = 0; i < (int)ARRAY_LENGTH(tab); ++i)
 	    if (xp->xp_context == tab[i].context)
 	    {
 		if (tab[i].ic)
@@ -2884,6 +2888,12 @@ f_getcompletion(typval_T *argvars, typval_T *rettv)
     int		filtered = FALSE;
     int		options = WILD_SILENT | WILD_USE_NL | WILD_ADD_SLASH
 								| WILD_NO_BEEP;
+
+    if (in_vim9script()
+	    && (check_for_string_arg(argvars, 0) == FAIL
+		|| check_for_string_arg(argvars, 1) == FAIL
+		|| check_for_opt_bool_arg(argvars, 2) == FAIL))
+	return;
 
     if (argvars[1].v_type != VAR_STRING)
     {

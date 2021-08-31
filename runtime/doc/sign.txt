@@ -1,4 +1,4 @@
-*sign.txt*      For Vim version 8.2.  Last change: 2020 Oct 28
+*sign.txt*      For Vim version 8.2.  Last change: 2021 Mar 07
 
 
 		  VIM REFERENCE MANUAL    by Gordon Prieur
@@ -146,6 +146,9 @@ See |sign_define()| for the equivalent Vim script function.
 	texthl={group}
 		Highlighting group used for the text item.
 
+	Example: >
+		:sign define MySign text=>> texthl=Search linehl=DiffText
+<
 
 DELETING A SIGN						*:sign-undefine* *E155*
 
@@ -155,7 +158,9 @@ See |sign_undefine()| for the equivalent Vim script function.
 		Deletes a previously defined sign.  If signs with this {name}
 		are still placed this will cause trouble.
 
-
+		Example: >
+			:sign undefine MySign
+<
 
 LISTING SIGNS						*:sign-list* *E156*
 
@@ -209,6 +214,10 @@ See |sign_place()| for the equivalent Vim script function.
 		Same, but use buffer {nr}.  If the buffer argument is not
 		given, place the sign in the current buffer.
 
+		Example: >
+			:sign place 10 line=99 name=sign3
+			:sign place 10 line=99 name=sign3 buffer=3
+<
 							*E885*
 :sign place {id} name={name} file={fname}
 		Change the placed sign {id} in file {fname} to use the defined
@@ -221,10 +230,17 @@ See |sign_place()| for the equivalent Vim script function.
 		"priority={prio}" attribute can be used to change the priority
 		of an existing sign.
 
+		Example: >
+			:sign place 23 name=sign1 file=/path/to/edit.py
+<
 :sign place {id} name={name} [buffer={nr}]
 		Same, but use buffer {nr}.  If the buffer argument is not
 		given, use the current buffer.
 
+		Example: >
+			:sign place 23 name=sign1
+			:sign place 23 name=sign1 buffer=7
+<
 
 REMOVING SIGNS						*:sign-unplace* *E159*
 
@@ -435,13 +451,13 @@ sign_getdefined([{name}])				*sign_getdefined()*
 		Can also be used as a |method|: >
 			GetSignList()->sign_getdefined()
 
-sign_getplaced([{expr} [, {dict}]])			*sign_getplaced()*
+sign_getplaced([{buf} [, {dict}]])			*sign_getplaced()*
 		Return a list of signs placed in a buffer or all the buffers.
 		This is similar to the |:sign-place-list| command.
 
-		If the optional buffer name {expr} is specified, then only the
+		If the optional buffer name {buf} is specified, then only the
 		list of signs placed in that buffer is returned.  For the use
-		of {expr}, see |bufname()|. The optional {dict} can contain
+		of {buf}, see |bufname()|. The optional {dict} can contain
 		the following entries:
 		   group	select only signs in this group
 		   id		select sign with this identifier
@@ -499,12 +515,12 @@ sign_getplaced([{expr} [, {dict}]])			*sign_getplaced()*
 			GetBufname()->sign_getplaced()
 <
 							*sign_jump()*
-sign_jump({id}, {group}, {expr})
-		Open the buffer {expr} or jump to the window that contains
-		{expr} and position the cursor at sign {id} in group {group}.
+sign_jump({id}, {group}, {buf})
+		Open the buffer {buf} or jump to the window that contains
+		{buf} and position the cursor at sign {id} in group {group}.
 		This is similar to the |:sign-jump| command.
 
-		For the use of {expr}, see |bufname()|.
+		For the use of {buf}, see |bufname()|.
 
 		Returns the line number of the sign. Returns -1 if the
 		arguments are invalid.
@@ -517,9 +533,9 @@ sign_jump({id}, {group}, {expr})
 			GetSignid()->sign_jump()
 <
 							*sign_place()*
-sign_place({id}, {group}, {name}, {expr} [, {dict}])
+sign_place({id}, {group}, {name}, {buf} [, {dict}])
 		Place the sign defined as {name} at line {lnum} in file or
-		buffer {expr} and assign {id} and {group} to sign.  This is
+		buffer {buf} and assign {id} and {group} to sign.  This is
 		similar to the |:sign-place| command.
 
 		If the sign identifier {id} is zero, then a new identifier is
@@ -530,12 +546,12 @@ sign_place({id}, {group}, {name}, {expr} [, {dict}])
 		and |sign-group| for more information.
 
 		{name} refers to a defined sign.
-		{expr} refers to a buffer name or number. For the accepted
+		{buf} refers to a buffer name or number. For the accepted
 		values, see |bufname()|.
 
 		The optional {dict} argument supports the following entries:
 			lnum		line number in the file or buffer
-					{expr} where the sign is to be placed.
+					{buf} where the sign is to be placed.
 					For the accepted values, see |line()|.
 			priority	priority of the sign. See
 					|sign-priority| for more information.

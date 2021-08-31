@@ -73,7 +73,7 @@ static const char *toolbar_names[] =
     /* 25 */ "Make", "TagJump", "RunCtags", "WinVSplit", "WinMaxWidth",
     /* 30 */ "WinMinWidth", "Exit"
 };
-# define TOOLBAR_NAME_COUNT (sizeof(toolbar_names) / sizeof(char *))
+# define TOOLBAR_NAME_COUNT ARRAY_LENGTH(toolbar_names)
 #endif
 
 /*
@@ -2940,6 +2940,11 @@ f_menu_info(typval_T *argvars, typval_T *rettv)
     if (rettv_dict_alloc(rettv) != OK)
 	return;
     retdict = rettv->vval.v_dict;
+
+    if (in_vim9script()
+	    && (check_for_string_arg(argvars, 0) == FAIL
+		|| check_for_opt_string_arg(argvars, 1) == FAIL))
+	return;
 
     menu_name = tv_get_string_chk(&argvars[0]);
     if (menu_name == NULL)

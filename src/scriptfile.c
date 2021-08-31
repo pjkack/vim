@@ -1019,30 +1019,6 @@ ex_options(
 /*
  * ":source" and associated commands.
  */
-/*
- * Structure used to store info for each sourced file.
- * It is shared between do_source() and getsourceline().
- * This is required, because it needs to be handed to do_cmdline() and
- * sourcing can be done recursively.
- */
-struct source_cookie
-{
-    FILE	*fp;		// opened file for sourcing
-    char_u	*nextline;	// if not NULL: line that was read ahead
-    linenr_T	sourcing_lnum;	// line number of the source file
-    int		finished;	// ":finish" used
-#ifdef USE_CRNL
-    int		fileformat;	// EOL_UNKNOWN, EOL_UNIX or EOL_DOS
-    int		error;		// TRUE if LF found after CR-LF
-#endif
-#ifdef FEAT_EVAL
-    linenr_T	breakpoint;	// next line with breakpoint or zero
-    char_u	*fname;		// name of sourced file
-    int		dbg_tick;	// debug_tick when breakpoint was set
-    int		level;		// top nesting level of sourced file
-#endif
-    vimconv_T	conv;		// type of conversion
-};
 
 #ifdef FEAT_EVAL
 /*
@@ -1051,7 +1027,7 @@ struct source_cookie
     linenr_T *
 source_breakpoint(void *cookie)
 {
-    return &((struct source_cookie *)cookie)->breakpoint;
+    return &((source_cookie_T *)cookie)->breakpoint;
 }
 
 /*
@@ -1060,7 +1036,7 @@ source_breakpoint(void *cookie)
     int *
 source_dbg_tick(void *cookie)
 {
-    return &((struct source_cookie *)cookie)->dbg_tick;
+    return &((source_cookie_T *)cookie)->dbg_tick;
 }
 
 /*
@@ -1069,7 +1045,7 @@ source_dbg_tick(void *cookie)
     int
 source_level(void *cookie)
 {
-    return ((struct source_cookie *)cookie)->level;
+    return ((source_cookie_T *)cookie)->level;
 }
 
 /*
@@ -1079,7 +1055,7 @@ source_level(void *cookie)
     char_u *
 source_nextline(void *cookie)
 {
-    return ((struct source_cookie *)cookie)->nextline;
+    return ((source_cookie_T *)cookie)->nextline;
 }
 #endif
 
@@ -1130,7 +1106,7 @@ do_source(
     int		is_vimrc,	    // DOSO_ value
     int		*ret_sid UNUSED)
 {
-    struct source_cookie    cookie;
+    source_cookie_T	    cookie;
     char_u		    *p;
     char_u		    *fname_exp;
     char_u		    *firstline = NULL;
@@ -1143,6 +1119,7 @@ do_source(
     int			    save_debug_break_level = debug_break_level;
     int			    sid;
     scriptitem_T	    *si = NULL;
+    int			    save_estack_compiling = estack_compiling;
 #endif
 #ifdef STARTUPTIME
     struct timeval	    tv_rel;
@@ -1166,8 +1143,9 @@ do_source(
 	smsg(_("Cannot source a directory: \"%s\""), fname);
 	goto theend;
     }
-
 #ifdef FEAT_EVAL
+    estack_compiling = FALSE;
+
     // See if we loaded this script before.
     for (sid = script_items.ga_len; sid > 0; --sid)
     {
@@ -1343,6 +1321,9 @@ do_source(
 	    }
 	// imports can be redefined once
 	mark_imports_for_reload(sid);
+
+	// reset version, "vim9script" may have been added or removed.
+	si->sn_version = 1;
     }
     else
     {
@@ -1480,8 +1461,35 @@ almosttheend:
     si = SCRIPT_ITEM(current_sctx.sc_sid);
     if (si->sn_save_cpo != NULL)
     {
-	set_option_value((char_u *)"cpo", 0L, si->sn_save_cpo, 0);
-	CLEAR_POINTER(si->sn_save_cpo);
+	if (STRCMP(p_cpo, CPO_VIM) != 0)
+	{
+	    char_u *f;
+	    char_u *t;
+
+	    // 'cpo' was changed in the script.  Apply the same change to the
+	    // saved value, if possible.
+	    for (f = (char_u *)CPO_VIM; *f != NUL; ++f)
+		if (vim_strchr(p_cpo, *f) == NULL
+			&& (t = vim_strchr(si->sn_save_cpo, *f)) != NULL)
+		    // flag was removed, also remove it from the saved 'cpo'
+		    mch_memmove(t, t + 1, STRLEN(t));
+	    for (f = p_cpo; *f != NUL; ++f)
+		if (vim_strchr((char_u *)CPO_VIM, *f) == NULL
+			&& vim_strchr(si->sn_save_cpo, *f) == NULL)
+		{
+		    // flag was added, also add it to the saved 'cpo'
+		    t = alloc(STRLEN(si->sn_save_cpo) + 2);
+		    if (t != NULL)
+		    {
+			*t = *f;
+			STRCPY(t + 1, si->sn_save_cpo);
+			vim_free(si->sn_save_cpo);
+			si->sn_save_cpo = t;
+		    }
+		}
+	}
+	set_option_value((char_u *)"cpo", 0L, si->sn_save_cpo, OPT_NO_REDRAW);
+	VIM_CLEAR(si->sn_save_cpo);
     }
 
     restore_funccal();
@@ -1502,6 +1510,9 @@ almosttheend:
 
 theend:
     vim_free(fname_exp);
+#ifdef FEAT_EVAL
+    estack_compiling = save_estack_compiling;
+#endif
     return retval;
 }
 
@@ -1613,12 +1624,12 @@ get_sourced_lnum(
 	void *cookie)
 {
     return fgetline == getsourceline
-			? ((struct source_cookie *)cookie)->sourcing_lnum
+			? ((source_cookie_T *)cookie)->sourcing_lnum
 			: SOURCING_LNUM;
 }
 
     static char_u *
-get_one_sourceline(struct source_cookie *sp)
+get_one_sourceline(source_cookie_T *sp)
 {
     garray_T		ga;
     int			len;
@@ -1736,7 +1747,7 @@ getsourceline(
 	int indent UNUSED,
 	getline_opt_T options)
 {
-    struct source_cookie *sp = (struct source_cookie *)cookie;
+    source_cookie_T	*sp = (source_cookie_T *)cookie;
     char_u		*line;
     char_u		*p;
     int			do_vim9_all = in_vim9script()
@@ -1761,8 +1772,8 @@ getsourceline(
     SOURCING_LNUM = sp->sourcing_lnum + 1;
 
     // Get current line.  If there is a read-ahead line, use it, otherwise get
-    // one now.
-    if (sp->finished)
+    // one now.  "fp" is NULL if actually using a string.
+    if (sp->finished || sp->fp == NULL)
 	line = NULL;
     else if (sp->nextline == NULL)
 	line = get_one_sourceline(sp);
@@ -1782,6 +1793,8 @@ getsourceline(
     if (line != NULL && options != GETLINE_NONE
 				      && vim_strchr(p_cpo, CPO_CONCAT) == NULL)
     {
+	int comment_char = in_vim9script() ? '#' : '"';
+
 	// compensate for the one line read-ahead
 	--sp->sourcing_lnum;
 
@@ -1794,7 +1807,8 @@ getsourceline(
 	sp->nextline = get_one_sourceline(sp);
 	if (sp->nextline != NULL
 		&& (*(p = skipwhite(sp->nextline)) == '\\'
-			      || (p[0] == '"' && p[1] == '\\' && p[2] == ' ')
+			      || (p[0] == comment_char
+						&& p[1] == '\\' && p[2] == ' ')
 			      || (do_vim9_all && (*p == NUL
 						     || vim9_comment_start(p)))
 			      || (do_bar_cont && p[0] == '|' && p[1] != '|')))
@@ -1836,7 +1850,8 @@ getsourceline(
 			ga_concat(&ga, p);
 		    }
 		}
-		else if (!(p[0] == '"' && p[1] == '\\' && p[2] == ' ')
+		else if (!(p[0] == (comment_char)
+						&& p[1] == '\\' && p[2] == ' ')
 		     && !(do_vim9_all && (*p == NUL || vim9_comment_start(p))))
 		    break;
 		/* drop a # comment or "\ comment line */
@@ -1880,8 +1895,8 @@ getsourceline(
     void
 ex_scriptencoding(exarg_T *eap)
 {
-    struct source_cookie	*sp;
-    char_u			*name;
+    source_cookie_T	*sp;
+    char_u		*name;
 
     if (!getline_equal(eap->getline, eap->cookie, getsourceline))
     {
@@ -1899,7 +1914,7 @@ ex_scriptencoding(exarg_T *eap)
 	name = eap->arg;
 
     // Setup for conversion from the specified encoding to 'encoding'.
-    sp = (struct source_cookie *)getline_cookie(eap->getline, eap->cookie);
+    sp = (source_cookie_T *)getline_cookie(eap->getline, eap->cookie);
     convert_setup(&sp->conv, name, p_enc);
 
     if (name != eap->arg)
@@ -1963,7 +1978,7 @@ do_finish(exarg_T *eap, int reanimate)
     int		idx;
 
     if (reanimate)
-	((struct source_cookie *)getline_cookie(eap->getline,
+	((source_cookie_T *)getline_cookie(eap->getline,
 					      eap->cookie))->finished = FALSE;
 
     // Cleanup (and inactivate) conditionals, but stop when a try conditional
@@ -1977,7 +1992,7 @@ do_finish(exarg_T *eap, int reanimate)
 	report_make_pending(CSTP_FINISH, NULL);
     }
     else
-	((struct source_cookie *)getline_cookie(eap->getline,
+	((source_cookie_T *)getline_cookie(eap->getline,
 					       eap->cookie))->finished = TRUE;
 }
 
@@ -1993,7 +2008,7 @@ source_finished(
     void	*cookie)
 {
     return (getline_equal(fgetline, cookie, getsourceline)
-	    && ((struct source_cookie *)getline_cookie(
+	    && ((source_cookie_T *)getline_cookie(
 						fgetline, cookie))->finished);
 }
 

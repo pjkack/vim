@@ -13,6 +13,9 @@
 " For csh:
 "     setenv TEST_FILTER Test_channel
 "
+" If the environment variable $TEST_SKIP_PAT is set then test functions
+" matching this pattern will be skipped.  It's the opposite of $TEST_FILTER.
+"
 " While working on a test you can make $TEST_NO_RETRY non-empty to not retry:
 "     export TEST_NO_RETRY=yes
 "
@@ -162,7 +165,7 @@ function GetAllocId(name)
 endfunc
 
 func RunTheTest(test)
-  echo 'Executing ' . a:test
+  echoconsole 'Executing ' . a:test
   if has('reltime')
     let func_start = reltime()
   endif
@@ -196,7 +199,12 @@ func RunTheTest(test)
   if a:test =~ 'Test_nocatch_'
     " Function handles errors itself.  This avoids skipping commands after the
     " error.
+    let g:skipped_reason = ''
     exe 'call ' . a:test
+    if g:skipped_reason != ''
+      call add(s:messages, '    Skipped')
+      call add(s:skipped, 'SKIPPED ' . a:test . ': ' . g:skipped_reason)
+    endif
   else
     try
       au VimLeavePre * call EarlyExit(g:testfunc)
@@ -324,13 +332,17 @@ func FinishTesting()
 
   if s:done == 0
     if s:filtered > 0
-      let message = "NO tests match $TEST_FILTER: '" .. $TEST_FILTER .. "'"
+      if $TEST_FILTER != ''
+        let message = "NO tests match $TEST_FILTER: '" .. $TEST_FILTER .. "'"
+      else
+        let message = "ALL tests match $TEST_SKIP_PAT: '" .. $TEST_SKIP_PAT .. "'"
+      endif
     else
       let message = 'NO tests executed'
     endif
   else
     if s:filtered > 0
-      call add(s:messages, "Filtered " .. s:filtered .. " tests with $TEST_FILTER")
+      call add(s:messages, "Filtered " .. s:filtered .. " tests with $TEST_FILTER and $TEST_SKIP_PAT")
     endif
     let message = 'Executed ' . s:done . (s:done > 1 ? ' tests' : ' test')
   endif
@@ -456,6 +468,12 @@ endif
 
 " Execute the tests in alphabetical order.
 for g:testfunc in sort(s:tests)
+  if $TEST_SKIP_PAT != '' && g:testfunc =~ $TEST_SKIP_PAT
+    call add(s:messages, g:testfunc .. ' matches $TEST_SKIP_PAT')
+    let s:filtered += 1
+    continue
+  endif
+
   " Silence, please!
   set belloff=all
   let prev_error = ''

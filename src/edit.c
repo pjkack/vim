@@ -147,6 +147,9 @@ edit(
 #ifdef FEAT_JOB_CHANNEL
     int		cmdchar_todo = cmdchar;
 #endif
+#ifdef FEAT_CONCEAL
+    int		cursor_line_was_concealed;
+#endif
 
     // Remember whether editing was restarted after CTRL-O.
     did_restart_edit = restart_edit;
@@ -162,7 +165,7 @@ edit(
     // Don't allow inserting in the sandbox.
     if (sandbox != 0)
     {
-	emsg(_(e_sandbox));
+	emsg(_(e_not_allowed_in_sandbox));
 	return FALSE;
     }
 #endif
@@ -196,6 +199,10 @@ edit(
 #endif
 	ins_apply_autocmds(EVENT_INSERTENTER);
 
+	// Check for changed highlighting, e.g. for ModeMsg.
+	if (need_highlight_changed)
+	    highlight_changed();
+
 	// Make sure the cursor didn't move.  Do call check_cursor_col() in
 	// case the text was modified.  Since Insert mode was not started yet
 	// a call to check_cursor_col() may move the cursor, especially with
@@ -218,9 +225,9 @@ edit(
     }
 
 #ifdef FEAT_CONCEAL
-    // Check if the cursor line needs redrawing before changing State.  If
-    // 'concealcursor' is "n" it needs to be redrawn without concealing.
-    conceal_check_cursor_line();
+    // Check if the cursor line was concealed before changing State.
+    cursor_line_was_concealed = curwin->w_p_cole > 0
+						&& conceal_cursor_line(curwin);
 #endif
 
     /*
@@ -278,6 +285,12 @@ edit(
 	State = INSERT;
 
     stop_insert_mode = FALSE;
+
+#ifdef FEAT_CONCEAL
+    // Check if the cursor line needs redrawing after changing State.  If
+    // 'concealcursor' is "n" it needs to be redrawn without concealing.
+    conceal_check_cursor_line(cursor_line_was_concealed);
+#endif
 
     /*
      * Need to recompute the cursor position, it might move when the cursor is
@@ -848,7 +861,7 @@ doESCkey:
 	    ins_ctrl_o();
 
 	    // don't move the cursor left when 'virtualedit' has "onemore".
-	    if (ve_flags & VE_ONEMORE)
+	    if (get_ve_flags() & VE_ONEMORE)
 	    {
 		ins_at_eol = FALSE;
 		nomove = TRUE;
@@ -1574,7 +1587,7 @@ ins_ctrl_v(void)
  * Note that this doesn't wait for characters, they must be in the typeahead
  * buffer already.
  */
-    int
+    static int
 decodeModifyOtherKeys(int c)
 {
     char_u  *p = typebuf.tb_buf + typebuf.tb_off;
@@ -1586,7 +1599,7 @@ decodeModifyOtherKeys(int c)
     // Recognize:
     // form 0: {lead}{key};{modifier}u
     // form 1: {lead}27;{modifier};{key}~
-    if ((c == CSI || (c == ESC && *p == '[')) && typebuf.tb_len >= 4)
+    if (typebuf.tb_len >= 4 && (c == CSI || (c == ESC && *p == '[')))
     {
 	idx = (*p == '[');
 	if (p[idx] == '2' && p[idx + 1] == '7' && p[idx + 2] == ';')
@@ -2660,7 +2673,7 @@ oneright(void)
 
     // move "l" bytes right, but don't end up on the NUL, unless 'virtualedit'
     // contains "onemore".
-    if (ptr[l] == NUL && (ve_flags & VE_ONEMORE) == 0)
+    if (ptr[l] == NUL && (get_ve_flags() & VE_ONEMORE) == 0)
 	return FAIL;
     curwin->w_cursor.col += l;
 
@@ -2861,7 +2874,7 @@ stuff_inserted(
     ptr = get_last_insert();
     if (ptr == NULL)
     {
-	emsg(_(e_noinstext));
+	emsg(_(e_no_inserted_text_yet));
 	return FAIL;
     }
 
@@ -3643,7 +3656,7 @@ ins_esc(
 #endif
 				      )
     {
-	if (curwin->w_cursor.coladd > 0 || ve_flags == VE_ALL)
+	if (curwin->w_cursor.coladd > 0 || get_ve_flags() == VE_ALL)
 	{
 	    oneleft();
 	    if (restart_edit != NUL)
@@ -5206,7 +5219,7 @@ ins_digraph(void)
 	if (cc != ESC)
 	{
 	    AppendToRedobuff((char_u *)CTRL_V_STR);
-	    c = getdigraph(c, cc, TRUE);
+	    c = digraph_get(c, cc, TRUE);
 #ifdef FEAT_CMDL_INFO
 	    clear_showcmd();
 #endif

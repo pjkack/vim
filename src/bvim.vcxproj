@@ -212,6 +212,7 @@
     </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="alloc.c" />
     <ClCompile Include="arabic.c" />
     <ClCompile Include="arglist.c" />
     <ClCompile Include="autocmd.c" />
@@ -251,6 +252,7 @@
     <ClCompile Include="fileio.c" />
     <ClCompile Include="filepath.c" />
     <ClCompile Include="findfile.c" />
+    <ClCompile Include="float.c" />
     <ClCompile Include="fold.c" />
     <ClCompile Include="getchar.c" />
     <ClCompile Include="glbl_ime.cpp" />
@@ -315,6 +317,7 @@
     <ClCompile Include="spell.c" />
     <ClCompile Include="spellfile.c" />
     <ClCompile Include="spellsuggest.c" />
+    <ClCompile Include="strings.c" />
     <ClCompile Include="syntax.c" />
     <ClCompile Include="tag.c" />
     <ClCompile Include="term.c" />

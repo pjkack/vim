@@ -1258,13 +1258,15 @@ read_compound(FILE *fd, slang_T *slang, int len)
 
 	gap = &slang->sl_comppat;
 	c = get2c(fd);					// <comppatcount>
+	if (c < 0)
+	    return SP_TRUNCERROR;
 	todo -= 2;
 	ga_init2(gap, sizeof(char_u *), c);
 	if (ga_grow(gap, c) == OK)
 	    while (--c >= 0)
 	    {
 		((char_u **)(gap->ga_data))[gap->ga_len++] =
-						 read_cnt_string(fd, 1, &cnt);
+						  read_cnt_string(fd, 1, &cnt);
 					    // <comppatlen> <comppattext>
 		if (cnt < 0)
 		    return cnt;
@@ -3429,9 +3431,9 @@ add_fromto(
     if (ga_grow(gap, 1) == OK)
     {
 	ftp = ((fromto_T *)gap->ga_data) + gap->ga_len;
-	(void)spell_casefold(from, (int)STRLEN(from), word, MAXWLEN);
+	(void)spell_casefold(curwin, from, (int)STRLEN(from), word, MAXWLEN);
 	ftp->ft_from = getroom_save(spin, word);
-	(void)spell_casefold(to, (int)STRLEN(to), word, MAXWLEN);
+	(void)spell_casefold(curwin, to, (int)STRLEN(to), word, MAXWLEN);
 	ftp->ft_to = getroom_save(spin, word);
 	++gap->ga_len;
     }
@@ -4391,7 +4393,7 @@ store_word(
     int		res = OK;
     char_u	*p;
 
-    (void)spell_casefold(word, len, foldword, MAXWLEN);
+    (void)spell_casefold(curwin, word, len, foldword, MAXWLEN);
     for (p = pfxlist; res == OK; ++p)
     {
 	if (!need_affix || (p != NULL && *p != NUL))
@@ -5972,12 +5974,12 @@ mkspell(
 	// time.
 	if (!over_write && mch_stat((char *)wfname, &st) >= 0)
 	{
-	    emsg(_(e_exists));
+	    emsg(_(e_file_exists));
 	    goto theend;
 	}
 	if (mch_isdir(wfname))
 	{
-	    semsg(_(e_isadir2), wfname);
+	    semsg(_(e_src_is_directory), wfname);
 	    goto theend;
 	}
 
@@ -6277,7 +6279,11 @@ spell_add_word(
 							 len, word, NameBuff);
 			}
 		    }
-		    fseek(fd, fpos_next, SEEK_SET);
+		    if (fseek(fd, fpos_next, SEEK_SET) != 0)
+		    {
+			PERROR(_("Seek error in spellfile"));
+			break;
+		    }
 		}
 	    }
 	    if (fd != NULL)

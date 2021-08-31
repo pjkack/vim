@@ -718,7 +718,7 @@ cin_isinit(void)
     {
 	int i, l;
 
-	for (i = 0; i < (int)(sizeof(skip) / sizeof(char *)); ++i)
+	for (i = 0; i < (int)ARRAY_LENGTH(skip); ++i)
 	{
 	    l = (int)strlen(skip[i]);
 	    if (cin_starts_with(s, skip[i]))
@@ -4128,6 +4128,9 @@ f_cindent(typval_T *argvars UNUSED, typval_T *rettv)
 # ifdef FEAT_CINDENT
     pos_T	pos;
     linenr_T	lnum;
+
+    if (in_vim9script() && check_for_lnum_arg(argvars, 0) == FAIL)
+	return;
 
     pos = curwin->w_cursor;
     lnum = tv_get_lnum(argvars);

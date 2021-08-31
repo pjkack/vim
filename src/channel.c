@@ -229,11 +229,7 @@ ch_log(channel_T *ch, const char *fmt, ...)
 #endif
 
     static void
-ch_error(channel_T *ch, const char *fmt, ...)
-#ifdef USE_PRINTF_FORMAT_ATTRIBUTE
-    __attribute__((format(printf, 2, 3)))
-#endif
-    ;
+ch_error(channel_T *ch, const char *fmt, ...) ATTRIBUTE_FORMAT_PRINTF(2, 3);
 
     static void
 ch_error(channel_T *ch, const char *fmt, ...)
@@ -1232,7 +1228,7 @@ channel_set_options(channel_T *channel, jobopt_T *opt)
 
 	    if (!buf->b_p_ma && !channel->ch_part[PART_OUT].ch_nomodifiable)
 	    {
-		emsg(_(e_modifiable));
+		emsg(_(e_cannot_make_changes_modifiable_is_off));
 	    }
 	    else
 	    {
@@ -1278,7 +1274,7 @@ channel_set_options(channel_T *channel, jobopt_T *opt)
 						!opt->jo_modifiable[PART_ERR];
 	    if (!buf->b_p_ma && !channel->ch_part[PART_ERR].ch_nomodifiable)
 	    {
-		emsg(_(e_modifiable));
+		emsg(_(e_cannot_make_changes_modifiable_is_off));
 	    }
 	    else
 	    {
@@ -1310,6 +1306,11 @@ channel_open_func(typval_T *argvars)
     int		is_ipv6 = FALSE;
     jobopt_T    opt;
     channel_T	*channel = NULL;
+
+    if (in_vim9script()
+	    && (check_for_string_arg(argvars, 0) == FAIL
+		|| check_for_dict_arg(argvars, 1) == FAIL))
+	return NULL;
 
     address = tv_get_string(&argvars[0]);
     if (argvars[1].v_type != VAR_UNKNOWN
@@ -2486,12 +2487,17 @@ channel_exe_cmd(channel_T *channel, ch_part_T part, typval_T *argv)
 
     if (STRCMP(cmd, "ex") == 0)
     {
-	int called_emsg_before = called_emsg;
+	int	called_emsg_before = called_emsg;
+	char_u	*p = arg;
+	int	do_emsg_silent;
 
 	ch_log(channel, "Executing ex command '%s'", (char *)arg);
-	++emsg_silent;
+	do_emsg_silent = !checkforcmd(&p, "echoerr", 5);
+	if (do_emsg_silent)
+	    ++emsg_silent;
 	do_cmdline_cmd(arg);
-	--emsg_silent;
+	if (do_emsg_silent)
+	    --emsg_silent;
 	if (called_emsg > called_emsg_before)
 	    ch_log(channel, "Ex command error: '%s'",
 					  (char *)get_vim_var_str(VV_ERRMSG));
@@ -2545,7 +2551,8 @@ channel_exe_cmd(channel_T *channel, ch_part_T part, typval_T *argv)
 	    char_u	*json = NULL;
 
 	    // Don't pollute the display with errors.
-	    ++emsg_skip;
+	    // Do generate the errors so that try/catch works.
+	    ++emsg_silent;
 	    if (!is_call)
 	    {
 		ch_log(channel, "Evaluating expression '%s'", (char *)arg);
@@ -2581,7 +2588,7 @@ channel_exe_cmd(channel_T *channel, ch_part_T part, typval_T *argv)
 		    vim_free(json);
 		}
 	    }
-	    --emsg_skip;
+	    --emsg_silent;
 	    if (tv == &res_tv)
 		clear_tv(tv);
 	    else
@@ -3018,7 +3025,7 @@ channel_has_readahead(channel_T *channel, ch_part_T part)
  * Return a string indicating the status of the channel.
  * If "req_part" is not negative check that part.
  */
-    char *
+    static char *
 channel_status(channel_T *channel, int req_part)
 {
     ch_part_T part;
@@ -3854,6 +3861,11 @@ common_channel_read(typval_T *argvars, typval_T *rettv, int raw, int blob)
     rettv->v_type = VAR_STRING;
     rettv->vval.v_string = NULL;
 
+    if (in_vim9script()
+	    && (check_for_chan_or_job_arg(argvars, 0) == FAIL
+		|| check_for_opt_dict_arg(argvars, 1) == FAIL))
+	return;
+
     clear_job_options(&opt);
     if (get_job_options(&argvars[1], &opt, JO_TIMEOUT + JO_PART + JO_ID, 0)
 								      == FAIL)
@@ -4259,6 +4271,11 @@ ch_expr_common(typval_T *argvars, typval_T *rettv, int eval)
     rettv->v_type = VAR_STRING;
     rettv->vval.v_string = NULL;
 
+    if (in_vim9script()
+	    && (check_for_chan_or_job_arg(argvars, 0) == FAIL
+		|| check_for_opt_dict_arg(argvars, 2) == FAIL))
+	return;
+
     channel = get_channel_arg(&argvars[0], TRUE, FALSE, 0);
     if (channel == NULL)
 	return;
@@ -4318,6 +4335,12 @@ ch_raw_common(typval_T *argvars, typval_T *rettv, int eval)
     // return an empty string by default
     rettv->v_type = VAR_STRING;
     rettv->vval.v_string = NULL;
+
+    if (in_vim9script()
+	    && (check_for_chan_or_job_arg(argvars, 0) == FAIL
+		|| check_for_string_or_blob_arg(argvars, 1) == FAIL
+		|| check_for_opt_dict_arg(argvars, 2) == FAIL))
+	return;
 
     if (argvars[1].v_type == VAR_BLOB)
     {
@@ -4762,9 +4785,13 @@ channel_get_timeout(channel_T *channel, ch_part_T part)
     void
 f_ch_canread(typval_T *argvars, typval_T *rettv)
 {
-    channel_T *channel = get_channel_arg(&argvars[0], FALSE, FALSE, 0);
+    channel_T *channel;
 
     rettv->vval.v_number = 0;
+    if (in_vim9script() && check_for_chan_or_job_arg(argvars, 0) == FAIL)
+	return;
+
+    channel = get_channel_arg(&argvars[0], FALSE, FALSE, 0);
     if (channel != NULL)
 	rettv->vval.v_number = channel_has_readahead(channel, PART_SOCK)
 			    || channel_has_readahead(channel, PART_OUT)
@@ -4777,8 +4804,12 @@ f_ch_canread(typval_T *argvars, typval_T *rettv)
     void
 f_ch_close(typval_T *argvars, typval_T *rettv UNUSED)
 {
-    channel_T *channel = get_channel_arg(&argvars[0], TRUE, FALSE, 0);
+    channel_T *channel;
 
+    if (in_vim9script() && check_for_chan_or_job_arg(argvars, 0) == FAIL)
+	return;
+
+    channel = get_channel_arg(&argvars[0], TRUE, FALSE, 0);
     if (channel != NULL)
     {
 	channel_close(channel, FALSE);
@@ -4792,8 +4823,12 @@ f_ch_close(typval_T *argvars, typval_T *rettv UNUSED)
     void
 f_ch_close_in(typval_T *argvars, typval_T *rettv UNUSED)
 {
-    channel_T *channel = get_channel_arg(&argvars[0], TRUE, FALSE, 0);
+    channel_T *channel;
 
+    if (in_vim9script() && check_for_chan_or_job_arg(argvars, 0) == FAIL)
+	return;
+
+    channel = get_channel_arg(&argvars[0], TRUE, FALSE, 0);
     if (channel != NULL)
 	channel_close_in(channel);
 }
@@ -4804,9 +4839,16 @@ f_ch_close_in(typval_T *argvars, typval_T *rettv UNUSED)
     void
 f_ch_getbufnr(typval_T *argvars, typval_T *rettv)
 {
-    channel_T *channel = get_channel_arg(&argvars[0], FALSE, FALSE, 0);
+    channel_T *channel;
 
     rettv->vval.v_number = -1;
+
+    if (in_vim9script()
+	    && (check_for_chan_or_job_arg(argvars, 0) == FAIL
+		|| check_for_string_arg(argvars, 1) == FAIL))
+	return;
+
+    channel = get_channel_arg(&argvars[0], FALSE, FALSE, 0);
     if (channel != NULL)
     {
 	char_u	*what = tv_get_string(&argvars[1]);
@@ -4832,8 +4874,12 @@ f_ch_getbufnr(typval_T *argvars, typval_T *rettv)
     void
 f_ch_getjob(typval_T *argvars, typval_T *rettv)
 {
-    channel_T *channel = get_channel_arg(&argvars[0], FALSE, FALSE, 0);
+    channel_T *channel;
 
+    if (in_vim9script() && check_for_chan_or_job_arg(argvars, 0) == FAIL)
+	return;
+
+    channel = get_channel_arg(&argvars[0], FALSE, FALSE, 0);
     if (channel != NULL)
     {
 	rettv->v_type = VAR_JOB;
@@ -4849,8 +4895,12 @@ f_ch_getjob(typval_T *argvars, typval_T *rettv)
     void
 f_ch_info(typval_T *argvars, typval_T *rettv UNUSED)
 {
-    channel_T *channel = get_channel_arg(&argvars[0], FALSE, FALSE, 0);
+    channel_T *channel;
 
+    if (in_vim9script() && check_for_chan_or_job_arg(argvars, 0) == FAIL)
+	return;
+
+    channel = get_channel_arg(&argvars[0], FALSE, FALSE, 0);
     if (channel != NULL && rettv_dict_alloc(rettv) != FAIL)
 	channel_info(channel, rettv->vval.v_dict);
 }
@@ -4861,9 +4911,15 @@ f_ch_info(typval_T *argvars, typval_T *rettv UNUSED)
     void
 f_ch_log(typval_T *argvars, typval_T *rettv UNUSED)
 {
-    char_u	*msg = tv_get_string(&argvars[0]);
+    char_u	*msg;
     channel_T	*channel = NULL;
 
+    if (in_vim9script()
+	    && (check_for_string_arg(argvars, 0) == FAIL
+		|| check_for_opt_chan_or_job_arg(argvars, 1) == FAIL))
+	return;
+
+    msg = tv_get_string(&argvars[0]);
     if (argvars[1].v_type != VAR_UNKNOWN)
 	channel = get_channel_arg(&argvars[1], FALSE, FALSE, 0);
 
@@ -4883,6 +4939,12 @@ f_ch_logfile(typval_T *argvars, typval_T *rettv UNUSED)
     // Don't open a file in restricted mode.
     if (check_restricted() || check_secure())
 	return;
+
+    if (in_vim9script()
+	    && (check_for_string_arg(argvars, 0) == FAIL
+		|| check_for_opt_string_arg(argvars, 1) == FAIL))
+	return;
+
     fname = tv_get_string(&argvars[0]);
     if (argvars[1].v_type == VAR_STRING)
 	opt = tv_get_string_buf(&argvars[1], buf);
@@ -4973,6 +5035,11 @@ f_ch_setoptions(typval_T *argvars, typval_T *rettv UNUSED)
     channel_T	*channel;
     jobopt_T	opt;
 
+    if (in_vim9script()
+	    && (check_for_chan_or_job_arg(argvars, 0) == FAIL
+		|| check_for_dict_arg(argvars, 1) == FAIL))
+	return;
+
     channel = get_channel_arg(&argvars[0], FALSE, FALSE, 0);
     if (channel == NULL)
 	return;
@@ -4997,6 +5064,11 @@ f_ch_status(typval_T *argvars, typval_T *rettv)
     rettv->v_type = VAR_STRING;
     rettv->vval.v_string = NULL;
 
+    if (in_vim9script()
+	    && (check_for_chan_or_job_arg(argvars, 0) == FAIL
+		|| check_for_opt_dict_arg(argvars, 1) == FAIL))
+	return;
+
     channel = get_channel_arg(&argvars[0], FALSE, FALSE, 0);
 
     if (argvars[1].v_type != VAR_UNKNOWN)
@@ -5008,6 +5080,24 @@ f_ch_status(typval_T *argvars, typval_T *rettv)
     }
 
     rettv->vval.v_string = vim_strsave((char_u *)channel_status(channel, part));
+}
+
+/*
+ * Get a string with information about the channel in "varp" in "buf".
+ * "buf" must be at least NUMBUFLEN long.
+ */
+    char_u *
+channel_to_string_buf(typval_T *varp, char_u *buf)
+{
+    channel_T *channel = varp->vval.v_channel;
+    char      *status = channel_status(channel, -1);
+
+    if (channel == NULL)
+	vim_snprintf((char *)buf, NUMBUFLEN, "channel %s", status);
+    else
+	vim_snprintf((char *)buf, NUMBUFLEN,
+				      "channel %d %s", channel->ch_id, status);
+    return buf;
 }
 
 #endif // FEAT_JOB_CHANNEL

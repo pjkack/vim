@@ -1762,7 +1762,7 @@ foldCreateMarkers(linenr_T start, linenr_T end)
 {
     if (!curbuf->b_p_ma)
     {
-	emsg(_(e_modifiable));
+	emsg(_(e_cannot_make_changes_modifiable_is_off));
 	return;
     }
     parseMarker(curwin);
@@ -3309,7 +3309,7 @@ foldlevelExpr(fline_T *flp)
     // KeyTyped may be reset to 0 when calling a function which invokes
     // do_cmdline().  To make 'foldopen' work correctly restore KeyTyped.
     save_keytyped = KeyTyped;
-    n = (int)eval_foldexpr(flp->wp->w_p_fde, &c);
+    n = eval_foldexpr(flp->wp->w_p_fde, &c);
     KeyTyped = save_keytyped;
 
     switch (c)
@@ -3526,7 +3526,8 @@ put_folds(FILE *fd, win_T *wp)
     if (foldmethodIsManual(wp))
     {
 	if (put_line(fd, "silent! normal! zE") == FAIL
-		|| put_folds_recurse(fd, &wp->w_folds, (linenr_T)0) == FAIL)
+		|| put_folds_recurse(fd, &wp->w_folds, (linenr_T)0) == FAIL
+		|| put_line(fd, "let &fdl = &fdl") == FAIL)
 	    return FAIL;
     }
 
@@ -3657,6 +3658,9 @@ foldclosed_both(
     linenr_T	lnum;
     linenr_T	first, last;
 
+    if (in_vim9script() && check_for_lnum_arg(argvars, 0) == FAIL)
+	return;
+
     lnum = tv_get_lnum(argvars);
     if (lnum >= 1 && lnum <= curbuf->b_ml.ml_line_count)
     {
@@ -3699,6 +3703,9 @@ f_foldlevel(typval_T *argvars UNUSED, typval_T *rettv UNUSED)
 {
 # ifdef FEAT_FOLDING
     linenr_T	lnum;
+
+    if (in_vim9script() && check_for_lnum_arg(argvars, 0) == FAIL)
+	return;
 
     lnum = tv_get_lnum(argvars);
     if (lnum >= 1 && lnum <= curbuf->b_ml.ml_line_count)
@@ -3788,6 +3795,10 @@ f_foldtextresult(typval_T *argvars UNUSED, typval_T *rettv)
 
     rettv->v_type = VAR_STRING;
     rettv->vval.v_string = NULL;
+
+    if (in_vim9script() && check_for_lnum_arg(argvars, 0) == FAIL)
+	return;
+
 # ifdef FEAT_FOLDING
     if (entered)
 	return; // reject recursive use

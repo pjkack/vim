@@ -993,8 +993,12 @@ curs_columns(
     if (textwidth <= 0)
     {
 	// No room for text, put cursor in last char of window.
+	// If not wrapping, the last non-empty line.
 	curwin->w_wcol = curwin->w_width - 1;
-	curwin->w_wrow = curwin->w_height - 1;
+	if (curwin->w_p_wrap)
+	    curwin->w_wrow = curwin->w_height - 1;
+	else
+	    curwin->w_wrow = curwin->w_height - 1 - curwin->w_empty_rows;
     }
     else if (curwin->w_p_wrap && curwin->w_width != 0)
     {
@@ -1125,10 +1129,10 @@ curs_columns(
 	    n = curwin->w_wrow + so;
 	else
 	    n = p_lines;
-	if ((colnr_T)n >= curwin->w_height + curwin->w_skipcol / width)
+	if ((colnr_T)n >= curwin->w_height + curwin->w_skipcol / width - so)
 	    extra += 2;
 
-	if (extra == 3 || p_lines < so * 2)
+	if (extra == 3 || p_lines <= so * 2)
 	{
 	    // not enough room for 'scrolloff', put cursor in the middle
 	    n = curwin->w_virtcol / width;
@@ -1225,7 +1229,7 @@ textpos2screenpos(
     int		rowoff = 0;
     colnr_T	coloff = 0;
 
-    if (pos->lnum >= wp->w_topline && pos->lnum < wp->w_botline)
+    if (pos->lnum >= wp->w_topline && pos->lnum <= wp->w_botline)
     {
 	colnr_T off;
 	colnr_T col;
@@ -1252,11 +1256,11 @@ textpos2screenpos(
 	col -= wp->w_leftcol;
 	if (col >= wp->w_width)
 	    col = -1;
-	if (col >= 0)
+	if (col >= 0 && row + rowoff <= wp->w_height)
 	    coloff = col - scol + wp->w_wincol + 1;
 	else
-	    // character is left or right of the window
-	    row = scol = ccol = ecol = 0;
+	    // character is left, right or below of the window
+	    row = rowoff = scol = ccol = ecol = 0;
     }
     *rowp = W_WINROW(wp) + row + rowoff;
     *scolp = scol + coloff;
@@ -1281,6 +1285,12 @@ f_screenpos(typval_T *argvars UNUSED, typval_T *rettv)
     if (rettv_dict_alloc(rettv) != OK)
 	return;
     dict = rettv->vval.v_dict;
+
+    if (in_vim9script()
+	    && (check_for_number_arg(argvars, 0) == FAIL
+		|| check_for_number_arg(argvars, 1) == FAIL
+		|| check_for_number_arg(argvars, 2) == FAIL))
+	return;
 
     wp = find_win_by_nr_or_id(&argvars[0]);
     if (wp == NULL)

@@ -316,7 +316,7 @@ undo_allowed(void)
     // Don't allow changes when 'modifiable' is off.
     if (!curbuf->b_p_ma)
     {
-	emsg(_(e_modifiable));
+	emsg(_(e_cannot_make_changes_modifiable_is_off));
 	return FALSE;
     }
 
@@ -324,7 +324,7 @@ undo_allowed(void)
     // In the sandbox it's not allowed to change the text.
     if (sandbox != 0)
     {
-	emsg(_(e_sandbox));
+	emsg(_(e_not_allowed_in_sandbox));
 	return FALSE;
     }
 #endif
@@ -963,7 +963,9 @@ undo_flush(bufinfo_T *bi)
 {
     if (bi->bi_buffer != NULL && bi->bi_state != NULL && bi->bi_used > 0)
     {
-	crypt_encode_inplace(bi->bi_state, bi->bi_buffer, bi->bi_used);
+	// Last parameter is only used for sodium encryption and that
+	// explicitly disables encryption of undofiles.
+	crypt_encode_inplace(bi->bi_state, bi->bi_buffer, bi->bi_used, FALSE);
 	if (fwrite(bi->bi_buffer, bi->bi_used, (size_t)1, bi->bi_fp) != 1)
 	    return FAIL;
 	bi->bi_used = 0;
@@ -995,7 +997,9 @@ fwrite_crypt(bufinfo_T *bi, char_u *ptr, size_t len)
 	    if (copy == NULL)
 		return 0;
 	}
-	crypt_encode(bi->bi_state, ptr, len, copy);
+	// Last parameter is only used for sodium encryption and that
+	// explicitly disables encryption of undofiles.
+	crypt_encode(bi->bi_state, ptr, len, copy, TRUE);
 	i = fwrite(copy, len, (size_t)1, bi->bi_fp);
 	if (copy != small_buf)
 	    vim_free(copy);
@@ -1129,7 +1133,7 @@ undo_read(bufinfo_T *bi, char_u *buffer, size_t size)
 		}
 		bi->bi_avail = n;
 		bi->bi_used = 0;
-		crypt_decode_inplace(bi->bi_state, bi->bi_buffer, bi->bi_avail);
+		crypt_decode_inplace(bi->bi_state, bi->bi_buffer, bi->bi_avail, FALSE);
 	    }
 	    n = size_todo;
 	    if (n > bi->bi_avail - bi->bi_used)
@@ -1176,7 +1180,7 @@ read_string_decrypt(bufinfo_T *bi, int len)
 	ptr[len] = NUL;
 #ifdef FEAT_CRYPT
 	if (bi->bi_state != NULL && bi->bi_buffer == NULL)
-	    crypt_decode_inplace(bi->bi_state, ptr, len);
+	    crypt_decode_inplace(bi->bi_state, ptr, len, FALSE);
 #endif
     }
     return ptr;
@@ -3642,6 +3646,9 @@ u_eval_tree(u_header_T *first_uhp, list_T *list)
     void
 f_undofile(typval_T *argvars UNUSED, typval_T *rettv)
 {
+    if (in_vim9script() && check_for_string_arg(argvars, 0) == FAIL)
+	return;
+
     rettv->v_type = VAR_STRING;
 #ifdef FEAT_PERSISTENT_UNDO
     {
@@ -3665,6 +3672,28 @@ f_undofile(typval_T *argvars UNUSED, typval_T *rettv)
     rettv->vval.v_string = NULL;
 #endif
 }
+#ifdef FEAT_PERSISTENT_UNDO
+/*
+ * Reset undofile option and delete the undofile
+ */
+    void
+u_undofile_reset_and_delete(buf_T *buf)
+{
+    char_u *file_name;
+
+    if (!buf->b_p_udf)
+	return;
+
+    file_name = u_get_undo_file_name(buf->b_ffname, TRUE);
+    if (file_name != NULL)
+    {
+	mch_remove(file_name);
+	vim_free(file_name);
+    }
+
+    set_option_value((char_u *)"undofile", 0L, NULL, OPT_LOCAL);
+}
+ #endif
 
 /*
  * "undotree()" function

@@ -1,6 +1,8 @@
 " Tests for 'listchars' display with 'list' and :list
 
+source check.vim
 source view_util.vim
+source screendump.vim
 
 func Test_listchars()
   enew!
@@ -110,6 +112,35 @@ func Test_listchars()
 	      \ '.....h>-$',
 	      \ 'iii<<<<><<$', '$'], l)
 
+  " Test lead and trail
+  normal ggdG
+  set listchars&
+  set listchars+=lead:>,trail:<,space:x
+  set list
+
+  call append(0, [
+	      \ '    ffff    ',
+	      \ '          gg',
+	      \ 'h           ',
+	      \ '            ',
+	      \ '    0  0    ',
+	      \ ])
+
+  let expected = [
+	      \ '>>>>ffff<<<<$',
+	      \ '>>>>>>>>>>gg$',
+	      \ 'h<<<<<<<<<<<$',
+	      \ '<<<<<<<<<<<<$',
+	      \ '>>>>0xx0<<<<$',
+              \ '$'
+	      \ ]
+  redraw!
+  for i in range(1, 5)
+    call cursor(i, 1)
+    call assert_equal([expected[i - 1]], ScreenLines(i, virtcol('$')))
+  endfor
+
+  call assert_equal(expected, split(execute("%list"), "\n"))
 
   " test nbsp
   normal ggdG
@@ -117,7 +148,7 @@ func Test_listchars()
   set list
   " Non-breaking space
   let nbsp = nr2char(0xa0)
-  call append(0, [ ">".nbsp."<" ])
+  call append(0, [ ">" .. nbsp .. "<" ])
 
   let expected = '>X< '
 
@@ -164,12 +195,8 @@ func Test_listchars_unicode()
   set list
 
   let nbsp = nr2char(0xa0)
-  call append(0, [
-        \ "a\tb c".nbsp."d"
-        \ ])
-  let expected = [
-        \ 'a←↔↔↔↔↔→b␣c≠d⇔'
-        \ ]
+  call append(0, ["a\tb c" .. nbsp .. "d"])
+  let expected = ['a←↔↔↔↔↔→b␣c≠d⇔']
   redraw!
   call cursor(1, 1)
   call assert_equal(expected, ScreenLines(1, virtcol('$')))
@@ -192,10 +219,10 @@ func Test_listchars_composing()
   let nbsp1 = nr2char(0xa0)
   let nbsp2 = nr2char(0x202f)
   call append(0, [
-        \ "  \u3099\t \u309A".nbsp1.nbsp1."\u0302".nbsp2.nbsp2."\u0302",
+        \ "  \u3099\t \u309A" .. nbsp1 .. nbsp1 .. "\u0302" .. nbsp2 .. nbsp2 .. "\u0302",
         \ ])
   let expected = [
-        \ "_ \u3099^I \u309A=".nbsp1."\u0302=".nbsp2."\u0302$"
+        \ "_ \u3099^I \u309A=" .. nbsp1 .. "\u0302=" .. nbsp2 .. "\u0302$"
         \ ]
   redraw!
   call cursor(1, 1)
@@ -204,5 +231,167 @@ func Test_listchars_composing()
   enew!
   set listchars& ff&
 endfunction
+
+" Check for the value of the 'listchars' option
+func s:CheckListCharsValue(expected)
+  call assert_equal(a:expected, &listchars)
+  call assert_equal(a:expected, getwinvar(0, '&listchars'))
+endfunc
+
+" Test for using a window local value for 'listchars'
+func Test_listchars_window_local()
+  %bw!
+  set list listchars&
+  new
+  " set a local value for 'listchars'
+  setlocal listchars=tab:+-,eol:#
+  call s:CheckListCharsValue('tab:+-,eol:#')
+  " When local value is reset, global value should be used
+  setlocal listchars=
+  call s:CheckListCharsValue('eol:$')
+  " Use 'setlocal <' to copy global value
+  setlocal listchars=space:.,extends:>
+  setlocal listchars<
+  call s:CheckListCharsValue('eol:$')
+  " Use 'set <' to copy global value
+  setlocal listchars=space:.,extends:>
+  set listchars<
+  call s:CheckListCharsValue('eol:$')
+  " Changing global setting should not change the local setting
+  setlocal listchars=space:.,extends:>
+  setglobal listchars=tab:+-,eol:#
+  call s:CheckListCharsValue('space:.,extends:>')
+  " when split opening a new window, local value should be copied
+  split
+  call s:CheckListCharsValue('space:.,extends:>')
+  " clearing local value in one window should not change the other window
+  set listchars&
+  call s:CheckListCharsValue('eol:$')
+  close
+  call s:CheckListCharsValue('space:.,extends:>')
+
+  " use different values for 'listchars' items in two different windows
+  call setline(1, ["\t  one  two  "])
+  setlocal listchars=tab:<->,lead:_,space:.,trail:@,eol:#
+  split
+  setlocal listchars=tab:[.],lead:#,space:_,trail:.,eol:&
+  split
+  set listchars=tab:+-+,lead:^,space:>,trail:<,eol:%
+  call assert_equal(['+------+^^one>>two<<%'], ScreenLines(1, virtcol('$')))
+  close
+  call assert_equal(['[......]##one__two..&'], ScreenLines(1, virtcol('$')))
+  close
+  call assert_equal(['<------>__one..two@@#'], ScreenLines(1, virtcol('$')))
+  " changing the global setting should not change the local value
+  setglobal listchars=tab:[.],lead:#,space:_,trail:.,eol:&
+  call assert_equal(['<------>__one..two@@#'], ScreenLines(1, virtcol('$')))
+  set listchars<
+  call assert_equal(['[......]##one__two..&'], ScreenLines(1, virtcol('$')))
+
+  " Using setglobal in a window with local setting should not affect the
+  " window. But should impact other windows using the global setting.
+  enew! | only
+  call setline(1, ["\t  one  two  "])
+  set listchars=tab:[.],lead:#,space:_,trail:.,eol:&
+  split
+  setlocal listchars=tab:+-+,lead:^,space:>,trail:<,eol:%
+  split
+  setlocal listchars=tab:<->,lead:_,space:.,trail:@,eol:#
+  setglobal listchars=tab:{.},lead:-,space:=,trail:#,eol:$
+  call assert_equal(['<------>__one..two@@#'], ScreenLines(1, virtcol('$')))
+  close
+  call assert_equal(['+------+^^one>>two<<%'], ScreenLines(1, virtcol('$')))
+  close
+  call assert_equal(['{......}--one==two##$'], ScreenLines(1, virtcol('$')))
+
+  " Setting the global setting to the default value should not impact a window
+  " using a local setting
+  split
+  setlocal listchars=tab:<->,lead:_,space:.,trail:@,eol:#
+  setglobal listchars&vim
+  call assert_equal(['<------>__one..two@@#'], ScreenLines(1, virtcol('$')))
+  close
+  call assert_equal(['^I  one  two  $'], ScreenLines(1, virtcol('$')))
+
+  " Setting the local setting to the default value should not impact a window
+  " using a global setting
+  set listchars=tab:{.},lead:-,space:=,trail:#,eol:$
+  split
+  setlocal listchars=tab:<->,lead:_,space:.,trail:@,eol:#
+  call assert_equal(['<------>__one..two@@#'], ScreenLines(1, virtcol('$')))
+  setlocal listchars&vim
+  call assert_equal(['^I  one  two  $'], ScreenLines(1, virtcol('$')))
+  close
+  call assert_equal(['{......}--one==two##$'], ScreenLines(1, virtcol('$')))
+
+  " Using set in a window with a local setting should change it to use the
+  " global setting and also impact other windows using the global setting
+  split
+  setlocal listchars=tab:<->,lead:_,space:.,trail:@,eol:#
+  call assert_equal(['<------>__one..two@@#'], ScreenLines(1, virtcol('$')))
+  set listchars=tab:+-+,lead:^,space:>,trail:<,eol:%
+  call assert_equal(['+------+^^one>>two<<%'], ScreenLines(1, virtcol('$')))
+  close
+  call assert_equal(['+------+^^one>>two<<%'], ScreenLines(1, virtcol('$')))
+
+  " Setting invalid value for a local setting should not impact the local and
+  " global settings
+  split
+  setlocal listchars=tab:<->,lead:_,space:.,trail:@,eol:#
+  let cmd = 'setlocal listchars=tab:{.},lead:-,space:=,trail:#,eol:$,x'
+  call assert_fails(cmd, 'E474:')
+  call assert_equal(['<------>__one..two@@#'], ScreenLines(1, virtcol('$')))
+  close
+  call assert_equal(['+------+^^one>>two<<%'], ScreenLines(1, virtcol('$')))
+
+  " Setting invalid value for a global setting should not impact the local and
+  " global settings
+  split
+  setlocal listchars=tab:<->,lead:_,space:.,trail:@,eol:#
+  let cmd = 'setglobal listchars=tab:{.},lead:-,space:=,trail:#,eol:$,x'
+  call assert_fails(cmd, 'E474:')
+  call assert_equal(['<------>__one..two@@#'], ScreenLines(1, virtcol('$')))
+  close
+  call assert_equal(['+------+^^one>>two<<%'], ScreenLines(1, virtcol('$')))
+
+  %bw!
+  set list& listchars&
+endfunc
+
+func Test_listchars_foldcolumn()
+  CheckScreendump
+
+  let lines =<< trim END
+      call setline(1, ['aaa', '', 'a', 'aaaaaa'])
+      vsplit
+      vsplit
+      windo set signcolumn=yes foldcolumn=1 winminwidth=0 nowrap list listchars=extends:>,precedes:<
+  END
+  call writefile(lines, 'XTest_listchars')
+
+  let buf = RunVimInTerminal('-S XTest_listchars', {'rows': 10, 'cols': 60})
+
+  call term_sendkeys(buf, "13\<C-W>>")
+  call VerifyScreenDump(buf, 'Test_listchars_01', {})
+  call term_sendkeys(buf, "\<C-W>>")
+  call VerifyScreenDump(buf, 'Test_listchars_02', {})
+  call term_sendkeys(buf, "\<C-W>>")
+  call VerifyScreenDump(buf, 'Test_listchars_03', {})
+  call term_sendkeys(buf, "\<C-W>>")
+  call VerifyScreenDump(buf, 'Test_listchars_04', {})
+  call term_sendkeys(buf, "\<C-W>>")
+  call VerifyScreenDump(buf, 'Test_listchars_05', {})
+  call term_sendkeys(buf, "\<C-W>h")
+  call term_sendkeys(buf, ":set nowrap foldcolumn=4\<CR>")
+  call term_sendkeys(buf, "15\<C-W><")
+  call VerifyScreenDump(buf, 'Test_listchars_06', {})
+  call term_sendkeys(buf, "4\<C-W><")
+  call VerifyScreenDump(buf, 'Test_listchars_07', {})
+
+  " clean up
+  call StopVimInTerminal(buf)
+  call delete('XTest_listchars')
+endfunc
+
 
 " vim: shiftwidth=2 sts=2 expandtab

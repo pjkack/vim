@@ -31,7 +31,9 @@
  * in the "xim.log" file.
  */
 // #define XIM_DEBUG
-#ifdef XIM_DEBUG
+#if defined(XIM_DEBUG) && defined(FEAT_GUI_GTK)
+static void xim_log(char *s, ...) ATTRIBUTE_FORMAT_PRINTF(1, 2);
+
     static void
 xim_log(char *s, ...)
 {
@@ -207,7 +209,7 @@ im_preedit_window_set_position(void)
     if (preedit_window == NULL)
 	return;
 
-    gui_gtk_get_screen_geom_of_win(gui.drawarea,
+    gui_gtk_get_screen_geom_of_win(gui.drawarea, 0, 0,
 			  &screen_x, &screen_y, &screen_width, &screen_height);
     gdk_window_get_origin(gtk_widget_get_window(gui.drawarea), &x, &y);
     gtk_window_get_size(GTK_WINDOW(preedit_window), &width, &height);

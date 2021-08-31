@@ -1253,8 +1253,11 @@ cmdline_insert_reg(int *gotesc UNUSED)
 	}
 #endif
     }
+    // remove the double quote
     redrawcmd();
-    return CMDLINE_CHANGED;
+
+    // The text has been stuffed, the command line didn't change yet.
+    return CMDLINE_NOT_CHANGED;
 }
 
 /*
@@ -1706,6 +1709,26 @@ getcmdline_int(
     // and execute commands. Display may be messed up a bit.
     if (did_emsg)
 	redrawcmd();
+
+#ifdef FEAT_STL_OPT
+    // Redraw the statusline in case it uses the current mode using the mode()
+    // function.
+    if (!cmd_silent && msg_scrolled == 0)
+    {
+	int	found_one = FALSE;
+	win_T	*wp;
+
+	FOR_ALL_WINDOWS(wp)
+	    if (*p_stl != NUL || *wp->w_p_stl != NUL)
+	    {
+		wp->w_redr_status = TRUE;
+		found_one = TRUE;
+	    }
+	if (found_one)
+	    redraw_statuslines();
+    }
+#endif
+
     did_emsg = FALSE;
     got_int = FALSE;
 
@@ -1714,6 +1737,8 @@ getcmdline_int(
      */
     for (;;)
     {
+	int trigger_cmdlinechanged = TRUE;
+
 	redir_off = TRUE;	// Don't redirect the typed command.
 				// Repeated, because a ":redir" inside
 				// completion may switch it on.
@@ -1737,9 +1762,17 @@ getcmdline_int(
 	    c = safe_vgetc();
 	} while (c == K_IGNORE || c == K_NOP);
 
-	if (c == K_COMMAND
-		   && do_cmdline(NULL, getcmdkeycmd, NULL, DOCMD_NOWAIT) == OK)
-	    goto cmdline_changed;
+	if (c == K_COMMAND)
+	{
+	    int	    clen = ccline.cmdlen;
+
+	    if (do_cmdline(NULL, getcmdkeycmd, NULL, DOCMD_NOWAIT) == OK)
+	    {
+		if (clen == ccline.cmdlen)
+		    trigger_cmdlinechanged = FALSE;
+		goto cmdline_changed;
+	    }
+	}
 
 	if (KeyTyped)
 	{
@@ -2352,11 +2385,12 @@ cmdline_changed:
 	if (is_state.winid != curwin->w_id)
 	    init_incsearch_state(&is_state);
 #endif
-	// Trigger CmdlineChanged autocommands.
-	trigger_cmd_autocmd(cmdline_type, EVENT_CMDLINECHANGED);
+	if (trigger_cmdlinechanged)
+	    // Trigger CmdlineChanged autocommands.
+	    trigger_cmd_autocmd(cmdline_type, EVENT_CMDLINECHANGED);
 
 #ifdef FEAT_SEARCH_EXTRA
-	if (xpc.xp_context == EXPAND_NOTHING)
+	if (xpc.xp_context == EXPAND_NOTHING && (KeyTyped || vpeekc() == NUL))
 	    may_do_incsearch_highlighting(firstc, count, &is_state);
 #endif
 
@@ -2588,7 +2622,7 @@ get_text_locked_msg(void)
 {
 #ifdef FEAT_CMDWIN
     if (cmdwin_type != 0)
-	return e_cmdwin;
+	return e_invalid_in_cmdline_window;
 #endif
     if (textwinlock != 0)
 	return e_textwinlock;
@@ -4027,8 +4061,12 @@ set_cmdline_pos(
     void
 f_setcmdpos(typval_T *argvars, typval_T *rettv)
 {
-    int		pos = (int)tv_get_number(&argvars[0]) - 1;
+    int		pos;
 
+    if (in_vim9script() && check_for_number_arg(argvars, 0) == FAIL)
+	return;
+
+    pos = (int)tv_get_number(&argvars[0]) - 1;
     if (pos >= 0)
 	rettv->vval.v_number = set_cmdline_pos(pos);
 }
@@ -4205,18 +4243,21 @@ open_cmdwin(void)
     // Don't let quitting the More prompt make this fail.
     got_int = FALSE;
 
+    // Set "cmdwin_type" before any autocommands may mess things up.
+    cmdwin_type = get_cmdline_type();
+
     // Create the command-line buffer empty.
     if (do_ecmd(0, NULL, NULL, NULL, ECMD_ONE, ECMD_HIDE, NULL) == FAIL)
     {
 	// Some autocommand messed it up?
 	win_close(curwin, TRUE);
 	ga_clear(&winsizes);
+	cmdwin_type = 0;
 	return Ctrl_C;
     }
-    cmdwin_type = get_cmdline_type();
 
     apply_autocmds(EVENT_BUFFILEPRE, NULL, NULL, FALSE, curbuf);
-    (void)setfname(curbuf, (char_u *)"[Command Line]", NULL, TRUE);
+    (void)setfname(curbuf, (char_u *)_("[Command Line]"), NULL, TRUE);
     apply_autocmds(EVENT_BUFFILEPOST, NULL, NULL, FALSE, curbuf);
     set_option_value((char_u *)"bt", 0L, (char_u *)"nofile", OPT_LOCAL);
     curbuf->b_p_ma = TRUE;
@@ -4393,14 +4434,19 @@ open_cmdwin(void)
 	// Avoid command-line window first character being concealed.
 	curwin->w_p_cole = 0;
 # endif
+	// First go back to the original window.
 	wp = curwin;
 	set_bufref(&bufref, curbuf);
 	win_goto(old_curwin);
-	win_close(wp, TRUE);
+
+	// win_goto() may trigger an autocommand that already closes the
+	// cmdline window.
+	if (win_valid(wp) && wp != curwin)
+	    win_close(wp, TRUE);
 
 	// win_close() may have already wiped the buffer when 'bh' is
-	// set to 'wipe'
-	if (bufref_valid(&bufref))
+	// set to 'wipe', autocommands may have closed other windows
+	if (bufref_valid(&bufref) && bufref.br_buf != curbuf)
 	    close_buffer(NULL, bufref.br_buf, DOBUF_WIPE, FALSE, FALSE);
 
 	// Restore window sizes.
@@ -4475,7 +4521,7 @@ get_user_input(
     int		inputdialog,
     int		secret)
 {
-    char_u	*prompt = tv_get_string_chk(&argvars[0]);
+    char_u	*prompt;
     char_u	*p = NULL;
     int		c;
     char_u	buf[NUMBUFLEN];
@@ -4488,6 +4534,15 @@ get_user_input(
     rettv->vval.v_string = NULL;
     if (input_busy)
 	return;  // this doesn't work recursively.
+
+    if (in_vim9script()
+	    && (check_for_string_arg(argvars, 0) == FAIL
+		|| check_for_opt_string_arg(argvars, 1) == FAIL
+		|| (argvars[1].v_type != VAR_UNKNOWN
+		    && check_for_opt_string_arg(argvars, 2) == FAIL)))
+	return;
+
+    prompt = tv_get_string_chk(&argvars[0]);
 
 #ifdef NO_CONSOLE_INPUT
     // While starting up, there is no place to enter text. When running tests

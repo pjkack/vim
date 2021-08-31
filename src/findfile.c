@@ -578,7 +578,16 @@ vim_findfile_init(
 
 	    if (p > search_ctx->ffsc_fix_path)
 	    {
+		// do not add '..' to the path and start upwards searching
 		len = (int)(p - search_ctx->ffsc_fix_path) - 1;
+		if ((len >= 2
+			&& STRNCMP(search_ctx->ffsc_fix_path, "..", 2) == 0)
+			&& (len == 2
+				   || search_ctx->ffsc_fix_path[2] == PATHSEP))
+		{
+		    vim_free(buf);
+		    goto error_return;
+		}
 		STRNCAT(ff_expand_buffer, search_ctx->ffsc_fix_path, len);
 		add_pathsep(ff_expand_buffer);
 	    }
@@ -2848,7 +2857,10 @@ f_simplify(typval_T *argvars, typval_T *rettv)
 {
     char_u	*p;
 
-    p = tv_get_string(&argvars[0]);
+    if (in_vim9script() && check_for_string_arg(argvars, 0) == FAIL)
+	return;
+
+    p = tv_get_string_strict(&argvars[0]);
     rettv->vval.v_string = vim_strsave(p);
     simplify_filename(rettv->vval.v_string);	// simplify in place
     rettv->v_type = VAR_STRING;

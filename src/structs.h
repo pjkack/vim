@@ -225,10 +225,16 @@ typedef struct
 #endif
     int		wo_list;
 #define w_p_list w_onebuf_opt.wo_list	// 'list'
+    char_u	*wo_lcs;
+#define w_p_lcs w_onebuf_opt.wo_lcs	// 'listchars'
     int		wo_nu;
 #define w_p_nu w_onebuf_opt.wo_nu	// 'number'
     int		wo_rnu;
 #define w_p_rnu w_onebuf_opt.wo_rnu	// 'relativenumber'
+    char_u	*wo_ve;
+#define w_p_ve w_onebuf_opt.wo_ve	// 'virtualedit'
+    unsigned	wo_ve_flags;
+#define	w_ve_flags w_onebuf_opt.wo_ve_flags	// flags for 'virtualedit'
 #ifdef FEAT_LINEBREAK
     long	wo_nuw;
 # define w_p_nuw w_onebuf_opt.wo_nuw	// 'numberwidth'
@@ -326,8 +332,8 @@ struct wininfo_S
     wininfo_T	*wi_prev;	// previous entry or NULL for first entry
     win_T	*wi_win;	// pointer to window that did set wi_fpos
     pos_T	wi_fpos;	// last cursor position in the file
-    int		wi_optset;	// TRUE when wi_opt has useful values
     winopt_T	wi_opt;		// local window options
+    int		wi_optset;	// TRUE when wi_opt has useful values
 #ifdef FEAT_FOLDING
     int		wi_fold_manual;	// copy of w_fold_manual
     garray_T	wi_folds;	// clone of w_folds
@@ -642,6 +648,8 @@ typedef struct
 #define CMOD_LOCKMARKS	    0x0800	// ":lockmarks"
 #define CMOD_KEEPPATTERNS   0x1000	// ":keeppatterns"
 #define CMOD_NOSWAPFILE	    0x2000	// ":noswapfile"
+#define CMOD_VIM9CMD	    0x4000	// ":vim9cmd"
+#define CMOD_LEGACY	    0x8000	// ":legacy"
 
     int		cmod_split;		// flags for win_split()
     int		cmod_tab;		// > 0 when ":tab" was used
@@ -765,11 +773,13 @@ typedef struct memline
 // Values for the flags argument of ml_delete_flags().
 #define ML_DEL_MESSAGE	    1	// may give a "No lines in buffer" message
 #define ML_DEL_UNDO	    2	// called from undo, do not update textprops
+#define ML_DEL_NOPROP	    4	// splitting data block, do not update textprops
 
 // Values for the flags argument of ml_append_int().
 #define ML_APPEND_NEW	    1	// starting to edit a new file
 #define ML_APPEND_MARK	    2	// mark the new line
 #define ML_APPEND_UNDO	    4	// called from undo
+#define ML_APPEND_NOPROP    8	// do not continue textprop from previous line
 
 
 /*
@@ -930,13 +940,14 @@ typedef struct {
 
 # define CSF_TRY	0x0100	// is a ":try"
 # define CSF_FINALLY	0x0200	// ":finally" has been passed
-# define CSF_THROWN	0x0400	// exception thrown to this try conditional
-# define CSF_CAUGHT	0x0800  // exception caught by this try conditional
-# define CSF_SILENT	0x1000	// "emsg_silent" reset by ":try"
+# define CSF_CATCH	0x0400	// ":catch" has been seen
+# define CSF_THROWN	0x0800	// exception thrown to this try conditional
+# define CSF_CAUGHT	0x1000  // exception caught by this try conditional
+# define CSF_SILENT	0x2000	// "emsg_silent" reset by ":try"
 // Note that CSF_ELSE is only used when CSF_TRY and CSF_WHILE are unset
 // (an ":if"), and CSF_SILENT is only used when CSF_TRY is set.
 //
-#define CSF_FUNC_DEF	0x2000	// a function was defined in this block
+#define CSF_FUNC_DEF	0x4000	// a function was defined in this block
 
 /*
  * What's pending for being reactivated at the ":endtry" of this try
@@ -968,11 +979,12 @@ typedef struct {
 typedef struct msglist msglist_T;
 struct msglist
 {
+    msglist_T	*next;		// next of several messages in a row
     char	*msg;		// original message, allocated
     char	*throw_msg;	// msg to throw: usually original one
     char_u	*sfile;		// value from estack_sfile(), allocated
     long	slnum;		// line number for "sfile"
-    msglist_T	*next;		// next of several messages in a row
+    int		msg_compiling;	// saved value of estack_compiling
 };
 
 /*
@@ -1226,8 +1238,8 @@ struct mapblock
     char	m_silent;	// <silent> used, don't echo commands
     char	m_nowait;	// <nowait> used
 #ifdef FEAT_EVAL
-    sctx_T	m_script_ctx;	// SCTX where map was defined
     char	m_expr;		// <expr> used, m_str is an expression
+    sctx_T	m_script_ctx;	// SCTX where map was defined
 #endif
 };
 
@@ -1366,6 +1378,7 @@ typedef struct cbq_S cbq_T;
 typedef struct channel_S channel_T;
 typedef struct cctx_S cctx_T;
 typedef struct ectx_S ectx_T;
+typedef struct instr_S instr_T;
 
 typedef enum
 {
@@ -1384,6 +1397,7 @@ typedef enum
     VAR_DICT,		// "v_dict" is used
     VAR_JOB,		// "v_job" is used
     VAR_CHANNEL,	// "v_channel" is used
+    VAR_INSTR,		// "v_instr" is used
 } vartype_T;
 
 // A type specification.
@@ -1424,6 +1438,7 @@ typedef struct
 	channel_T	*v_channel;	// channel value (can be NULL!)
 #endif
 	blob_T		*v_blob;	// blob value (can be NULL!)
+	instr_T		*v_instr;	// instructions to execute
     }		vval;
 } typval_T;
 
@@ -1577,12 +1592,13 @@ typedef struct svar_S svar_T;
 #if defined(FEAT_EVAL) || defined(PROTO)
 typedef struct funccall_S funccall_T;
 
-// values used for "uf_dfunc_idx"
+// values used for "uf_def_status"
 typedef enum {
-    UF_NOT_COMPILED,
-    UF_TO_BE_COMPILED,
-    UF_COMPILING,
-    UF_COMPILED
+    UF_NOT_COMPILED,	    // executed with interpreter
+    UF_TO_BE_COMPILED,	    // to be compiled before execution
+    UF_COMPILING,	    // in compile_def_function()
+    UF_COMPILED,	    // successfully compiled
+    UF_COMPILE_ERROR	    // compilation error, cannot execute
 } def_status_T;
 
 /*
@@ -1599,13 +1615,13 @@ typedef struct
     int		uf_dfunc_idx;	// only valid if uf_def_status is UF_COMPILED
     garray_T	uf_args;	// arguments, including optional arguments
     garray_T	uf_def_args;	// default argument expressions
+    int		uf_args_visible; // normally uf_args.ga_len, less when
+				 // compiling default argument expression.
 
     // for :def (for :function uf_ret_type is NULL)
     type_T	**uf_arg_types;	// argument types (count == uf_args.ga_len)
     type_T	*uf_ret_type;	// return type
     garray_T	uf_type_list;	// types used in arg and return types
-    int		*uf_def_arg_idx; // instruction indexes for evaluating
-				// uf_def_args; length: uf_def_args.ga_len + 1
     partial_T	*uf_partial;	// for closure created inside :def function:
 				// information about the context
 
@@ -1621,6 +1637,11 @@ typedef struct
 # endif
 
     garray_T	uf_lines;	// function lines
+
+    int		uf_debug_tick;	// when last checked for a breakpoint in this
+				// function.
+    int		uf_has_breakpoint;  // TRUE when a breakpoint has been set in
+				    // this function.
 # ifdef FEAT_PROFILE
     int		uf_profiling;	// TRUE when func is being profiled
     int		uf_prof_initialized;
@@ -1649,8 +1670,8 @@ typedef struct
 
     char_u	*uf_name_exp;	// if "uf_name[]" starts with SNR the name with
 				// "<SNR>" as a string, otherwise NULL
-    char_u	uf_name[1];	// name of function (actually longer); can
-				// start with <SNR>123_ (<SNR> is K_SPECIAL
+    char_u	uf_name[4];	// name of function (actual size equals name);
+				// can start with <SNR>123_ (<SNR> is K_SPECIAL
 				// KS_EXTRA KE_SNR)
 } ufunc_T;
 
@@ -1777,7 +1798,7 @@ struct svar_S {
     char_u	*sv_name;	// points into "sn_all_vars" di_key
     typval_T	*sv_tv;		// points into "sn_vars" or "sn_all_vars" di_tv
     type_T	*sv_type;
-    int		sv_const;
+    int		sv_const;	// 0, ASSIGN_CONST or ASSIGN_FINAL
     int		sv_export;	// "export let var = val"
 };
 
@@ -1871,13 +1892,21 @@ typedef struct {
     // used when compiling a :def function, NULL otherwise
     cctx_T	*eval_cctx;
 
+    // used when executing commands from a script, NULL otherwise
+    cstack_T	*eval_cstack;
+
     // Used to collect lines while parsing them, so that they can be
     // concatenated later.  Used when "eval_ga.ga_itemsize" is not zero.
     // "eval_ga.ga_data" is a list of pointers to lines.
+    // "eval_freega" list pointers that need to be freed after concatenating.
     garray_T	eval_ga;
+    garray_T	eval_freega;
 
     // pointer to the last line obtained with getsourceline()
     char_u	*eval_tofree;
+
+    // pointer to the last line of an inline function
+    char_u	*eval_tofree_cmdline;
 
     // pointer to the lines concatenated for a lambda.
     char_u	*eval_tofree_lambda;
@@ -1899,6 +1928,18 @@ typedef struct sn_prl_S
 } sn_prl_T;
 
 #  define PRL_ITEM(si, idx)	(((sn_prl_T *)(si)->sn_prl_ga.ga_data)[(idx)])
+
+typedef struct {
+    int		pi_started_profiling;
+    proftime_T	pi_wait_start;
+    proftime_T	pi_call_start;
+} profinfo_T;
+
+# else
+typedef struct
+{
+    int	    dummy;
+} profinfo_T;
 # endif
 #else
 // dummy typedefs for use in function prototypes
@@ -1944,6 +1985,7 @@ typedef struct {
     partial_T	*partial;	// for extra arguments
     dict_T	*selfdict;	// Dictionary for "self"
     typval_T	*basetv;	// base for base->method()
+    type_T	*check_type;	// type from funcref or NULL
 } funcexe_T;
 
 /*
@@ -1964,27 +2006,35 @@ typedef struct funcstack_S
     int		fs_copyID;	// for garray_T collection
 } funcstack_T;
 
+typedef struct outer_S outer_T;
+struct outer_S {
+    garray_T	*out_stack;	    // stack from outer scope
+    int		out_frame_idx;	    // index of stack frame in out_stack
+    outer_T	*out_up;	    // outer scope of outer scope or NULL
+    partial_T	*out_up_partial;    // partial owning out_up or NULL
+};
+
 struct partial_S
 {
     int		pt_refcount;	// reference count
+    int		pt_auto;	// when TRUE the partial was created for using
+				// dict.member in handle_subscript()
     char_u	*pt_name;	// function name; when NULL use
 				// pt_func->uf_name
     ufunc_T	*pt_func;	// function pointer; when NULL lookup function
 				// with pt_name
-    int		pt_auto;	// when TRUE the partial was created for using
-				// dict.member in handle_subscript()
 
-    // For a compiled closure: the arguments and local variables.
-    garray_T	*pt_ectx_stack;	    // where to find local vars
-    int		pt_ectx_frame;	    // index of function frame in uf_ectx_stack
-    funcstack_T	*pt_funcstack;	    // copy of stack, used after context
-				    // function returns
+    // For a compiled closure: the arguments and local variables scope
+    outer_T	pt_outer;
 
-    int		pt_argc;	// number of arguments
+    funcstack_T	*pt_funcstack;	// copy of stack, used after context
+				// function returns
+
     typval_T	*pt_argv;	// arguments in allocated array
+    int		pt_argc;	// number of arguments
 
-    dict_T	*pt_dict;	// dict for "self"
     int		pt_copyID;	// funcstack may contain pointer to partial
+    dict_T	*pt_dict;	// dict for "self"
 };
 
 typedef struct AutoPatCmd_S AutoPatCmd;
@@ -2018,7 +2068,7 @@ typedef struct {
 	except_T   *except; // exception info
     } es_info;
 #if defined(FEAT_EVAL)
-    scid_T	es_save_sid;	    // saved sc_sid when calling function
+    sctx_T	es_save_sctx;	    // saved current_sctx when calling function
 #endif
 } estack_T;
 
@@ -2053,9 +2103,9 @@ struct jobvar_S
     PROCESS_INFORMATION	jv_proc_info;
     HANDLE		jv_job_object;
 #endif
+    jobstatus_T	jv_status;
     char_u	*jv_tty_in;	// controlling tty input, allocated
     char_u	*jv_tty_out;	// controlling tty output, allocated
-    jobstatus_T	jv_status;
     char_u	*jv_stoponexit;	// allocated
 #ifdef UNIX
     char_u	*jv_termsig;	// allocated
@@ -2479,11 +2529,12 @@ typedef struct {
 # define CRYPT_M_ZIP	0
 # define CRYPT_M_BF	1
 # define CRYPT_M_BF2	2
-# define CRYPT_M_COUNT	3 // number of crypt methods
+# define CRYPT_M_SOD    3
+# define CRYPT_M_COUNT	4 // number of crypt methods
 
 // Currently all crypt methods work inplace.  If one is added that isn't then
 // define this.
-//  # define CRYPT_NOT_INPLACE 1
+# define CRYPT_NOT_INPLACE 1
 #endif
 
 #ifdef FEAT_PROP_POPUP
@@ -2612,6 +2663,8 @@ struct file_buffer
     int		b_flags;	// various BF_ flags
     int		b_locked;	// Buffer is being closed or referenced, don't
 				// let autocommands wipe it out.
+    int		b_locked_split;	// Buffer is being closed, don't allow opening
+				// a new window with it.
 
     /*
      * b_ffname has the full path of the file (NULL for no name).
@@ -3313,6 +3366,26 @@ typedef struct {
 #endif
 
 /*
+ * Characters from the 'listchars' option
+ */
+typedef struct
+{
+    int		eol;
+    int		ext;
+    int		prec;
+    int		nbsp;
+    int		space;
+    int		tab1;
+    int		tab2;
+    int		tab3;
+    int		trail;
+    int		lead;
+#ifdef FEAT_CONCEAL
+    int		conceal;
+#endif
+} lcs_chars_T;
+
+/*
  * Structure which contains all information that belongs to a window
  *
  * All row numbers are relative to the start of the window, except w_winrow.
@@ -3359,6 +3432,8 @@ struct window_S
     linenr_T	w_old_visual_lnum;  // last known start of visual part
     colnr_T	w_old_visual_col;   // last known start of visual part
     colnr_T	w_old_curswant;	    // last known value of Curswant
+
+    lcs_chars_T	w_lcs_chars;	    // 'listchars' characters
 
     /*
      * "w_topline", "w_leftcol" and "w_skipcol" specify the offsets for
@@ -3607,6 +3682,7 @@ struct window_S
     int		w_briopt_min;	    // minimum width for breakindent
     int		w_briopt_shift;	    // additional shift for breakindent
     int		w_briopt_sbr;	    // sbr in 'briopt'
+    int		w_briopt_list;      // additional indent for lists
 #endif
 
     // transform a pointer to a "onebuf" option into a "allbuf" option
@@ -3718,7 +3794,7 @@ typedef struct oparg_S
     int		use_reg_one;	// TRUE if delete uses reg 1 even when not
 				// linewise
     int		inclusive;	// TRUE if char motion is inclusive (only
-				// valid when motion_type is MCHAR
+				// valid when motion_type is MCHAR)
     int		end_adjusted;	// backuped b_op_end one char (only used by
 				// do_format())
     pos_T	start;		// start of the operator
@@ -3735,6 +3811,8 @@ typedef struct oparg_S
     colnr_T	end_vcol;	// end col for block mode operator
     long	prev_opcount;	// ca.opcount saved for K_CURSORHOLD
     long	prev_count0;	// ca.count0 saved for K_CURSORHOLD
+    int		excl_tr_ws;	// exclude trailing whitespace for yank of a
+				// block
 } oparg_T;
 
 /*
@@ -3851,8 +3929,8 @@ struct VimMenu
     char_u	*en_dname;	    // "dname" untranslated, NULL when "dname"
 				    // was not translated
 #endif
-    int		mnemonic;	    // mnemonic key (after '&')
     char_u	*actext;	    // accelerator text (after TAB)
+    int		mnemonic;	    // mnemonic key (after '&')
     int		priority;	    // Menu order priority
 #ifdef FEAT_GUI
     void	(*cb)(vimmenu_T *); // Call-back function
@@ -4032,7 +4110,7 @@ typedef enum
     EXPR_MULT,		// *
     EXPR_DIV,		// /
     EXPR_REM,		// %
-} exptype_T;
+} exprtype_T;
 
 /*
  * Structure used for reading in json_decode().
@@ -4295,6 +4373,32 @@ typedef struct
     int		sa_wrapped;	// search wrapped around
 } searchit_arg_T;
 
+/*
+ * Cookie used by getsourceline().
+ */
+/*
+ * Cookie used to store info for each sourced file.
+ * It is shared between do_source() and getsourceline().
+ * This is passed to do_cmdline().
+ */
+typedef struct {
+    FILE	*fp;		// opened file for sourcing
+    char_u	*nextline;	// if not NULL: line that was read ahead
+    linenr_T	sourcing_lnum;	// line number of the source file
+    int		finished;	// ":finish" used
+#ifdef USE_CRNL
+    int		fileformat;	// EOL_UNKNOWN, EOL_UNIX or EOL_DOS
+    int		error;		// TRUE if LF found after CR-LF
+#endif
+#ifdef FEAT_EVAL
+    linenr_T	breakpoint;	// next line with breakpoint or zero
+    char_u	*fname;		// name of sourced file
+    int		dbg_tick;	// debug_tick when breakpoint was set
+    int		level;		// top nesting level of sourced file
+#endif
+    vimconv_T	conv;		// type of conversion
+} source_cookie_T;
+
 
 #define WRITEBUFSIZE	8192	// size of normal write buffer
 
@@ -4342,3 +4446,13 @@ typedef enum {
     MAGIC_ON = 3,		// "\m" or 'magic'
     MAGIC_ALL = 4		// "\v" very magic
 } magic_T;
+
+// Struct used to pass to error messages about where the error happened.
+typedef struct {
+    char    *wt_func_name;  // function name or NULL
+    char    wt_index;	    // argument or variable index, 0 means unknown
+    char    wt_variable;    // "variable" when TRUE, "argument" otherwise
+} where_T;
+
+#define WHERE_INIT {NULL, 0, 0}
+

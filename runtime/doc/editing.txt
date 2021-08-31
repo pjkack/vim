@@ -1,4 +1,4 @@
-*editing.txt*   For Vim version 8.2.  Last change: 2020 Dec 19
+*editing.txt*   For Vim version 8.2.  Last change: 2021 Jul 25
 
 
 		  VIM REFERENCE MANUAL    by Bram Moolenaar
@@ -1014,7 +1014,7 @@ to write anyway add a '!' to the command.
 
 							*write-permissions*
 When writing a new file the permissions are read-write.  For unix the mask is
-0666 with additionally umask applied.  When writing a file that was read Vim
+0o666 with additionally umask applied.  When writing a file that was read Vim
 will preserve the permissions, but clear the s-bit.
 
 							*write-readonly*
@@ -1253,7 +1253,7 @@ For versions of Vim where browsing is not supported, the command is executed
 unmodified.
 
 							*browsefilter*
-For MS Windows and GTK, you can modify the filters that are used in the browse
+For MS-Windows and GTK, you can modify the filters that are used in the browse
 dialog.  By setting the g:browsefilter or b:browsefilter variables, you can
 change the filters globally or locally to the buffer.  The variable is set to
 a string in the format "{filter label}\t{pattern};{pattern}\n" where {filter
@@ -1320,8 +1320,8 @@ present in 'cpoptions' and "!" is not used in the command.
 							*:chd* *:chdir*
 :chd[ir][!] [path]	Same as |:cd|.
 
-							*:tcd*
-:tcd[!] {path}		Like |:cd|, but only set the directory for the current
+							*:tc* *:tcd*
+:tc[d][!] {path}	Like |:cd|, but only set the directory for the current
 			tab.  The current window will also use this directory.
 			The current directory is not changed for windows in
 			other tabs and for windows in the current tab that
@@ -1331,7 +1331,7 @@ present in 'cpoptions' and "!" is not used in the command.
 :tch[dir][!]		Same as |:tcd|.
 
 							*:tcd-*
-:tcd[!] -		Change to the previous current directory, before the
+:tc[d][!] -		Change to the previous current directory, before the
 			last ":tcd {path}" command.
 
 							*:lc* *:lcd*
@@ -1469,8 +1469,11 @@ be readable again.  If you use a wrong key, it will be a mess.
 :X	Prompt for an encryption key.  The typing is done without showing the
 	actual text, so that someone looking at the display won't see it.
 	The typed key is stored in the 'key' option, which is used to encrypt
-	the file when it is written.  The file will remain unchanged until you
-	write it.  See also |-x|.
+	the file when it is written.
+	The file will remain unchanged until you write it.  Note that commands
+	such as `:xit` and `ZZ` will NOT write the file unless there are other
+	changes.
+	See also |-x|.
 
 The value of the 'key' options is used when text is written.  When the option
 is not empty, the written file will be encrypted, using the value as the
@@ -1748,6 +1751,12 @@ There are three different types of searching:
 	/u/user_x/work/release/include
 	/u/user_x/work/include
 	/u/user_x/include
+
+<   Note: If your 'path' setting includes an non-existing directory, Vim will
+   skip the non-existing directory, but continues searching in the parent of
+   the non-existing directory if upwards searching is used.  E.g. when
+   searching "../include" and that doesn't exist, and upward searching is
+   used, also searches in "..".
 
 3) Combined up/downward search:
    If Vim's current path is /u/user_x/work/release and you do >

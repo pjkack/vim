@@ -148,9 +148,9 @@ search_regcomp(
 	if (spats[i].pat == NULL)	// pattern was never defined
 	{
 	    if (pat_use == RE_SUBST)
-		emsg(_(e_nopresub));
+		emsg(_(e_no_previous_substitute_regular_expression));
 	    else
-		emsg(_(e_noprevre));
+		emsg(_(e_no_previous_regular_expression));
 	    rc_did_emsg = TRUE;
 	    return FAIL;
 	}
@@ -430,6 +430,10 @@ ignorecase_opt(char_u *pat, int ic_in, int scs)
 pat_has_uppercase(char_u *pat)
 {
     char_u *p = pat;
+    magic_T magic_val = MAGIC_ON;
+
+    // get the magicness of the pattern
+    (void)skip_regexp_ex(pat, NUL, magic_isset(), NULL, NULL, &magic_val);
 
     while (*p != NUL)
     {
@@ -441,7 +445,7 @@ pat_has_uppercase(char_u *pat)
 		return TRUE;
 	    p += l;
 	}
-	else if (*p == '\\')
+	else if (*p == '\\' && magic_val <= MAGIC_ON)
 	{
 	    if (p[1] == '_' && p[2] != NUL)  // skip "\_X"
 		p += 3;
@@ -451,6 +455,13 @@ pat_has_uppercase(char_u *pat)
 		p += 2;
 	    else
 		p += 1;
+	}
+	else if ((*p == '%' || *p == '_') && magic_val == MAGIC_ALL)
+	{
+	    if (p[1] != NUL)  // skip "_X" and %X
+		p += 2;
+	    else
+		p++;
 	}
 	else if (MB_ISUPPER(*p))
 	    return TRUE;
@@ -1217,7 +1228,8 @@ first_submatch(regmmatch_T *rp)
 do_search(
     oparg_T	    *oap,	// can be NULL
     int		    dirc,	// '/' or '?'
-    int		    search_delim, // the delimiter for the search, e.g. '%' in s%regex%replacement%
+    int		    search_delim, // the delimiter for the search, e.g. '%' in
+				  // s%regex%replacement%
     char_u	    *pat,
     long	    count,
     int		    options,
@@ -1322,7 +1334,7 @@ do_search(
 		searchstr = spats[RE_SUBST].pat;
 		if (searchstr == NULL)
 		{
-		    emsg(_(e_noprevre));
+		    emsg(_(e_no_previous_regular_expression));
 		    retval = 0;
 		    goto end_do_search;
 		}
@@ -1476,11 +1488,11 @@ do_search(
 			msgbuf = trunc;
 		    }
 
-    #ifdef FEAT_RIGHTLEFT
-		    // The search pattern could be shown on the right in rightleft
-		    // mode, but the 'ruler' and 'showcmd' area use it too, thus
-		    // it would be blanked out again very soon.  Show it on the
-		    // left, but do reverse the text.
+#ifdef FEAT_RIGHTLEFT
+		    // The search pattern could be shown on the right in
+		    // rightleft mode, but the 'ruler' and 'showcmd' area use
+		    // it too, thus it would be blanked out again very soon.
+		    // Show it on the left, but do reverse the text.
 		    if (curwin->w_p_rl && *curwin->w_p_rlc == 's')
 		    {
 			char_u *r;
@@ -1503,7 +1515,7 @@ do_search(
 				vim_memset(msgbuf + pat_len, ' ', r - msgbuf);
 			}
 		    }
-    #endif
+#endif
 		    msg_outtrans(msgbuf);
 		    msg_clr_eos();
 		    msg_check();
@@ -1548,6 +1560,9 @@ do_search(
 	    }
 	}
 
+	/*
+	 * The actual search.
+	 */
 	c = searchit(curwin, curbuf, &pos, NULL,
 					      dirc == '/' ? FORWARD : BACKWARD,
 		searchstr, count, spats[0].off.end + (options &
@@ -1557,7 +1572,7 @@ do_search(
 		RE_LAST, sia);
 
 	if (dircp != NULL)
-	    *dircp = search_delim;	// restore second '/' or '?' for normal_cmd()
+	    *dircp = search_delim; // restore second '/' or '?' for normal_cmd()
 
 	if (!shortmess(SHM_SEARCH)
 		&& ((dirc == '/' && LT_POS(pos, curwin->w_cursor))
@@ -2141,6 +2156,8 @@ findmatchlimit(
     else if (initc != '#' && initc != NUL)
     {
 	find_mps_values(&initc, &findc, &backwards, TRUE);
+	if (dir)
+	    backwards = (dir == FORWARD) ? FALSE : TRUE;
 	if (findc == NUL)
 	    return NULL;
     }
@@ -2817,6 +2834,8 @@ showmatch(
 	if (*p == NUL)
 	    return;
     }
+    if (*p == NUL)
+	return;
 
     if ((lpos = findmatch(NULL, NUL)) == NULL)	    // no match, so beep
 	vim_beep(BO_MATCH);
@@ -3864,6 +3883,8 @@ search_line:
 #if defined(FEAT_QUICKFIX)
 			if (g_do_tagpreview != 0)
 			{
+			    if (!win_valid(curwin_save))
+				break;
 			    if (!GETFILE_SUCCESS(getfile(
 					   curwin_save->w_buffer->b_fnum, NULL,
 						     NULL, TRUE, lnum, FALSE)))
@@ -4103,6 +4124,9 @@ f_searchcount(typval_T *argvars, typval_T *rettv)
     if (rettv_dict_alloc(rettv) == FAIL)
 	return;
 
+    if (in_vim9script() && check_for_opt_dict_arg(argvars, 0) == FAIL)
+	return;
+
     if (shortmess(SHM_SEARCHCOUNT))	// 'shortmess' contains 'S' flag
 	recompute = TRUE;
 
@@ -4281,10 +4305,6 @@ typedef struct
 #define SCORE_NONE	-9999
 
 #define FUZZY_MATCH_RECURSION_LIMIT	10
-// Maximum number of characters that can be fuzzy matched
-#define MAXMATCHES			256
-
-typedef int_u		matchidx_T;
 
 /*
  * Compute a score for a fuzzy matched string. The matching character locations
@@ -4294,7 +4314,7 @@ typedef int_u		matchidx_T;
 fuzzy_match_compute_score(
 	char_u		*str,
 	int		strSz,
-	matchidx_T	*matches,
+	int_u		*matches,
 	int		numMatches)
 {
     int		score;
@@ -4302,7 +4322,7 @@ fuzzy_match_compute_score(
     int		unmatched;
     int		i;
     char_u	*p = str;
-    matchidx_T	sidx = 0;
+    int_u	sidx = 0;
 
     // Initialize score
     score = 100;
@@ -4320,11 +4340,11 @@ fuzzy_match_compute_score(
     // Apply ordering bonuses
     for (i = 0; i < numMatches; ++i)
     {
-	matchidx_T	currIdx = matches[i];
+	int_u	currIdx = matches[i];
 
 	if (i > 0)
 	{
-	    matchidx_T	prevIdx = matches[i - 1];
+	    int_u	prevIdx = matches[i - 1];
 
 	    // Sequential
 	    if (currIdx == (prevIdx + 1))
@@ -4382,19 +4402,19 @@ fuzzy_match_compute_score(
 fuzzy_match_recursive(
 	char_u		*fuzpat,
 	char_u		*str,
-	matchidx_T	strIdx,
+	int_u		strIdx,
 	int		*outScore,
 	char_u		*strBegin,
 	int		strLen,
-	matchidx_T	*srcMatches,
-	matchidx_T	*matches,
+	int_u		*srcMatches,
+	int_u		*matches,
 	int		maxMatches,
 	int		nextMatch,
 	int		*recursionCount)
 {
     // Recursion params
     int		recursiveMatch = FALSE;
-    matchidx_T	bestRecursiveMatches[MAXMATCHES];
+    int_u	bestRecursiveMatches[MAX_FUZZY_MATCHES];
     int		bestRecursiveScore = 0;
     int		first_match;
     int		matched;
@@ -4405,7 +4425,7 @@ fuzzy_match_recursive(
 	return 0;
 
     // Detect end of strings
-    if (*fuzpat == '\0' || *str == '\0')
+    if (*fuzpat == NUL || *str == NUL)
 	return 0;
 
     // Loop through fuzpat and str looking for a match
@@ -4421,7 +4441,7 @@ fuzzy_match_recursive(
 	// Found match
 	if (vim_tolower(c1) == vim_tolower(c2))
 	{
-	    matchidx_T	recursiveMatches[MAXMATCHES];
+	    int_u	recursiveMatches[MAX_FUZZY_MATCHES];
 	    int		recursiveScore = 0;
 	    char_u	*next_char;
 
@@ -4444,14 +4464,14 @@ fuzzy_match_recursive(
 	    if (fuzzy_match_recursive(fuzpat, next_char, strIdx + 1,
 			&recursiveScore, strBegin, strLen, matches,
 			recursiveMatches,
-			sizeof(recursiveMatches)/sizeof(recursiveMatches[0]),
+			ARRAY_LENGTH(recursiveMatches),
 			nextMatch, recursionCount))
 	    {
 		// Pick best recursive score
 		if (!recursiveMatch || recursiveScore > bestRecursiveScore)
 		{
 		    memcpy(bestRecursiveMatches, recursiveMatches,
-			    MAXMATCHES * sizeof(recursiveMatches[0]));
+			    MAX_FUZZY_MATCHES * sizeof(recursiveMatches[0]));
 		    bestRecursiveScore = recursiveScore;
 		}
 		recursiveMatch = TRUE;
@@ -4502,19 +4522,19 @@ fuzzy_match_recursive(
  * normalized and varies with pattern.
  * Recursion is limited internally (default=10) to prevent degenerate cases
  * (pat_arg="aaaaaa" str="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").
- * Uses char_u for match indices. Therefore patterns are limited to MAXMATCHES
- * characters.
+ * Uses char_u for match indices. Therefore patterns are limited to
+ * MAX_FUZZY_MATCHES characters.
  *
  * Returns TRUE if 'pat_arg' matches 'str'. Also returns the match score in
  * 'outScore' and the matching character positions in 'matches'.
  */
-    static int
+    int
 fuzzy_match(
 	char_u		*str,
 	char_u		*pat_arg,
 	int		matchseq,
 	int		*outScore,
-	matchidx_T	*matches,
+	int_u		*matches,
 	int		maxMatches)
 {
     int		recursionCount = 0;
@@ -4626,7 +4646,7 @@ fuzzy_match_in_list(
     listitem_T	*li;
     long	i = 0;
     int		found_match = FALSE;
-    matchidx_T	matches[MAXMATCHES];
+    int_u	matches[MAX_FUZZY_MATCHES];
 
     len = list_len(items);
     if (len == 0)
@@ -4794,6 +4814,12 @@ do_fuzzymatch(typval_T *argvars, typval_T *rettv, int retmatchpos)
     int		ret;
     int		matchseq = FALSE;
 
+    if (in_vim9script()
+	    && (check_for_list_arg(argvars, 0) == FAIL
+		|| check_for_string_arg(argvars, 1) == FAIL
+		|| check_for_opt_dict_arg(argvars, 2) == FAIL))
+	return;
+
     CLEAR_POINTER(&cb);
 
     // validate and get the arguments
@@ -4843,7 +4869,7 @@ do_fuzzymatch(typval_T *argvars, typval_T *rettv, int retmatchpos)
 		return;
 	    }
 	}
-	if ((di = dict_find(d, (char_u *)"matchseq", -1)) != NULL)
+	if (dict_find(d, (char_u *)"matchseq", -1) != NULL)
 	    matchseq = TRUE;
     }
 

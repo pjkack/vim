@@ -381,6 +381,15 @@
     <ClCompile Include="textobject.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="alloc.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="float.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="strings.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="bvim.rc">

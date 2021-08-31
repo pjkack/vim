@@ -5570,7 +5570,7 @@ func Test_expr_eval_error_msg()
     call T(19, '{(1} + CONT(19)',	'E110',	"Missing ')'")
     call T(20, '("abc"[1) + CONT(20)',	'E111',	"Missing ']'")
     call T(21, '(1 +) + CONT(21)',	'E15',	"Invalid expression")
-    call T(22, '1 2 + CONT(22)',	'E15',	"Invalid expression")
+    call T(22, '1 2 + CONT(22)',	'E488',	"Trailing characters: 2 +")
     call T(23, '(1 ? 2) + CONT(23)',	'E109',	"Missing ':' after '?'")
     call T(24, '("abc) + CONT(24)',	'E114',	"Missing quote")
     call T(25, "('abc) + CONT(25)",	'E115',	"Missing quote")
@@ -5657,7 +5657,12 @@ func Test_throw_multi_error()
           call EXEC(cmd . ' novar #')		" normal plus syntax error
         catch /^Vim\((\a\+)\)\=:/
           Xloop 'e'
-          call assert_match('E488: Trailing characters', v:exception)
+          if cmd =~ 'unlet'
+            " TODO: should get error for 'novar'
+            call assert_match('E488: Trailing characters', v:exception)
+          else
+            call assert_match('E121: Undefined variable: novar', v:exception)
+          endif
         finally
           Xloop 'f'
           call assert_equal("", v:errmsg)
@@ -6600,6 +6605,21 @@ func Test_type()
     call ChangeYourMind()
 endfunc
 
+func Test_typename()
+  call assert_equal('number', typename(123))
+  call assert_equal('string', typename('x'))
+  call assert_equal('list<number>', typename([123]))
+  call assert_equal('dict<number>', typename(#{key: 123}))
+  call assert_equal('list<dict<number>>', typename([#{key: 123}]))
+
+  let l = []
+  let d = #{a: 0}
+  let l = [d]
+  let l[0].e = #{b: l}
+  call assert_equal('list<dict<any>>', typename(l))
+  call assert_equal('dict<any>', typename(d))
+endfunc
+
 "-------------------------------------------------------------------------------
 " Test 92:  skipping code					    {{{1
 "-------------------------------------------------------------------------------
@@ -7068,6 +7088,15 @@ func Test_compound_assignment_operators()
     call assert_fails('let &scrolljump .= "j"', 'E734:')
     set scrolljump&vim
 
+    let &foldlevelstart = 2
+    let &foldlevelstart -= 1
+    call assert_equal(1, &foldlevelstart)
+    let &foldlevelstart -= 1
+    call assert_equal(0, &foldlevelstart)
+    let &foldlevelstart = 2
+    let &foldlevelstart -= 2
+    call assert_equal(0, &foldlevelstart)
+
     " Test for register
     let @/ = 1
     call assert_fails('let @/ += 1', 'E734:')
@@ -7468,6 +7497,26 @@ func Test_trinary_expression()
   " previous failure should not cause next expression to fail
   call assert_equal(v:false, eval(string(v:false)))
 endfunction
+
+func Test_for_over_string()
+  let res = ''
+  for c in 'aéc̀d'
+    let res ..= c .. '-'
+  endfor
+  call assert_equal('a-é-c̀-d-', res)
+
+  let res = ''
+  for c in ''
+    let res ..= c .. '-'
+  endfor
+  call assert_equal('', res)
+
+  let res = ''
+  for c in test_null_string()
+    let res ..= c .. '-'
+  endfor
+  call assert_equal('', res)
+endfunc
 
 "-------------------------------------------------------------------------------
 " Modelines								    {{{1
