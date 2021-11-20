@@ -39,6 +39,8 @@
 static int bore_canonicalize (const char* src, char* dst, DWORD* attr);
 static u32 bore_string_hash(const char* s);
 static u32 bore_string_hash_n(const char* s, int n);
+static int bore_is_excluded_file(const char* path);
+static int bore_is_excluded_file_n(const char* path, int len);
 
 void bore_prealloc(bore_alloc_t* p, size_t size)
 {
@@ -165,23 +167,79 @@ static int bore_is_sln_directory(bore_t* b)
 
 static int bore_is_excluded_file(const char* path)
 {
-    // TODO-jkjellstrom: Use extension hash when supported?
-    const char* ext = (char*)vim_strrchr((char_u*)path, '.');
-    if (ext)
-    {
-        ++ext;
-        if (0 == STRICMP((char*)ext, "bin") ||
-            0 == STRICMP((char*)ext, "dll") ||
-            0 == STRICMP((char*)ext, "exe") ||
-            0 == STRICMP((char*)ext, "pdb") ||
-            0 == STRICMP((char*)ext, "zip") ||
-            0 == STRICMP((char*)ext, "bmp") ||
-            0 == STRICMP((char*)ext, "gif") ||
-            0 == STRICMP((char*)ext, "jpg") ||
-            0 == STRICMP((char*)ext, "psd") ||
-            0 == STRICMP((char*)ext, "png"))
-            return 1;
-    }
+    return bore_is_excluded_file_n(path, -1);
+}
+
+static int bore_is_excluded_file_n(const char* path, int len)
+{
+    const char* ext;
+    if (len > 0)
+        for (ext = path + len - 1; ext >= path && *ext != '.'; --ext);
+    else
+        ext = (char*)vim_strrchr((char_u*)path, '.');
+
+    if (0 == ext || *ext != '.')
+        return 0;
+    ++ext;
+
+    char ext_low[16];
+    int i;
+    for (i = 0; i < 15 && ext[i]; ++i)
+        ext_low[i] = TOLOWER_LOC(ext[i]);
+    ext_low[i] = 0;
+
+    if (
+            0 == STRCMP(ext_low, "a") ||
+            0 == STRCMP(ext_low, "apk") ||
+            0 == STRCMP(ext_low, "bin") ||
+            0 == STRCMP(ext_low, "dll") ||
+            0 == STRCMP(ext_low, "exe") ||
+            0 == STRCMP(ext_low, "jar") ||
+            0 == STRCMP(ext_low, "lib") ||
+            0 == STRCMP(ext_low, "msi") ||
+            0 == STRCMP(ext_low, "nupkg") ||
+            0 == STRCMP(ext_low, "obj") ||
+            0 == STRCMP(ext_low, "pdb") ||
+            0 == STRCMP(ext_low, "prx") ||
+            0 == STRCMP(ext_low, "so") ||
+            0
+       ) return 1;
+
+    if (
+            0 == STRCMP(ext_low, "bmp") ||
+            0 == STRCMP(ext_low, "gif") ||
+            0 == STRCMP(ext_low, "jpg") ||
+            0 == STRCMP(ext_low, "pdf") ||
+            0 == STRCMP(ext_low, "png") ||
+            0 == STRCMP(ext_low, "psd") ||
+            0 == STRCMP(ext_low, "tga") ||
+            0
+       ) return 1;
+
+    if (
+            0 == STRCMP(ext_low, "mp3") ||
+            0 == STRCMP(ext_low, "mp4") ||
+            0 == STRCMP(ext_low, "wav") ||
+            0
+       ) return 1;
+
+    if (
+            0 == STRCMP(ext_low, "db") ||
+            0 == STRCMP(ext_low, "pgc") ||
+            0 == STRCMP(ext_low, "pgd") ||
+            0 == STRCMP(ext_low, "profdata") ||
+            0 == STRCMP(ext_low, "res") ||
+            0
+       ) return 1;
+
+    if (
+            0 == STRCMP((char*)ext, "7z") ||
+            0 == STRCMP((char*)ext, "cab") ||
+            0 == STRCMP((char*)ext, "gz") ||
+            0 == STRCMP((char*)ext, "tgz") ||
+            0 == STRCMP((char*)ext, "zip") ||
+            0
+       ) return 1;
 
     return 0;
 }
@@ -192,9 +250,11 @@ static void bore_load_vcxproj_files(bore_t* b, int proj_index, const char* path)
     char buf[BORE_MAX_PATH];
     char filename_buf[BORE_MAX_PATH];
     char* filename_part;
+    char* ext_part;
     int path_len;
     int skipFile = 0;
     DWORD attr;
+    BOOL is_csproj;
 
     f = fopen(path, "rb");
     if (!f)
@@ -203,6 +263,8 @@ static void bore_load_vcxproj_files(bore_t* b, int proj_index, const char* path)
     strcpy(filename_buf, path);
     filename_part = (char*)vim_strrchr((char_u*)filename_buf, '\\') + 1;
     path_len = filename_part - filename_buf;
+    ext_part = (char*)vim_strrchr((char_u*)filename_buf, '.');
+    is_csproj = ext_part > filename_part && 0 == STRNCMP((char*)ext_part, ".csproj", 7);
 
     while (0 == vim_fgets((char_u*)buf, sizeof(buf), f))
     {
@@ -217,7 +279,76 @@ static void bore_load_vcxproj_files(bore_t* b, int proj_index, const char* path)
                 int len = end - filename_part;
                 filename_part[len] = 0;
                 vim_strncpy(filename_buf + path_len, filename_part, len);
-                fn = (len >=2 && filename_part[1] == ':') ? filename_part : filename_buf;
+                if (len >= 2 && filename_part[1] == ':')
+                {
+                    fn = filename_part;
+                }
+                else
+                {
+                    fn = filename_buf;
+                    len += path_len;
+                }
+                char* wildcard = (char*)vim_strchr((char_u*)fn, '*');
+                if (!wildcard)
+                {
+                    skipFile = bore_is_excluded_file_n(fn, len);
+                    if (!skipFile && FAIL != bore_canonicalize(fn, buf, &attr))
+                    {
+                        if (!(FILE_ATTRIBUTE_DIRECTORY & attr))
+                        {
+                            bore_file_t* files = (bore_file_t*)bore_alloc(&b->file_alloc, sizeof(bore_file_t));
+                            files->file = bore_strndup(b, buf, strlen(buf));
+                            files->proj_index = proj_index;
+                            ++b->file_count;
+                        }
+                    }
+                    continue;
+                }
+
+                int retval;
+                int num_files;
+                char_u **files;
+
+                retval = gen_expand_wildcards(1, (char_u**)&fn, &num_files, &files, EW_FILE|EW_NOTWILD);
+                if (retval)
+                {
+                    for (int i = 0; i < num_files; ++i)
+                    {
+                        char* fn = (char*)files[i];
+                        skipFile = bore_is_excluded_file(fn);
+                        if (!skipFile && FAIL != bore_canonicalize(fn, buf, &attr))
+                        {
+                            if (!(FILE_ATTRIBUTE_DIRECTORY & attr))
+                            {
+                                bore_file_t* files = (bore_file_t*)bore_alloc(&b->file_alloc, sizeof(bore_file_t));
+                                files->file = bore_strndup(b, buf, strlen(buf));
+                                files->proj_index = proj_index;
+                                ++b->file_count;
+                            }
+                        }
+                    }
+                }
+                FreeWild(num_files, files);
+            }
+        }
+    }
+
+    fclose(f);
+
+    if (is_csproj)
+    {
+        int retval;
+        int num_files;
+        char_u **files;
+
+        filename_part = filename_buf;
+        vim_strncpy(filename_buf + path_len, "**/*.cs", 7);
+        retval = gen_expand_wildcards(1, (char_u**)&filename_part, &num_files, &files, EW_FILE|EW_NOTWILD);
+        if (retval)
+        {
+            for (int i = 0; i < num_files; ++i)
+            {
+                char* fn = (char*)files[i];
                 skipFile = bore_is_excluded_file(fn);
                 if (!skipFile && FAIL != bore_canonicalize(fn, buf, &attr))
                 {
@@ -231,9 +362,8 @@ static void bore_load_vcxproj_files(bore_t* b, int proj_index, const char* path)
                 }
             }
         }
+        FreeWild(num_files, files);
     }
-
-    fclose(f);
 }
 
 typedef struct bore_guid_map_t
@@ -291,9 +421,7 @@ static int bore_extract_projects_and_files_from_sln(bore_t* b, const char* sln_p
                 }
                 else
                 {
-                    // TODO-pkack: string hack required since bore_canonicalize use cd which has "\local" stripped
-                    vim_strncpy(buf2, (char*)sln_path, sln_path_dir_len);
-                    vim_strncpy(buf2 + sln_path_dir_len, regmatch.startp[2], regmatch.endp[2] - regmatch.startp[2]);
+                    vim_strncpy(buf2, regmatch.startp[2], regmatch.endp[2] - regmatch.startp[2]);
                     if (FAIL != bore_canonicalize(buf2, buf, 0))
                         proj->project_file_path = bore_strndup(b, buf, strlen(buf));
                     else
@@ -329,21 +457,15 @@ static int bore_extract_projects_and_files_from_sln(bore_t* b, const char* sln_p
                     int skipFile = 0;
 
                     *ends = 0;
-                    skipFile = bore_is_excluded_file(buf);
-                    if (!skipFile)
+                    skipFile = bore_is_excluded_file(&buf[2]); // "\t\t"
+                    if (!skipFile && FAIL != bore_canonicalize(&buf[2], buf, &attr))
                     {
-                        // TODO-pkack: string hack required since bore_canonicalize use cd which has "\local" stripped
-                        vim_strncpy(buf2, (char*)sln_path, sln_path_dir_len);
-                        strcpy(buf2 + sln_path_dir_len, &buf[2]);
-                        if (FAIL != bore_canonicalize(buf2, buf, &attr))
+                        if (!(FILE_ATTRIBUTE_DIRECTORY & attr))
                         {
-                            if (!(FILE_ATTRIBUTE_DIRECTORY & attr))
-                            {
-                                bore_file_t* files = (bore_file_t*)bore_alloc(&b->file_alloc, sizeof(bore_file_t));
-                                files->file = bore_strndup(b, buf, strlen(buf));
-                                files->proj_index = b->proj_count - 1;
-                                ++b->file_count;
-                            }
+                            bore_file_t* files = (bore_file_t*)bore_alloc(&b->file_alloc, sizeof(bore_file_t));
+                            files->file = bore_strndup(b, buf, strlen(buf));
+                            files->proj_index = b->proj_count - 1;
+                            ++b->file_count;
                         }
                     }
                 }
@@ -740,14 +862,16 @@ static int bore_build_toggle_index(bore_t* b)
         bore_string_hash("cpp"),
         bore_string_hash("cxx"),
         bore_string_hash("c"),
+        bore_string_hash("cc"),
         bore_string_hash("inl"),
+        bore_string_hash("inc"),
         bore_string_hash("hpp"),
         bore_string_hash("hxx"),
         bore_string_hash("h"),
+        bore_string_hash("hh"),
         bore_string_hash("pro"),
         bore_string_hash("asm"),
         bore_string_hash("s"),
-        bore_string_hash("ddf"), 
     };
     bore_prealloc(&b->toggle_index_alloc, b->file_count * sizeof(bore_toggle_entry_t));
     b->toggle_entry_count = 0;
@@ -863,27 +987,13 @@ static int bore_extract_sln_from_path(bore_t* b, const char* path)
 
         // set solution name to file name part of path
         if (pc)
-            b->sln_name = b->sln_path + (pc - sln_dir_str) + 1;
-        else
-            b->sln_name = b->sln_path;
-
-        if (pc)
         {
+            b->sln_name = b->sln_path + (pc - sln_dir_str) + 1;
             pc[1] = 0; // Keep trailing backslash
-
-            // Special case. If the solution file is in a local folder, then assume 
-            // code paths start one level up from that
-            while (--pc > sln_dir_str)
-            {
-                if (*pc == '\\')
-                {
-                    if (STRICMP(pc, "\\Local\\") == 0)
-                    {
-                        pc[1] = 0; // Keep trailing backslash
-                    }
-                    break;
-                }
-            }
+        }
+        else
+        {
+            b->sln_name = b->sln_path;
         }
     }
 
@@ -1164,7 +1274,7 @@ static u32 bore_string_hash_n(const char *str, int n)
 
     h = 0;
     for (; p != pend && *p != '\0'; p++)
-        h = 33 * h + tolower(*p);
+        h = 33 * h + TOLOWER_LOC(*p);
     return h + (h >> 5);
 }
 
@@ -1207,7 +1317,7 @@ static int bore_find(bore_t* b, const char* arg, bore_search_t* search)
 
     match = (bore_match_t*)alloc(search->match_count * sizeof(bore_match_t));
 
-    int threadCount = 4;
+    int threadCount = 8;
     const char_u* threadCountStr = get_var_value((char_u *)"g:bore_search_thread_count");
     if (threadCountStr)
     {
