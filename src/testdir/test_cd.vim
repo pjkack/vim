@@ -44,6 +44,13 @@ func Test_cd_minus()
   cd -
   call assert_equal(path, getcwd())
 
+  " Test for :cd - after a failed :cd
+  call assert_fails('cd /nonexistent', 'E344:')
+  call assert_equal(path, getcwd())
+  cd -
+  call assert_equal(path_dotdot, getcwd())
+  cd -
+
   " Test for :cd - without a previous directory
   let lines =<< trim [SCRIPT]
     call assert_fails('cd -', 'E186:')
@@ -51,22 +58,21 @@ func Test_cd_minus()
     call writefile(v:errors, 'Xresult')
     qall!
   [SCRIPT]
-  call writefile(lines, 'Xscript')
+  call writefile(lines, 'Xscript', 'D')
   if RunVim([], [], '--clean -S Xscript')
     call assert_equal([], readfile('Xresult'))
   endif
-  call delete('Xscript')
   call delete('Xresult')
 endfunc
 
 " Test for chdir()
 func Test_chdir_func()
   let topdir = getcwd()
-  call mkdir('Xdir/y/z', 'p')
+  call mkdir('Xchdir/y/z', 'pR')
 
   " Create a few tabpages and windows with different directories
   new
-  cd Xdir
+  cd Xchdir
   tabnew
   tcd y
   below new
@@ -74,22 +80,22 @@ func Test_chdir_func()
   lcd z
 
   tabfirst
-  call assert_match('^\[global\] .*/Xdir$', trim(execute('verbose pwd')))
+  call assert_match('^\[global\] .*/Xchdir$', trim(execute('verbose pwd')))
   call chdir('..')
   call assert_equal('y', fnamemodify(getcwd(1, 2), ':t'))
   call assert_equal('z', fnamemodify(3->getcwd(2), ':t'))
   tabnext | wincmd t
   call assert_match('^\[tabpage\] .*/y$', trim(execute('verbose pwd')))
   eval '..'->chdir()
-  call assert_equal('Xdir', fnamemodify(getcwd(1, 2), ':t'))
-  call assert_equal('Xdir', fnamemodify(getcwd(2, 2), ':t'))
+  call assert_equal('Xchdir', fnamemodify(getcwd(1, 2), ':t'))
+  call assert_equal('Xchdir', fnamemodify(getcwd(2, 2), ':t'))
   call assert_equal('z', fnamemodify(getcwd(3, 2), ':t'))
   call assert_equal('testdir', fnamemodify(getcwd(1, 1), ':t'))
   3wincmd w
   call assert_match('^\[window\] .*/z$', trim(execute('verbose pwd')))
   call chdir('..')
-  call assert_equal('Xdir', fnamemodify(getcwd(1, 2), ':t'))
-  call assert_equal('Xdir', fnamemodify(getcwd(2, 2), ':t'))
+  call assert_equal('Xchdir', fnamemodify(getcwd(1, 2), ':t'))
+  call assert_equal('Xchdir', fnamemodify(getcwd(2, 2), ':t'))
   call assert_equal('y', fnamemodify(getcwd(3, 2), ':t'))
   call assert_equal('testdir', fnamemodify(getcwd(1, 1), ':t'))
 
@@ -103,20 +109,19 @@ func Test_chdir_func()
 
   only | tabonly
   call chdir(topdir)
-  call delete('Xdir', 'rf')
 endfunc
 
 " Test for changing to the previous directory '-'
 func Test_prev_dir()
   let topdir = getcwd()
-  call mkdir('Xdir/a/b/c', 'p')
+  call mkdir('Xprevdir/a/b/c', 'pR')
 
   " Create a few tabpages and windows with different directories
   new | only
   tabnew | new
   tabnew
   tabfirst
-  cd Xdir
+  cd Xprevdir
   tabnext | wincmd t
   tcd a
   wincmd w
@@ -136,7 +141,7 @@ func Test_prev_dir()
 
   " Check the directory of all the windows
   tabfirst
-  call assert_equal('Xdir', fnamemodify(getcwd(), ':t'))
+  call assert_equal('Xprevdir', fnamemodify(getcwd(), ':t'))
   tabnext | wincmd t
   call assert_equal('a', fnamemodify(getcwd(), ':t'))
   wincmd w
@@ -156,7 +161,7 @@ func Test_prev_dir()
 
   " Check the directory of all the windows
   tabfirst
-  call assert_equal('Xdir', fnamemodify(getcwd(), ':t'))
+  call assert_equal('Xprevdir', fnamemodify(getcwd(), ':t'))
   tabnext | wincmd t
   call assert_equal('a', fnamemodify(getcwd(), ':t'))
   wincmd w
@@ -166,7 +171,6 @@ func Test_prev_dir()
 
   only | tabonly
   call chdir(topdir)
-  call delete('Xdir', 'rf')
 endfunc
 
 func Test_lcd_split()
@@ -194,18 +198,50 @@ func Test_cd_from_non_existing_dir()
 endfunc
 
 func Test_cd_completion()
-  call mkdir('XComplDir1', 'p')
-  call mkdir('XComplDir2', 'p')
-  call writefile([], 'XComplFile')
+  call mkdir('XComplDir1', 'D')
+  call mkdir('XComplDir2', 'D')
+  call writefile([], 'XComplFile', 'D')
 
   for cmd in ['cd', 'chdir', 'lcd', 'lchdir', 'tcd', 'tchdir']
     call feedkeys(':' .. cmd .. " XCompl\<C-A>\<C-B>\"\<CR>", 'tx')
     call assert_equal('"' .. cmd .. ' XComplDir1/ XComplDir2/', @:)
   endfor
+endfunc
 
-  call delete('XComplDir1', 'd')
-  call delete('XComplDir2', 'd')
-  call delete('XComplFile')
+func Test_cd_unknown_dir()
+  call mkdir('Xa', 'R')
+  cd Xa
+  call writefile(['text'], 'Xb.txt')
+  edit Xa/Xb.txt
+  let first_buf = bufnr()
+  cd ..
+  edit
+  call assert_equal(first_buf, bufnr())
+  edit Xa/Xb.txt
+  call assert_notequal(first_buf, bufnr())
+
+  bwipe!
+  exe "bwipe! " .. first_buf
+endfunc
+
+func Test_getcwd_actual_dir()
+  CheckOption autochdir
+
+  let startdir = getcwd()
+  call mkdir('Xactual', 'R')
+  call test_autochdir()
+  set autochdir
+  edit Xactual/file.txt
+  call assert_match('testdir.Xactual$', getcwd())
+  lcd ..
+  call assert_match('testdir$', getcwd())
+  edit
+  call assert_match('testdir.Xactual$', getcwd())
+  call assert_match('testdir$', getcwd(win_getid()))
+
+  set noautochdir
+  bwipe!
+  call chdir(startdir)
 endfunc
 
 " vim: shiftwidth=2 sts=2 expandtab

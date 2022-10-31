@@ -2,7 +2,7 @@
  *
  * VIM - Vi IMproved    by Bram Moolenaar
  *
- * Bore by Jonas Kjellström & Per-Jonny Käck
+ * Bore by Jonas KjellstrÃ¶m & Per-Jonny KÃ¤ck
  *
  * Do ":help uganda"  in Vim to read copying and usage conditions.
  * Do ":help credits" in Vim to see a list of people who contributed.
@@ -1349,7 +1349,7 @@ static int bore_find(bore_t* b, const char* arg, bore_search_t* search)
     cf = mch_fopen((char *)tmp, "wb");
     if (cf == NULL)
     {
-        semsg(_(e_notopen), tmp);
+        semsg(_(e_cant_open_file_str), tmp);
         goto fail;
     }
     bore_save_match_to_file(b, cf, match, found);
@@ -1374,66 +1374,46 @@ fail:
 static void bore_show_borebuf(bore_t* b, const char* filename, int minheight, const char** mappings)
 {
     char_u  maparg[512];
-#ifdef FEAT_WINDOWS
-    win_T    *wp;
-#endif
+    win_T   *wp;
     int    empty_fnum = 0;
     int    alt_fnum = 0;
-    buf_T    *buf;
-    FILE    *filelist_fd = 0;
+    buf_T  *buf;
+    FILE   *filelist_fd = 0;
+    int    n;
 
 #ifdef FEAT_GUI
     need_mouse_correct = TRUE;
 #endif
 
-    /*
-     * Re-use an existing bore window or open a new one.
-     */
+    // Re-use an existing help window or open a new one.
     if (!curwin->w_buffer->b_borebuf)
     {
-#ifdef FEAT_WINDOWS
-        for (wp = firstwin; wp != NULL; wp = wp->w_next)
+        FOR_ALL_WINDOWS(wp)
             if (wp->w_buffer != NULL && wp->w_buffer->b_borebuf)
                 break;
         if (wp != NULL && wp->w_buffer->b_nwindows > 0)
             win_enter(wp, TRUE);
         else
-#endif
         {
-#ifdef FEAT_WINDOWS
-            /* Split off help window; put it at far top if no position
-             * specified, the current window is vertically split and
-             * narrow. */
-            n = WSP_HELP;
-# ifdef FEAT_VERTSPLIT
-            if (cmdmod.split == 0 && curwin->w_width != Columns
-                    && curwin->w_width < 80)
-                n |= WSP_TOP;
-# endif
-            if (win_split(0, n) == FAIL)
-                goto erret;
-#else
-            /* use current window */
-            if (!can_abandon(curbuf, FALSE))
-                goto erret;
-#endif
+	    // Split off help window; put it at far top if no position
+	    // specified, the current window is vertically split and
+	    // narrow.
+	    n = WSP_HELP;
+	    if (cmdmod.cmod_split == 0 && curwin->w_width != Columns
+		    && curwin->w_width < 80)
+		n |= p_sb ? WSP_BOT : WSP_TOP;
+	    if (win_split(0, n) == FAIL)
+		goto erret;
 
-#ifdef FEAT_WINDOWS
-            if (curwin->w_height < minheight)
-                win_setheight(minheight);
-#endif
+	    if (curwin->w_height < p_hh)
+		win_setheight((int)p_hh);
 
             alt_fnum = curbuf->b_fnum;
             // Piggyback on the help window which has the properties we want for borebuf too.
             // (readonly, can't insert text, etc)
-            (void)do_ecmd(0, (char*)filename, NULL, NULL, ECMD_LASTL, ECMD_HIDE + ECMD_SET_HELP,
-#ifdef FEAT_WINDOWS
-                    NULL  /* buffer is still open, don't store info */
-#else
-                    curwin
-#endif
-                    );
-
+            (void)do_ecmd(0, (char*)filename, NULL, NULL, ECMD_LASTL,
+		    ECMD_HIDE + ECMD_SET_HELP,
+                    NULL);  // buffer is still open, don't store info
             if ((cmdmod.cmod_flags & CMOD_KEEPALT) == 0)
                 curwin->w_alt_fnum = alt_fnum;
             empty_fnum = curbuf->b_fnum;
@@ -1447,7 +1427,7 @@ static void bore_show_borebuf(bore_t* b, const char* filename, int minheight, co
     while(*mappings)
     {
         sprintf(maparg, "<buffer> %s", *mappings);
-        if (0 != do_map(0, maparg, NORMAL, FALSE))
+        if (0 != do_map(MAPTYPE_MAP, maparg, MODE_NORMAL, FALSE))
             goto erret;
         ++mappings;
     }
@@ -1608,7 +1588,7 @@ void bore_async_execute_update(DWORD flags)
         eap.cmdidx = CMD_cwindow;
         ex_copen(&eap);
     }
-    update_screen(VALID);
+    update_screen(UPD_VALID);
     
 done:
     if (completed)

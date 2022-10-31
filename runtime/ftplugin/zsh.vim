@@ -2,7 +2,7 @@
 " Language:             Zsh shell script
 " Maintainer:           Christian Brabandt <cb@256bit.org>
 " Previous Maintainer:  Nikolai Weibull <now@bitwi.se>
-" Latest Revision:      2020-09-01
+" Latest Revision:      2021-04-03
 " License:              Vim (see :h license)
 " Repository:           https://github.com/chrisbra/vim-zsh
 
@@ -18,13 +18,13 @@ setlocal comments=:# commentstring=#\ %s formatoptions-=t formatoptions+=croql
 
 let b:undo_ftplugin = "setl com< cms< fo< "
 
-if executable('zsh')
+if executable('zsh') && &shell !~# '/\%(nologin\|false\)$'
   if !has('gui_running') && executable('less')
-    command! -buffer -nargs=1 RunHelp silent exe '!MANPAGER= zsh -ic "autoload -Uz run-help; run-help <args> 2>/dev/null | LESS= less"' | redraw!
+    command! -buffer -nargs=1 RunHelp silent exe '!MANPAGER= zsh -c "autoload -Uz run-help; run-help <args> 2>/dev/null | LESS= less"' | redraw!
   elseif has('terminal')
-    command! -buffer -nargs=1 RunHelp silent exe ':term zsh -ic "autoload -Uz run-help; run-help <args>"'
+    command! -buffer -nargs=1 RunHelp silent exe ':term zsh -c "autoload -Uz run-help; run-help <args>"'
   else
-    command! -buffer -nargs=1 RunHelp echo system('zsh -ic "autoload -Uz run-help; run-help <args> 2>/dev/null"')
+    command! -buffer -nargs=1 RunHelp echo system('zsh -c "autoload -Uz run-help; run-help <args> 2>/dev/null"')
   endif
   if !exists('current_compiler')
     compiler zsh

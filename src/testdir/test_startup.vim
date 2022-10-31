@@ -43,14 +43,14 @@ func Test_after_comes_later()
     quit
   [CODE]
 
-  call mkdir('Xhere/plugin', 'p')
+  call mkdir('Xhere/plugin', 'pR')
   call writefile(['let g:sequence .= "here "'], 'Xhere/plugin/here.vim')
-  call mkdir('Xanother/plugin', 'p')
+  call mkdir('Xanother/plugin', 'pR')
   call writefile(['let g:sequence .= "another "'], 'Xanother/plugin/another.vim')
   call mkdir('Xhere/pack/foo/start/foobar/plugin', 'p')
   call writefile(['let g:sequence .= "pack "'], 'Xhere/pack/foo/start/foobar/plugin/foo.vim')
 
-  call mkdir('Xafter/plugin', 'p')
+  call mkdir('Xafter/plugin', 'pR')
   call writefile(['let g:sequence .= "after "'], 'Xafter/plugin/later.vim')
 
   if RunVim(before, after, '')
@@ -72,9 +72,6 @@ func Test_after_comes_later()
 
   call delete('Xtestout')
   call delete('Xsequence')
-  call delete('Xhere', 'rf')
-  call delete('Xanother', 'rf')
-  call delete('Xafter', 'rf')
 endfunc
 
 func Test_pack_in_rtp_when_plugins_run()
@@ -92,7 +89,7 @@ func Test_pack_in_rtp_when_plugins_run()
   let after = [
 	\ 'quit',
 	\ ]
-  call mkdir('Xhere/plugin', 'p')
+  call mkdir('Xhere/plugin', 'pR')
   call writefile(['redir! > Xtestout', 'silent set runtimepath?', 'silent! call foo#Trigger()', 'redir END'], 'Xhere/plugin/here.vim')
   call mkdir('Xhere/pack/foo/start/foobar/autoload', 'p')
   call writefile(['function! foo#Trigger()', 'echo "autoloaded foo"', 'endfunction'], 'Xhere/pack/foo/start/foobar/autoload/foo.vim')
@@ -105,7 +102,6 @@ func Test_pack_in_rtp_when_plugins_run()
   endif
 
   call delete('Xtestout')
-  call delete('Xhere', 'rf')
 endfunc
 
 func Test_help_arg()
@@ -228,7 +224,6 @@ func Test_o_arg()
     call assert_equal('foo', bn1)
     call assert_equal('bar', bn2)
   endif
-
   call delete('Xtestout')
 endfunc
 
@@ -303,43 +298,42 @@ func Test_q_arg()
       return 666
     }
   END
-  call writefile(lines, 'Xbadfile.c')
+  call writefile(lines, 'Xbadfile.c', 'D')
 
   let after =<< trim [CODE]
-    call writefile([&errorfile, string(getpos("."))], "Xtestout")
+    call writefile([&errorfile, string(getpos("."))], "XtestoutQarg")
     copen
-    w >> Xtestout
+    w >> XtestoutQarg
     qall
   [CODE]
 
   " Test with default argument '-q'.
   call assert_equal('errors.err', &errorfile)
-  call writefile(["Xbadfile.c:4:12: error: expected ';' before '}' token"], 'errors.err')
+  call writefile(["Xbadfile.c:4:12: error: expected ';' before '}' token"], 'errors.err', 'D')
   if RunVim([], after, '-q')
-    let lines = readfile('Xtestout')
+    let lines = readfile('XtestoutQarg')
     call assert_equal(['errors.err',
 	\              '[0, 4, 12, 0]',
 	\              "Xbadfile.c|4 col 12| error: expected ';' before '}' token"],
 	\             lines)
   endif
-  call delete('Xtestout')
-  call delete('errors.err')
+  call delete('XtestoutQarg')
 
-  " Test with explicit argument '-q Xerrors' (with space).
-  call writefile(["Xbadfile.c:4:12: error: expected ';' before '}' token"], 'Xerrors')
-  if RunVim([], after, '-q Xerrors')
-    let lines = readfile('Xtestout')
-    call assert_equal(['Xerrors',
+  " Test with explicit argument '-q XerrorsQarg' (with space).
+  call writefile(["Xbadfile.c:4:12: error: expected ';' before '}' token"], 'XerrorsQarg', 'D')
+  if RunVim([], after, '-q XerrorsQarg')
+    let lines = readfile('XtestoutQarg')
+    call assert_equal(['XerrorsQarg',
 	\              '[0, 4, 12, 0]',
 	\              "Xbadfile.c|4 col 12| error: expected ';' before '}' token"],
 	\             lines)
   endif
-  call delete('Xtestout')
+  call delete('XtestoutQarg')
 
-  " Test with explicit argument '-qXerrors' (without space).
-  if RunVim([], after, '-qXerrors')
-    let lines = readfile('Xtestout')
-    call assert_equal(['Xerrors',
+  " Test with explicit argument '-qXerrorsQarg' (without space).
+  if RunVim([], after, '-qXerrorsQarg')
+    let lines = readfile('XtestoutQarg')
+    call assert_equal(['XerrorsQarg',
 	\              '[0, 4, 12, 0]',
 	\              "Xbadfile.c|4 col 12| error: expected ';' before '}' token"],
 	\             lines)
@@ -349,9 +343,7 @@ func Test_q_arg()
   let out = system(GetVimCommand() .. ' -q xyz.err')
   call assert_equal(3, v:shell_error)
 
-  call delete('Xbadfile.c')
-  call delete('Xtestout')
-  call delete('Xerrors')
+  call delete('XtestoutQarg')
 endfunc
 
 " Test the -V[N]{filename} argument to set the 'verbose' option to N
@@ -441,7 +433,7 @@ endfunction
 " Test the -reverse and +reverse arguments (for GUI only).
 func Test_reverse()
   CheckCanRunGui
-  CheckAnyOf Feature:gui_gtk Feature:gui_motif Feature:gui_athena
+  CheckAnyOf Feature:gui_gtk Feature:gui_motif
 
   let after =<< trim [CODE]
     call writefile([&background], "Xtest_reverse")
@@ -462,7 +454,7 @@ endfunc
 " Test the -background and -foreground arguments (for GUI only).
 func Test_background_foreground()
   CheckCanRunGui
-  CheckAnyOf Feature:gui_gtk Feature:gui_motif Feature:gui_athena
+  CheckAnyOf Feature:gui_gtk Feature:gui_motif
 
   " Is there a better way to check the effect of -background & -foreground
   " other than merely looking at &background (dark or light)?
@@ -489,7 +481,7 @@ func Test_font()
 
   if has('gui_gtk')
     let font = 'Courier 14'
-  elseif has('gui_motif') || has('gui_athena')
+  elseif has('gui_motif')
     let font = '-misc-fixed-bold-*'
   else
     throw 'Skipped: test does not set a valid font for this GUI'
@@ -511,10 +503,10 @@ endfunc
 " Test the -geometry argument (for GUI only).
 func Test_geometry()
   CheckCanRunGui
-  CheckAnyOf Feature:gui_gtk Feature:gui_motif Feature:gui_athena
+  CheckAnyOf Feature:gui_gtk Feature:gui_motif
 
-  if has('gui_motif') || has('gui_athena')
-    " FIXME: With GUI Athena or Motif, the value of getwinposx(),
+  if has('gui_motif')
+    " FIXME: With GUI Motif the value of getwinposx(),
     "        getwinposy() and getwinpos() do not match exactly the
     "        value given in -geometry. Why?
     "        So only check &columns and &lines for those GUIs.
@@ -531,9 +523,18 @@ func Test_geometry()
       call writefile([&columns, &lines, getwinposx(), getwinposy(), string(getwinpos())], "Xtest_geometry")
       qall
     [CODE]
-    if RunVim([], after, '-f -g -geometry 31x13+41+43')
+    " Some window managers have a bar at the top that pushes windows down,
+    " need to use at least 130, let's do 150
+    if RunVim([], after, '-f -g -geometry 31x13+41+150')
       let lines = readfile('Xtest_geometry')
-      call assert_equal(['31', '13', '41', '43', '[41, 43]'], lines)
+      " Depending on the GUI library and the windowing system the final size
+      " might be a bit different, allow for some tolerance.  Tuned based on
+      " actual failures.
+      call assert_inrange(31, 35, str2nr(lines[0]))
+      call assert_equal('13', lines[1])
+      call assert_equal('41', lines[2])
+      call assert_equal('150', lines[3])
+      call assert_equal('[41, 150]', lines[4])
     endif
   endif
 
@@ -543,7 +544,7 @@ endfunc
 " Test the -iconic argument (for GUI only).
 func Test_iconic()
   CheckCanRunGui
-  CheckAnyOf Feature:gui_gtk Feature:gui_motif Feature:gui_athena
+  CheckAnyOf Feature:gui_gtk Feature:gui_motif
 
   call RunVim([], [], '-f -g -iconic -cq')
 
@@ -617,7 +618,7 @@ func Test_invalid_args()
   call assert_equal('More info with: "vim -h"',       out[2])
 
   if has('quickfix')
-    " Detect invalid repeated arguments '-t foo -t foo", '-q foo -q foo'.
+    " Detect invalid repeated arguments '-t foo -t foo', '-q foo -q foo'.
     for opt in ['-t', '-q']
       let out = split(system(GetVimCommand() .. repeat(' ' .. opt .. ' foo', 2)), "\n")
       call assert_equal(1, v:shell_error)
@@ -719,6 +720,25 @@ func Test_startuptime()
   call delete('Xtestout')
 endfunc
 
+func Test_log()
+  CheckFeature channel
+
+  call assert_false(filereadable('Xlogfile'))
+  let after = ['qall']
+  if RunVim([], after, '--log Xlogfile')
+    call assert_equal(1, readfile('Xlogfile')
+          \ ->filter({i, l -> l =~ '==== start log session'})
+          \ ->len())
+    " second time appends to the log
+    if RunVim([], after, '--log Xlogfile')
+      call assert_equal(2, readfile('Xlogfile')
+            \ ->filter({i, l -> l =~ '==== start log session'})
+            \ ->len())
+    endif
+  endif
+  call delete('Xlogfile')
+endfunc
+
 func Test_read_stdin()
   let after =<< trim [CODE]
     write Xtestout
@@ -771,7 +791,7 @@ endfunc
 
 func Test_zzz_startinsert()
   " Test :startinsert
-  call writefile(['123456'], 'Xtestout')
+  call writefile(['123456'], 'Xtestout', 'D')
   let after =<< trim [CODE]
     :startinsert
     call feedkeys("foobar\<c-o>:wq\<cr>","t")
@@ -792,7 +812,6 @@ func Test_zzz_startinsert()
     let lines = readfile('Xtestout')
     call assert_equal(['123456foobar'], lines)
   endif
-  call delete('Xtestout')
 endfunc
 
 func Test_issue_3969()
@@ -809,6 +828,17 @@ func Test_start_with_tabs()
 
   let buf = RunVimInTerminal('-p a b c', {})
   call VerifyScreenDump(buf, 'Test_start_with_tabs', {})
+
+  " clean up
+  call StopVimInTerminal(buf)
+endfunc
+
+func Test_start_in_minimal_window()
+  CheckRunVimInTerminal
+
+  let buf = RunVimInTerminal('-c "set nomore"', {'cols': 12, 'rows': 2, 'keep_t_u7': 1})
+  call term_sendkeys(buf, "ahello\<Esc>")
+  call WaitForAssert({-> assert_match('^hello', term_getline(buf, 1))})
 
   " clean up
   call StopVimInTerminal(buf)
@@ -859,18 +889,15 @@ func Test_t_arg()
         \ "first\tXfile1\t/^    \\zsfirst$/",
         \ "second\tXfile1\t/^    \\zssecond$/",
         \ "third\tXfile1\t/^    \\zsthird$/"],
-        \ 'Xtags')
-  call writefile(['    first', '    second', '    third'], 'Xfile1')
+        \ 'Xtags', 'D')
+  call writefile(['    first', '    second', '    third'], 'Xfile1', 'D')
 
   for t_arg in ['-t second', '-tsecond']
-    if RunVim(before, after, '-t second')
+    if RunVim(before, after, t_arg)
       call assert_equal(['Xfile1:L2C5'], readfile('Xtestout'), t_arg)
       call delete('Xtestout')
     endif
   endfor
-
-  call delete('Xtags')
-  call delete('Xfile1')
 endfunc
 
 " Test the '-T' argument which sets the 'term' option.
@@ -967,7 +994,7 @@ func Test_missing_vimrc()
     call assert_match('^E282:', v:errmsg)
     call writefile(v:errors, 'Xtestout')
   [CODE]
-  call writefile(after, 'Xafter')
+  call writefile(after, 'Xafter', 'D')
 
   let cmd = GetVimCommandCleanTerm() . ' -u Xvimrc_missing -S Xafter'
   let buf = term_start(cmd, {'term_rows' : 10})
@@ -978,7 +1005,7 @@ func Test_missing_vimrc()
   call WaitForAssert({-> assert_match(':', term_getline(buf, 10))})
   call StopVimInTerminal(buf)
   call assert_equal([], readfile('Xtestout'))
-  call delete('Xafter')
+
   call delete('Xtestout')
 endfunc
 
@@ -990,13 +1017,13 @@ func Test_VIMINIT()
     call writefile(v:errors, 'Xtestout')
     qall
   [CODE]
-  call writefile(after, 'Xafter')
+  call writefile(after, 'Xafter', 'D')
   let cmd = GetVimProg() . ' --not-a-term -S Xafter --cmd "set enc=utf8"'
   call setenv('VIMINIT', 'let viminit_found="yes"')
   exe "silent !" . cmd
   call assert_equal([], readfile('Xtestout'))
+
   call delete('Xtestout')
-  call delete('Xafter')
 endfunc
 
 " Test for using the $EXINIT environment variable
@@ -1007,13 +1034,13 @@ func Test_EXINIT()
     call writefile(v:errors, 'Xtestout')
     qall
   [CODE]
-  call writefile(after, 'Xafter')
+  call writefile(after, 'Xafter', 'D')
   let cmd = GetVimProg() . ' --not-a-term -S Xafter --cmd "set enc=utf8"'
   call setenv('EXINIT', 'let exinit_found="yes"')
   exe "silent !" . cmd
   call assert_equal([], readfile('Xtestout'))
+
   call delete('Xtestout')
-  call delete('Xafter')
 endfunc
 
 " Test for using the 'exrc' option
@@ -1025,13 +1052,12 @@ func Test_exrc()
     call writefile(v:errors, 'Xtestout')
     qall
   [CODE]
-  call mkdir('Xdir')
-  call writefile(['let exrc_found=37'], 'Xdir/.exrc')
-  call writefile(after, 'Xdir/Xafter')
-  let cmd = GetVimProg() . ' --not-a-term -S Xafter --cmd "cd Xdir" --cmd "set enc=utf8 exrc secure"'
+  call mkdir('Xrcdir', 'R')
+  call writefile(['let exrc_found=37'], 'Xrcdir/.exrc')
+  call writefile(after, 'Xrcdir/Xafter')
+  let cmd = GetVimProg() . ' --not-a-term -S Xafter --cmd "cd Xrcdir" --cmd "set enc=utf8 exrc secure"'
   exe "silent !" . cmd
-  call assert_equal([], readfile('Xdir/Xtestout'))
-  call delete('Xdir', 'rf')
+  call assert_equal([], readfile('Xrcdir/Xtestout'))
 endfunc
 
 " Test for starting Vim with a non-terminal as input/output
@@ -1070,13 +1096,36 @@ func Test_not_a_term()
   call delete('Xvimout')
 endfunc
 
+" Test quitting with CTRL-C when output is redirected.
+func Test_redirect_Ctrl_C()
+  CheckUnix
+  CheckNotGui
+  CheckRunVimInTerminal
+
+  let buf = Run_shell_in_terminal({})
+  " Wait for the shell to display a prompt
+  call WaitForAssert({-> assert_notequal('', term_getline(buf, 1))})
+
+  call term_sendkeys(buf, GetVimProg() .. " | grep word\<CR>")
+  call WaitForAssert({-> assert_match("Output is not to a terminal", getline(1, 4)->join())})
+  " wait for the hard coded delay, otherwise the CTRL-C interrupts startup
+  sleep 2
+  call term_sendkeys(buf, "\<C-C>")
+  sleep 100m
+  call term_sendkeys(buf, "exit\<CR>")
+  call WaitForAssert({-> assert_equal('dead', job_status(g:job))})
+
+  exe buf . 'bwipe!'
+  unlet g:job
+endfunc
+
 
 " Test for the "-w scriptout" argument
 func Test_w_arg()
   " Can't catch the output of gvim.
   CheckNotGui
 
-  call writefile(["iVim Editor\<Esc>:q!\<CR>"], 'Xscriptin', 'b')
+  call writefile(["iVim Editor\<Esc>:q!\<CR>"], 'Xscriptin', 'bD')
   if RunVim([], [], '-s Xscriptin -w Xscriptout')
     call assert_equal(["iVim Editor\e:q!\r"], readfile('Xscriptout'))
     call delete('Xscriptout')
@@ -1086,10 +1135,10 @@ func Test_w_arg()
   " Test for failing to open the script output file. This test works only when
   " the language is English.
   if v:lang == "C" || v:lang =~ '^[Ee]n'
-    call mkdir("Xdir")
-    let m = system(GetVimCommand() .. " -w Xdir")
-    call assert_equal("Cannot open for script output: \"Xdir\"\n", m)
-    call delete("Xdir", 'rf')
+    call mkdir("Xargdir")
+    let m = system(GetVimCommand() .. " -w Xargdir")
+    call assert_equal("Cannot open for script output: \"Xargdir\"\n", m)
+    call delete("Xargdir", 'rf')
   endif
 
   " A number argument sets the 'window' option
@@ -1100,7 +1149,6 @@ func Test_w_arg()
       call delete('Xresult')
     endif
   endfor
-  call delete('Xscriptin')
 endfunc
 
 " Test for the "-s scriptin" argument
@@ -1112,10 +1160,9 @@ func Test_s_arg()
   let m = system(GetVimCommand() .. " -s abcxyz")
   call assert_equal("Cannot open for reading: \"abcxyz\"\n", m)
 
-  call writefile([], 'Xinput')
+  call writefile([], 'Xinput', 'D')
   let m = system(GetVimCommand() .. " -s Xinput -s Xinput")
   call assert_equal("Attempt to open script file again: \"-s Xinput\"\n", m)
-  call delete('Xinput')
 endfunc
 
 " Test for the "-n" (no swap file) argument
@@ -1190,7 +1237,7 @@ endfunc
 func Test_progname()
   CheckUnix
 
-  call mkdir('Xprogname', 'p')
+  call mkdir('Xprogname', 'pD')
   call writefile(['silent !date',
   \               'call writefile([mode(1), '
   \               .. '&insertmode, &diff, &readonly, &updatecount, '
@@ -1262,12 +1309,11 @@ func Test_progname()
   endfor
 
   call delete('Xprogname_after')
-  call delete('Xprogname', 'd')
 endfunc
 
 " Test for doing a write from .vimrc
 func Test_write_in_vimrc()
-  call writefile(['silent! write'], 'Xvimrc')
+  call writefile(['silent! write'], 'Xvimrc', 'D')
   let after =<< trim [CODE]
     call assert_match('E32: ', v:errmsg)
     call writefile(v:errors, 'Xtestout')
@@ -1277,7 +1323,6 @@ func Test_write_in_vimrc()
     call assert_equal([], readfile('Xtestout'))
     call delete('Xtestout')
   endif
-  call delete('Xvimrc')
 endfunc
 
 func Test_echo_true_in_cmd()
@@ -1288,12 +1333,28 @@ func Test_echo_true_in_cmd()
       call writefile(['done'], 'Xresult')
       quit
   END
-  call writefile(lines, 'Xscript')
+  call writefile(lines, 'Xscript', 'D')
   if RunVim([], [], '--cmd "source Xscript"')
     call assert_equal(['done'], readfile('Xresult'))
   endif
-  call delete('Xscript')
+
   call delete('Xresult')
 endfunc
+
+func Test_rename_buffer_on_startup()
+  CheckUnix
+
+  let lines =<< trim END
+      call writefile(['done'], 'Xresult')
+      qa!
+  END
+  call writefile(lines, 'Xscript', 'D')
+  if RunVim([], [], "--clean -e -s --cmd 'file x|new|file x' --cmd 'so Xscript'")
+    call assert_equal(['done'], readfile('Xresult'))
+  endif
+
+  call delete('Xresult')
+endfunc
+
 
 " vim: shiftwidth=2 sts=2 expandtab

@@ -121,6 +121,19 @@ func Test_open_command()
   close!
 endfunc
 
+func Test_open_command_flush_line()
+  " this was accessing freed memory: the regexp match uses a pointer to the
+  " current line which becomes invalid when searching for the ') mark.
+  new
+  call setline(1, ['one', 'two. three'])
+  s/one/ONE
+  try
+    open /\%')/
+  catch /E479/
+  endtry
+  bwipe!
+endfunc
+
 " Test for :g/pat/visual to run vi commands in Ex mode
 " This used to hang Vim before 8.2.0274.
 func Test_Ex_global()
@@ -130,6 +143,30 @@ func Test_Ex_global()
   call assert_equal('bax', getline(3))
   call assert_equal('bay', getline(5))
   bwipe!
+endfunc
+
+" Test for pressing Ctrl-C in :append inside a loop in Ex mode
+" This used to hang Vim
+func Test_Ex_append_in_loop()
+  CheckRunVimInTerminal
+  let buf = RunVimInTerminal('', {'rows': 6})
+
+  call term_sendkeys(buf, "gQ")
+  call term_sendkeys(buf, "for i in range(1)\<CR>")
+  call term_sendkeys(buf, "append\<CR>")
+  call WaitForAssert({-> assert_match(':  append', term_getline(buf, 5))}, 1000)
+  call term_sendkeys(buf, "\<C-C>")
+  " Wait for input to be flushed
+  call term_wait(buf)
+  call term_sendkeys(buf, "foo\<CR>")
+  call WaitForAssert({-> assert_match('foo', term_getline(buf, 5))}, 1000)
+  call term_sendkeys(buf, ".\<CR>")
+  call WaitForAssert({-> assert_match('.', term_getline(buf, 5))}, 1000)
+  call term_sendkeys(buf, "endfor\<CR>")
+  call term_sendkeys(buf, "vi\<CR>")
+  call WaitForAssert({-> assert_match('foo', term_getline(buf, 1))}, 1000)
+
+  call StopVimInTerminal(buf)
 endfunc
 
 " In Ex-mode, a backslash escapes a newline
@@ -200,13 +237,12 @@ func Test_ex_mode_with_global()
     call writefile(['done'], 'Xdidexmode')
     qall!
   END
-  call writefile(lines, 'Xexmodescript')
+  call writefile(lines, 'Xexmodescript', 'D')
   call assert_equal(1, RunVim([], [], '-e -s -S Xexmodescript'))
   call assert_equal(['done'], readfile('Xdidexmode'))
 
   call delete('logfile')
   call delete('Xdidexmode')
-  call delete('Xexmodescript')
 endfunc
 
 func Test_ex_mode_count_overflow()
@@ -220,12 +256,35 @@ func Test_ex_mode_count_overflow()
     call writefile(['done'], 'Xdidexmode')
     qall!
   END
-  call writefile(lines, 'Xexmodescript')
+  call writefile(lines, 'Xexmodescript', 'D')
   call assert_equal(1, RunVim([], [], '-e -s -S Xexmodescript -c qa'))
   call assert_equal(['done'], readfile('Xdidexmode'))
 
   call delete('Xdidexmode')
-  call delete('Xexmodescript')
 endfunc
+
+func Test_ex_mode_large_indent()
+  new
+  set ts=500 ai
+  call setline(1, "\t")
+  exe "normal gQi\<CR>."
+  set ts=8 noai
+  bwipe!
+endfunc
+
+" This was accessing illegal memory when using "+" for eap->cmd.
+func Test_empty_command_visual_mode()
+  let lines =<< trim END
+      r<sfile>
+      0norm0V:
+      :qall!
+  END
+  call writefile(lines, 'Xexmodescript', 'D')
+  call assert_equal(1, RunVim([], [], '-u NONE -e -s -S Xexmodescript'))
+
+  " This may cause a dialog to be displayed for an empty command, ignore it.
+  call delete('guidialogfile')
+endfunc
+
 
 " vim: shiftwidth=2 sts=2 expandtab

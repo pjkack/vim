@@ -150,9 +150,7 @@
  */
 enum key_extra
 {
-    KE_NAME = 3		// name of this terminal entry
-
-    , KE_S_UP = 4		// shift-up
+      KE_S_UP = 4		// shift-up
     , KE_S_DOWN = 5		// shift-down
 
     , KE_S_F1 = 6		// shifted function keys
@@ -253,7 +251,8 @@ enum key_extra
     , KE_CSI = 81		// CSI typed directly
     , KE_SNR = 82		// <SNR>
     , KE_PLUG = 83		// <Plug>
-    , KE_CMDWIN = 84		// open command-line window from Command-line Mode
+    , KE_CMDWIN = 84		// open command-line window from Command-line
+				// Mode
 
     , KE_C_LEFT = 85		// control-left
     , KE_C_RIGHT = 86		// control-right
@@ -276,6 +275,9 @@ enum key_extra
     , KE_MOUSEMOVE_XY = 101	// KE_MOUSEMOVE with coordinates
     , KE_CANCEL = 102		// return from vgetc()
     , KE_COMMAND = 103		// <Cmd> special key
+    , KE_SCRIPT_COMMAND = 104	// <ScriptCmd> special key
+    , KE_S_BS = 105		// shift + <BS>
+    , KE_SID = 106		// <SID> special key, followed by {nr};
 };
 
 /*
@@ -299,6 +301,7 @@ enum key_extra
 #define K_C_END		TERMCAP2KEY(KS_EXTRA, KE_C_END)
 #define K_TAB		TERMCAP2KEY(KS_EXTRA, KE_TAB)
 #define K_S_TAB		TERMCAP2KEY('k', 'B')
+#define K_S_BS		TERMCAP2KEY(KS_EXTRA, KE_S_BS)
 
 // extra set of function keys F1-F4, for vt100 compatible xterm
 #define K_XF1		TERMCAP2KEY(KS_EXTRA, KE_XF1)
@@ -480,6 +483,8 @@ enum key_extra
 #define K_CURSORHOLD	TERMCAP2KEY(KS_EXTRA, KE_CURSORHOLD)
 
 #define K_COMMAND	TERMCAP2KEY(KS_EXTRA, KE_COMMAND)
+#define K_SCRIPT_COMMAND TERMCAP2KEY(KS_EXTRA, KE_SCRIPT_COMMAND)
+#define K_SID		TERMCAP2KEY(KS_EXTRA, KE_SID)
 
 // Bits for modifier mask
 // 0x01 cannot be used, because the modifier must be 0x02 or higher

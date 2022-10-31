@@ -63,7 +63,7 @@ func Test_checktime()
   let fname = 'Xtest.tmp'
 
   let fl = ['Hello World!']
-  call writefile(fl, fname)
+  call writefile(fl, fname, 'D')
   set autoread
   exec 'e' fname
   call SleepForTimestamp()
@@ -72,8 +72,39 @@ func Test_checktime()
   call writefile(fl, fname)
   checktime
   call assert_equal(fl[0], getline(1))
+endfunc
 
-  call delete(fname)
+func Test_checktime_fast()
+  CheckFeature nanotime
+
+  let fname = 'Xtest.tmp'
+
+  let fl = ['Hello World!']
+  call writefile(fl, fname, 'D')
+  set autoread
+  exec 'e' fname
+  let fl = readfile(fname)
+  let fl[0] .= ' - checktime'
+  call writefile(fl, fname)
+  checktime
+  call assert_equal(fl[0], getline(1))
+endfunc
+
+func Test_autoread_fast()
+  CheckFeature nanotime
+
+  " this is timing sensitive
+  let g:test_is_flaky = 1
+
+  new Xautoread
+  setlocal autoread
+  call setline(1, 'foo')
+  w!
+  sleep 10m
+  call writefile(['bar'], 'Xautoread', 'D')
+  sleep 10m
+  checktime
+  call assert_equal('bar', trim(getline(1)))
 endfunc
 
 func Test_autoread_file_deleted()
@@ -134,7 +165,7 @@ func Test_getftype()
     return
   endif
 
-  silent !ln -s Xfile Xlink
+  silent !ln -s Xlinkfile Xlink
   call assert_equal('link', getftype('Xlink'))
   call delete('Xlink')
 

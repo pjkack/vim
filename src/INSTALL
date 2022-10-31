@@ -44,6 +44,7 @@ To build Vim on Ubuntu from scratch on a clean system using git:
 	% sudo apt install git
 	% sudo apt install make
 	% sudo apt install clang
+	% sudo apt install libtool-bin
 	
 	Build Vim with default features:
 	% git clone https://github.com/vim/vim.git
@@ -176,14 +177,6 @@ happening.
 There used to be a KDE version of Vim, using Qt libraries, but since it didn't
 work very well and there was no maintainer it was dropped.
 
-
-Unix: COMPILING WITH MULTI-BYTE
-
-When you want to compile with the multi-byte features enabled, make sure you
-compile on a machine where the locale settings actually work, otherwise the
-configure tests may fail.  You need to compile with "big" features:
-
-    ./configure --with-features=big
 
 Unix: COMPILING ON LINUX
 

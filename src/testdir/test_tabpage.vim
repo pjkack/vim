@@ -606,19 +606,16 @@ func Test_tabpage_cmdheight()
         \ 'echo "hello\nthere"',
         \ 'tabnext',
         \ 'redraw',
-	\ ], 'XTest_tabpage_cmdheight')
+	\ ], 'XTest_tabpage_cmdheight', 'D')
   " Check that cursor line is concealed
   let buf = RunVimInTerminal('-S XTest_tabpage_cmdheight', {'statusoff': 3})
   call VerifyScreenDump(buf, 'Test_tabpage_cmdheight', {})
 
   call StopVimInTerminal(buf)
-  call delete('XTest_tabpage_cmdheight')
 endfunc
 
 " Test for closing the tab page from a command window
 func Test_tabpage_close_cmdwin()
-  CheckFeature cmdwin
-
   tabnew
   call feedkeys("q/:tabclose\<CR>\<Esc>", 'xt')
   call assert_equal(2, tabpagenr('$'))
@@ -768,14 +765,14 @@ endfunc
 func Test_tabpage_close_on_switch()
   tabnew
   tabnew
-  edit Xfile
+  edit Xtabfile
   augroup T2
     au!
-    au BufLeave Xfile 1tabclose
+    au BufLeave Xtabfile 1tabclose
   augroup END
   tabfirst
   call assert_equal(2, tabpagenr())
-  call assert_equal('Xfile', @%)
+  call assert_equal('Xtabfile', @%)
   augroup T2
     au!
   augroup END
@@ -850,6 +847,29 @@ func Test_lastused_tabpage()
   call assert_equal(wnum, win_getid())
 
   tabonly!
+endfunc
+
+" Test for tabpage allocation failure
+func Test_tabpage_alloc_failure()
+  call test_alloc_fail(GetAllocId('newtabpage_tvars'), 0, 0)
+  call assert_fails('tabnew', 'E342:')
+
+  call test_alloc_fail(GetAllocId('newtabpage_tvars'), 0, 0)
+  edit Xfile1
+  call assert_fails('tabedit Xfile2', 'E342:')
+  call assert_equal(1, winnr('$'))
+  call assert_equal(1, tabpagenr('$'))
+  call assert_equal('Xfile1', @%)
+
+  new
+  call test_alloc_fail(GetAllocId('newtabpage_tvars'), 0, 0)
+  call assert_fails('wincmd T', 'E342:')
+  bw!
+
+  call test_alloc_fail(GetAllocId('newtabpage_tvars'), 0, 0)
+  call assert_fails('tab split', 'E342:')
+  call assert_equal(2, winnr('$'))
+  call assert_equal(1, tabpagenr('$'))
 endfunc
 
 " vim: shiftwidth=2 sts=2 expandtab

@@ -132,7 +132,221 @@ func Test_listchars()
 	      \ 'h<<<<<<<<<<<$',
 	      \ '<<<<<<<<<<<<$',
 	      \ '>>>>0xx0<<<<$',
-              \ '$'
+        \ '$'
+	      \ ]
+  redraw!
+  for i in range(1, 5)
+    call cursor(i, 1)
+    call assert_equal([expected[i - 1]], ScreenLines(i, virtcol('$')))
+  endfor
+
+  call assert_equal(expected, split(execute("%list"), "\n"))
+
+  " Test multispace
+  normal ggdG
+  set listchars&
+  set listchars+=multispace:yYzZ
+  set list
+
+  call append(0, [
+	      \ '    ffff    ',
+	      \ '  i i     gg',
+	      \ ' h          ',
+	      \ '          j ',
+	      \ '    0  0    ',
+	      \ ])
+
+  let expected = [
+	      \ 'yYzZffffyYzZ$',
+	      \ 'yYi iyYzZygg$',
+	      \ ' hyYzZyYzZyY$',
+	      \ 'yYzZyYzZyYj $',
+	      \ 'yYzZ0yY0yYzZ$',
+        \ '$'
+	      \ ]
+  redraw!
+  for i in range(1, 5)
+    call cursor(i, 1)
+    call assert_equal([expected[i - 1]], ScreenLines(i, virtcol('$')))
+  endfor
+
+  call assert_equal(expected, split(execute("%list"), "\n"))
+
+  " Test leadmultispace + multispace
+  normal ggdG
+  set listchars=eol:$,multispace:yYzZ,nbsp:S
+  set listchars+=leadmultispace:.-+*
+  set list
+
+  call append(0, [
+	      \ '    ffff    ',
+	      \ '  i i     gg',
+	      \ ' h          ',
+	      \ '          j ',
+	      \ '    0  0    ',
+	      \ ])
+
+  let expected = [
+	      \ '.-+*ffffyYzZ$',
+	      \ '.-i iSyYzZgg$',
+	      \ ' hyYzZyYzZyY$',
+	      \ '.-+*.-+*.-j $',
+	      \ '.-+*0yY0yYzZ$',
+        \ '$'
+	      \ ]
+  redraw!
+  call assert_equal('eol:$,multispace:yYzZ,nbsp:S,leadmultispace:.-+*', &listchars)
+  for i in range(1, 5)
+    call cursor(i, 1)
+    call assert_equal([expected[i - 1]], ScreenLines(i, virtcol('$')))
+  endfor
+
+  call assert_equal(expected, split(execute("%list"), "\n"))
+
+  " Test leadmultispace without multispace
+  normal ggdG
+  set listchars-=multispace:yYzZ
+  set listchars+=space:+,trail:>,eol:$
+  set list
+
+  call append(0, [
+	      \ '    ffff    ',
+	      \ '  i i     gg',
+	      \ ' h          ',
+	      \ '          j ',
+	      \ '    0  0    ',
+	      \ ])
+
+  let expected = [
+	      \ '.-+*ffff>>>>$',
+	      \ '.-i+i+++++gg$',
+	      \ '+h>>>>>>>>>>$',
+	      \ '.-+*.-+*.-j>$',
+	      \ '.-+*0++0>>>>$',
+        \ '$',
+	      \ ]
+
+  redraw!
+  call assert_equal('eol:$,nbsp:S,leadmultispace:.-+*,space:+,trail:>,eol:$', &listchars)
+  for i in range(1, 5)
+    call cursor(i, 1)
+    call assert_equal([expected[i - 1]], ScreenLines(i, virtcol('$')))
+  endfor
+
+  call assert_equal(expected, split(execute("%list"), "\n"))
+
+  " Test leadmultispace only
+  normal ggdG
+  set listchars&
+  set listchars=leadmultispace:.-+*
+  set list
+
+  call append(0, [
+	      \ '    ffff    ',
+	      \ '  i i     gg',
+	      \ ' h          ',
+	      \ '          j ',
+	      \ '    0  0    ',
+	      \ ])
+
+  let expected = [
+	      \ '.-+*ffff    ',
+	      \ '.-i i     gg',
+	      \ ' h          ',
+	      \ '.-+*.-+*.-j ',
+	      \ '.-+*0  0    ',
+        \ ' ',
+	      \ ]
+  redraw!
+  call assert_equal('leadmultispace:.-+*', &listchars)
+  for i in range(1, 5)
+    call cursor(i, 1)
+    call assert_equal([expected[i - 1]], ScreenLines(i, 12))
+  endfor
+  call assert_equal(expected, split(execute("%list"), "\n"))
+
+  " Test leadmultispace and lead and space
+  normal ggdG
+  set listchars&
+  set listchars+=lead:<,space:-
+  set listchars+=leadmultispace:.-+*
+  set list
+
+  call append(0, [
+	      \ '    ffff    ',
+	      \ '  i i     gg',
+	      \ ' h          ',
+	      \ '          j ',
+	      \ '    0  0    ',
+	      \ ])
+
+  let expected = [
+	      \ '.-+*ffff----$',
+	      \ '.-i-i-----gg$',
+	      \ '<h----------$',
+	      \ '.-+*.-+*.-j-$',
+	      \ '.-+*0--0----$',
+        \ '$',
+	      \ ]
+  redraw!
+  call assert_equal('eol:$,lead:<,space:-,leadmultispace:.-+*', &listchars)
+  for i in range(1, 5)
+    call cursor(i, 1)
+    call assert_equal([expected[i - 1]], ScreenLines(i, virtcol('$')))
+  endfor
+  call assert_equal(expected, split(execute("%list"), "\n"))
+
+  " the last occurrence of 'multispace:' is used
+  set listchars&
+  set listchars+=multispace:yYzZ
+  set listchars+=space:x,multispace:XyY
+
+  let expected = [
+	      \ 'XyYXffffXyYX$',
+	      \ 'XyixiXyYXygg$',
+	      \ 'xhXyYXyYXyYX$',
+	      \ 'XyYXyYXyYXjx$',
+	      \ 'XyYX0Xy0XyYX$',
+        \ '$'
+	      \ ]
+  redraw!
+  call assert_equal('eol:$,multispace:yYzZ,space:x,multispace:XyY', &listchars)
+  for i in range(1, 5)
+    call cursor(i, 1)
+    call assert_equal([expected[i - 1]], ScreenLines(i, virtcol('$')))
+  endfor
+
+  call assert_equal(expected, split(execute("%list"), "\n"))
+
+  set listchars+=lead:>,trail:<
+
+  let expected = [
+	      \ '>>>>ffff<<<<$',
+	      \ '>>ixiXyYXygg$',
+	      \ '>h<<<<<<<<<<$',
+	      \ '>>>>>>>>>>j<$',
+	      \ '>>>>0Xy0<<<<$',
+        \ '$'
+	      \ ]
+  redraw!
+  for i in range(1, 5)
+    call cursor(i, 1)
+    call assert_equal([expected[i - 1]], ScreenLines(i, virtcol('$')))
+  endfor
+
+  call assert_equal(expected, split(execute("%list"), "\n"))
+
+  " removing 'multispace:'
+  set listchars-=multispace:XyY
+  set listchars-=multispace:yYzZ
+
+  let expected = [
+	      \ '>>>>ffff<<<<$',
+	      \ '>>ixixxxxxgg$',
+	      \ '>h<<<<<<<<<<$',
+	      \ '>>>>>>>>>>j<$',
+	      \ '>>>>0xx0<<<<$',
+        \ '$'
 	      \ ]
   redraw!
   for i in range(1, 5)
@@ -191,18 +405,95 @@ func Test_listchars_unicode()
   set encoding=utf-8
   set ff=unix
 
-  set listchars=eol:⇔,space:␣,nbsp:≠,tab:←↔→
+  set listchars=eol:⇔,space:␣,multispace:≡≢≣,nbsp:≠,tab:←↔→
   set list
 
   let nbsp = nr2char(0xa0)
-  call append(0, ["a\tb c" .. nbsp .. "d"])
-  let expected = ['a←↔↔↔↔↔→b␣c≠d⇔']
+  call append(0, ["        a\tb c" .. nbsp .. "d  "])
+  let expected = ['≡≢≣≡≢≣≡≢a←↔↔↔↔↔→b␣c≠d≡≢⇔']
   redraw!
   call cursor(1, 1)
   call assert_equal(expected, ScreenLines(1, virtcol('$')))
+
+  set listchars=eol:\\u21d4,space:\\u2423,multispace:≡\\u2262\\U00002263,nbsp:\\U00002260,tab:←↔\\u2192
+  redraw!
+  call assert_equal(expected, ScreenLines(1, virtcol('$')))
+
+  set listchars+=lead:⇨,trail:⇦
+  let expected = ['⇨⇨⇨⇨⇨⇨⇨⇨a←↔↔↔↔↔→b␣c≠d⇦⇦⇔']
+  redraw!
+  call cursor(1, 1)
+  call assert_equal(expected, ScreenLines(1, virtcol('$')))
+
   let &encoding=oldencoding
   enew!
   set listchars& ff&
+endfunction
+
+func Test_listchars_invalid()
+  enew!
+  set ff=unix
+
+  set listchars&
+  set list
+  set ambiwidth=double
+
+  " No colon
+  call assert_fails('set listchars=x', 'E474:')
+  call assert_fails('set listchars=x', 'E474:')
+  call assert_fails('set listchars=multispace', 'E474:')
+  call assert_fails('set listchars=leadmultispace', 'E474:')
+
+  " Too short
+  call assert_fails('set listchars=space:', 'E474:')
+  call assert_fails('set listchars=tab:x', 'E474:')
+  call assert_fails('set listchars=multispace:', 'E474:')
+  call assert_fails('set listchars=leadmultispace:', 'E474:')
+
+  " One occurrence too short
+  call assert_fails('set listchars=space:,space:x', 'E474:')
+  call assert_fails('set listchars=space:x,space:', 'E474:')
+  call assert_fails('set listchars=tab:x,tab:xx', 'E474:')
+  call assert_fails('set listchars=tab:xx,tab:x', 'E474:')
+  call assert_fails('set listchars=multispace:,multispace:x', 'E474:')
+  call assert_fails('set listchars=multispace:x,multispace:', 'E474:')
+  call assert_fails('set listchars=leadmultispace:,leadmultispace:x', 'E474:')
+  call assert_fails('set listchars=leadmultispace:x,leadmultispace:', 'E474:')
+
+  " Too long
+  call assert_fails('set listchars=space:xx', 'E474:')
+  call assert_fails('set listchars=tab:xxxx', 'E474:')
+
+  " Has double-width character
+  call assert_fails('set listchars=space:·', 'E474:')
+  call assert_fails('set listchars=tab:·x', 'E474:')
+  call assert_fails('set listchars=tab:x·', 'E474:')
+  call assert_fails('set listchars=tab:xx·', 'E474:')
+  call assert_fails('set listchars=multispace:·', 'E474:')
+  call assert_fails('set listchars=multispace:xxx·', 'E474:')
+  call assert_fails('set listchars=leadmultispace:·', 'E474:')
+  call assert_fails('set listchars=leadmultispace:xxx·', 'E474:')
+
+  " Has control character
+  call assert_fails("set listchars=space:\x01", 'E474:')
+  call assert_fails("set listchars=tab:\x01x", 'E474:')
+  call assert_fails("set listchars=tab:x\x01", 'E474:')
+  call assert_fails("set listchars=tab:xx\x01", 'E474:')
+  call assert_fails("set listchars=multispace:\x01", 'E474:')
+  call assert_fails("set listchars=multispace:xxx\x01", 'E474:')
+  call assert_fails('set listchars=space:\\x01', 'E474:')
+  call assert_fails('set listchars=tab:\\x01x', 'E474:')
+  call assert_fails('set listchars=tab:x\\x01', 'E474:')
+  call assert_fails('set listchars=tab:xx\\x01', 'E474:')
+  call assert_fails('set listchars=multispace:\\x01', 'E474:')
+  call assert_fails('set listchars=multispace:xxx\\x01', 'E474:')
+  call assert_fails("set listchars=leadmultispace:\x01", 'E474:')
+  call assert_fails('set listchars=leadmultispace:\\x01', 'E474:')
+  call assert_fails("set listchars=leadmultispace:xxx\x01", 'E474:')
+  call assert_fails('set listchars=leadmultispace:xxx\\x01', 'E474:')
+
+  enew!
+  set ambiwidth& listchars& ff&
 endfunction
 
 " Tests that space characters following composing character won't get replaced
@@ -305,7 +596,7 @@ func Test_listchars_window_local()
   call assert_equal(['{......}--one==two##$'], ScreenLines(1, virtcol('$')))
 
   " Setting the global setting to the default value should not impact a window
-  " using a local setting
+  " using a local setting.
   split
   setlocal listchars=tab:<->,lead:_,space:.,trail:@,eol:#
   setglobal listchars&vim
@@ -314,7 +605,7 @@ func Test_listchars_window_local()
   call assert_equal(['^I  one  two  $'], ScreenLines(1, virtcol('$')))
 
   " Setting the local setting to the default value should not impact a window
-  " using a global setting
+  " using a global setting.
   set listchars=tab:{.},lead:-,space:=,trail:#,eol:$
   split
   setlocal listchars=tab:<->,lead:_,space:.,trail:@,eol:#
@@ -325,7 +616,7 @@ func Test_listchars_window_local()
   call assert_equal(['{......}--one==two##$'], ScreenLines(1, virtcol('$')))
 
   " Using set in a window with a local setting should change it to use the
-  " global setting and also impact other windows using the global setting
+  " global setting and also impact other windows using the global setting.
   split
   setlocal listchars=tab:<->,lead:_,space:.,trail:@,eol:#
   call assert_equal(['<------>__one..two@@#'], ScreenLines(1, virtcol('$')))
@@ -335,7 +626,7 @@ func Test_listchars_window_local()
   call assert_equal(['+------+^^one>>two<<%'], ScreenLines(1, virtcol('$')))
 
   " Setting invalid value for a local setting should not impact the local and
-  " global settings
+  " global settings.
   split
   setlocal listchars=tab:<->,lead:_,space:.,trail:@,eol:#
   let cmd = 'setlocal listchars=tab:{.},lead:-,space:=,trail:#,eol:$,x'
@@ -345,7 +636,7 @@ func Test_listchars_window_local()
   call assert_equal(['+------+^^one>>two<<%'], ScreenLines(1, virtcol('$')))
 
   " Setting invalid value for a global setting should not impact the local and
-  " global settings
+  " global settings.
   split
   setlocal listchars=tab:<->,lead:_,space:.,trail:@,eol:#
   let cmd = 'setglobal listchars=tab:{.},lead:-,space:=,trail:#,eol:$,x'
@@ -353,6 +644,12 @@ func Test_listchars_window_local()
   call assert_equal(['<------>__one..two@@#'], ScreenLines(1, virtcol('$')))
   close
   call assert_equal(['+------+^^one>>two<<%'], ScreenLines(1, virtcol('$')))
+
+  " Closing window with local lcs-multispace should not cause a memory leak.
+  setlocal listchars=multispace:---+
+  split
+  call s:CheckListCharsValue('multispace:---+')
+  close
 
   %bw!
   set list& listchars&
@@ -367,7 +664,7 @@ func Test_listchars_foldcolumn()
       vsplit
       windo set signcolumn=yes foldcolumn=1 winminwidth=0 nowrap list listchars=extends:>,precedes:<
   END
-  call writefile(lines, 'XTest_listchars')
+  call writefile(lines, 'XTest_listchars', 'D')
 
   let buf = RunVimInTerminal('-S XTest_listchars', {'rows': 10, 'cols': 60})
 
@@ -390,7 +687,6 @@ func Test_listchars_foldcolumn()
 
   " clean up
   call StopVimInTerminal(buf)
-  call delete('XTest_listchars')
 endfunc
 
 

@@ -225,7 +225,7 @@ init_locale(void)
     // Tell Gtk not to change our locale settings.
     gtk_disable_setlocale();
 # endif
-# if defined(FEAT_FLOAT) && defined(LC_NUMERIC)
+# if defined(LC_NUMERIC)
     // Make sure strtod() uses a decimal point, not a comma.
     setlocale(LC_NUMERIC, "C");
 # endif
@@ -333,13 +333,13 @@ ex_language(exarg_T *eap)
 # endif
 	{
 	    loc = setlocale(what, (char *)name);
-# if defined(FEAT_FLOAT) && defined(LC_NUMERIC)
+# if defined(LC_NUMERIC)
 	    // Make sure strtod() uses a decimal point, not a comma.
 	    setlocale(LC_NUMERIC, "C");
 # endif
 	}
 	if (loc == NULL)
-	    semsg(_("E197: Cannot set language to \"%s\""), name);
+	    semsg(_(e_cannot_set_language_to_str), name);
 	else
 	{
 # ifdef HAVE_NL_MSG_CAT_CNTR
@@ -390,9 +390,7 @@ ex_language(exarg_T *eap)
 	    // Set v:lang, v:lc_time, v:collate and v:ctype to the final result.
 	    set_lang_var();
 # endif
-# ifdef FEAT_TITLE
 	    maketitle();
-# endif
 	}
     }
 }

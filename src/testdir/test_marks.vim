@@ -26,6 +26,16 @@ func Test_Incr_Marks()
   enew!
 endfunc
 
+func Test_previous_jump_mark()
+  new
+  call setline(1, ['']->repeat(6))
+  normal Ggg
+  call assert_equal(6, getpos("''")[1])
+  normal jjjjj
+  call assert_equal(6, getpos("''")[1])
+  bwipe!
+endfunc
+
 func Test_setpos()
   new Xone
   let onebuf = bufnr('%')
@@ -294,5 +304,18 @@ func Test_getmarklist()
   call assert_equal([], {}->getmarklist())
   close!
 endfunc
+
+" This was using freed memory
+func Test_jump_mark_autocmd()
+  next 00
+  edit 0
+  sargument
+  au BufEnter 0 all
+  sil norm 
+
+  au! BufEnter
+  bwipe!
+endfunc
+
 
 " vim: shiftwidth=2 sts=2 expandtab

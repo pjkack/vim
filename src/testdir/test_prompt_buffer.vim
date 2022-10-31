@@ -39,6 +39,10 @@ func WriteScript(name)
 	\ '  set nomodified',
 	\ 'endfunc',
 	\ '',
+	\ 'func SwitchWindows()',
+	\ '  call timer_start(0, {-> execute("wincmd p|wincmd p", "")})',
+	\ 'endfunc',
+	\ '',
 	\ 'call setline(1, "other buffer")',
 	\ 'set nomodified',
 	\ 'new',
@@ -94,6 +98,27 @@ func Test_prompt_editing()
 
   call term_sendkeys(buf, "\<C-U>exit\<CR>")
   call WaitForAssert({-> assert_equal('other buffer', term_getline(buf, 1))})
+
+  call StopVimInTerminal(buf)
+  call delete(scriptName)
+endfunc
+
+func Test_prompt_switch_windows()
+  call CanTestPromptBuffer()
+  let scriptName = 'XpromptSwitchWindows'
+  call WriteScript(scriptName)
+
+  let buf = RunVimInTerminal('-S ' . scriptName, {'rows': 12})
+  call WaitForAssert({-> assert_equal('cmd:', term_getline(buf, 1))})
+  call WaitForAssert({-> assert_match('-- INSERT --', term_getline(buf, 12))})
+
+  call term_sendkeys(buf, "\<C-O>:call SwitchWindows()\<CR>")
+  call term_wait(buf, 50)
+  call WaitForAssert({-> assert_match('-- INSERT --', term_getline(buf, 12))})
+
+  call term_sendkeys(buf, "\<Esc>")
+  call term_wait(buf, 50)
+  call WaitForAssert({-> assert_match('^ *$', term_getline(buf, 12))})
 
   call StopVimInTerminal(buf)
   call delete(scriptName)
@@ -195,7 +220,7 @@ func Test_prompt_buffer_getbufinfo()
   %bwipe!
 endfunc
 
-function! Test_prompt_while_writing_to_hidden_buffer()
+func Test_prompt_while_writing_to_hidden_buffer()
   call CanTestPromptBuffer()
   CheckUnix
 
@@ -212,7 +237,7 @@ function! Test_prompt_while_writing_to_hidden_buffer()
         \ done'], #{out_io: 'buffer', out_name: ''})
     startinsert
   END
-  eval script->writefile(scriptName)
+  eval script->writefile(scriptName, 'D')
 
   let buf = RunVimInTerminal('-S ' .. scriptName, {})
   call WaitForAssert({-> assert_equal('cmd:', term_getline(buf, 1))})
@@ -225,7 +250,6 @@ function! Test_prompt_while_writing_to_hidden_buffer()
   call WaitForAssert({-> assert_equal('cmd:testtesttest', term_getline(buf, 1))})
 
   call StopVimInTerminal(buf)
-  call delete(scriptName)
 endfunc
 
 " vim: shiftwidth=2 sts=2 expandtab

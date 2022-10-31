@@ -34,7 +34,7 @@ server_to_input_buf(char_u *str)
     //  The last but one parameter of replace_termcodes() is TRUE so that the
     //  <lt> sequence is recognised - needed for a real backslash.
     p_cpo = (char_u *)"Bk";
-    str = replace_termcodes((char_u *)str, &ptr, REPTERM_DO_LT, NULL);
+    str = replace_termcodes(str, &ptr, REPTERM_DO_LT, NULL);
     p_cpo = cpo_save;
 
     if (*ptr != NUL)	// trailing CTRL-V results in nothing
@@ -55,7 +55,7 @@ server_to_input_buf(char_u *str)
 	// buffer.
 	typebuf_was_filled = TRUE;
     }
-    vim_free((char_u *)ptr);
+    vim_free(ptr);
 }
 
 /*
@@ -86,7 +86,7 @@ eval_client_expr_to_string(char_u *expr)
     // to be typed.  Do generate errors so that try/catch works.
     ++emsg_silent;
 
-    res = eval_to_string(expr, TRUE);
+    res = eval_to_string(expr, TRUE, FALSE);
 
     debug_break_level = save_dbl;
     redir_off = save_ro;
@@ -119,7 +119,7 @@ sendToLocalVim(char_u *cmd, int asExpr, char_u **result)
 	{
 	    if (ret == NULL)
 	    {
-		char	*err = _(e_invexprmsg);
+		char	*err = _(e_invalid_expression_received);
 		size_t	len = STRLEN(cmd) + STRLEN(err) + 5;
 		char_u	*msg;
 
@@ -424,12 +424,10 @@ cmdsrv_main(
 	     * For --remote-wait: Wait until the server did edit each
 	     * file.  Also detect that the server no longer runs.
 	     */
-	    if (ret >= 0 && argtype == ARGTYPE_EDIT_WAIT)
+	    if (argtype == ARGTYPE_EDIT_WAIT)
 	    {
 		int	numFiles = *argc - i - 1;
-		int	j;
 		char_u  *done = alloc(numFiles);
-		char_u  *p;
 # ifdef FEAT_GUI_MSWIN
 		NOTIFYICONDATA ni;
 		int	count = 0;
@@ -454,6 +452,8 @@ cmdsrv_main(
 		vim_memset(done, 0, numFiles);
 		while (memchr(done, 0, numFiles) != NULL)
 		{
+		    char_u  *p;
+		    int	    j;
 # ifdef MSWIN
 		    p = serverGetReply(srv, NULL, TRUE, TRUE, 0);
 		    if (p == NULL)
@@ -463,6 +463,7 @@ cmdsrv_main(
 			break;
 # endif
 		    j = atoi((char *)p);
+		    vim_free(p);
 		    if (j >= 0 && j < numFiles)
 		    {
 # ifdef FEAT_GUI_MSWIN
@@ -655,7 +656,7 @@ build_drop_cmd(
     ga_concat(&ga, (char_u *)":");
     if (inicmd != NULL)
     {
-	// Can't use <CR> after "inicmd", because an "startinsert" would cause
+	// Can't use <CR> after "inicmd", because a "startinsert" would cause
 	// the following commands to be inserted as text.  Use a "|",
 	// hopefully "inicmd" does allow this...
 	ga_concat(&ga, inicmd);
@@ -713,7 +714,7 @@ check_connection(void)
     make_connection();
     if (X_DISPLAY == NULL)
     {
-	emsg(_("E240: No connection to the X server"));
+	emsg(_(e_no_connection_to_x_server));
 	return FAIL;
     }
     return OK;
@@ -763,7 +764,7 @@ remote_common(typval_T *argvars, typval_T *rettv, int expr)
 	    vim_free(r);
 	}
 	else
-	    semsg(_("E241: Unable to send to %s"), server_name);
+	    semsg(_(e_unable_to_send_to_str), server_name);
 	return;
     }
 
@@ -798,6 +799,7 @@ f_remote_expr(typval_T *argvars UNUSED, typval_T *rettv)
     rettv->v_type = VAR_STRING;
     rettv->vval.v_string = NULL;
 
+#ifdef FEAT_CLIENTSERVER
     if (in_vim9script()
 	    && (check_for_string_arg(argvars, 0) == FAIL
 		|| check_for_string_arg(argvars, 1) == FAIL
@@ -806,7 +808,6 @@ f_remote_expr(typval_T *argvars UNUSED, typval_T *rettv)
 		    && check_for_opt_number_arg(argvars, 3) == FAIL)))
 	return;
 
-#ifdef FEAT_CLIENTSERVER
     remote_common(argvars, rettv, TRUE);
 #endif
 }
@@ -933,7 +934,7 @@ f_remote_read(typval_T *argvars UNUSED, typval_T *rettv)
 		|| serverReadReply(X_DISPLAY, serverStrToWin(serverid),
 						       &r, FALSE, timeout) < 0)
 # endif
-	    emsg(_("E277: Unable to read a server reply"));
+	    emsg(_(e_unable_to_read_server_reply));
     }
 #endif
     rettv->v_type = VAR_STRING;
@@ -949,13 +950,13 @@ f_remote_send(typval_T *argvars UNUSED, typval_T *rettv)
     rettv->v_type = VAR_STRING;
     rettv->vval.v_string = NULL;
 
+#ifdef FEAT_CLIENTSERVER
     if (in_vim9script()
 	    && (check_for_string_arg(argvars, 0) == FAIL
 		|| check_for_string_arg(argvars, 1) == FAIL
 		|| check_for_opt_string_arg(argvars, 2) == FAIL))
 	return;
 
-#ifdef FEAT_CLIENTSERVER
     remote_common(argvars, rettv, FALSE);
 #endif
 }
@@ -976,7 +977,7 @@ f_remote_startserver(typval_T *argvars UNUSED, typval_T *rettv UNUSED)
     if (server == NULL)
 	return;		// type error; errmsg already given
     if (serverName != NULL)
-	emsg(_("E941: already started a server"));
+	emsg(_(e_already_started_server));
     else
     {
 # ifdef FEAT_X11
@@ -987,7 +988,7 @@ f_remote_startserver(typval_T *argvars UNUSED, typval_T *rettv UNUSED)
 # endif
     }
 #else
-    emsg(_("E942: +clientserver feature not available"));
+    emsg(_(e_clientserver_feature_not_available));
 #endif
 }
 
@@ -1020,7 +1021,7 @@ f_server2client(typval_T *argvars UNUSED, typval_T *rettv)
 
     if (serverSendReply(server, reply) < 0)
     {
-	emsg(_("E258: Unable to send to client"));
+	emsg(_(e_unable_to_send_to_client));
 	return;
     }
     rettv->vval.v_number = 0;

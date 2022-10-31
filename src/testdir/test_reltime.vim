@@ -2,9 +2,9 @@
 
 source check.vim
 CheckFeature reltime
-CheckFeature float
 
 func Test_reltime()
+  let g:test_is_flaky = 1
   let now = reltime()
   sleep 10m
   let later = reltime()

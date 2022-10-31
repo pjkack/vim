@@ -17,7 +17,7 @@
  * 1. Memory, allocated with scheme_malloc*, need not to be freed explicitly,
  *    garbage collector will do it self
  * 2. Requires at least NORMAL features. I can't imagine why one may want
- *    to build with SMALL or TINY features but with MzScheme interface.
+ *    to build with TINY features but with MzScheme interface.
  * 3. I don't use K&R-style functions. Anyways, MzScheme headers are ANSI.
  */
 
@@ -668,14 +668,14 @@ mzscheme_runtime_link_init(char *sch_dll, char *gc_dll, int verbose)
     if (!hMzGC)
     {
 	if (verbose)
-	    semsg(_(e_loadlib), gc_dll, GetWin32Error());
+	    semsg(_(e_could_not_load_library_str_str), gc_dll, GetWin32Error());
 	return FAIL;
     }
 
     if (!hMzSch)
     {
 	if (verbose)
-	    semsg(_(e_loadlib), sch_dll, GetWin32Error());
+	    semsg(_(e_could_not_load_library_str_str), sch_dll, GetWin32Error());
 	return FAIL;
     }
 
@@ -689,7 +689,7 @@ mzscheme_runtime_link_init(char *sch_dll, char *gc_dll, int verbose)
 	    FreeLibrary(hMzGC);
 	    hMzGC = 0;
 	    if (verbose)
-		semsg(_(e_loadfunc), thunk->name);
+		semsg(_(e_could_not_load_library_function_str), thunk->name);
 	    return FAIL;
 	}
     }
@@ -703,7 +703,7 @@ mzscheme_runtime_link_init(char *sch_dll, char *gc_dll, int verbose)
 	    FreeLibrary(hMzGC);
 	    hMzGC = 0;
 	    if (verbose)
-		semsg(_(e_loadfunc), thunk->name);
+		semsg(_(e_could_not_load_library_function_str), thunk->name);
 	    return FAIL;
 	}
     }
@@ -809,7 +809,7 @@ static UINT timer_id = 0;
 #elif defined(FEAT_GUI_GTK)
 static gboolean timer_proc(gpointer);
 static guint timer_id = 0;
-#elif defined(FEAT_GUI_MOTIF) || defined(FEAT_GUI_ATHENA)
+#elif defined(FEAT_GUI_MOTIF)
 static void timer_proc(XtPointer, XtIntervalId *);
 static XtIntervalId timer_id = (XtIntervalId)0;
 #endif
@@ -845,7 +845,7 @@ timer_proc(HWND hwnd UNUSED, UINT uMsg UNUSED, UINT_PTR idEvent UNUSED, DWORD dw
 # elif defined(FEAT_GUI_GTK)
     static gboolean
 timer_proc(gpointer data UNUSED)
-# elif defined(FEAT_GUI_MOTIF) || defined(FEAT_GUI_ATHENA)
+# elif defined(FEAT_GUI_MOTIF)
     static void
 timer_proc(XtPointer timed_out UNUSED, XtIntervalId *interval_id UNUSED)
 # endif
@@ -853,7 +853,7 @@ timer_proc(XtPointer timed_out UNUSED, XtIntervalId *interval_id UNUSED)
     scheme_check_threads();
 # if defined(FEAT_GUI_GTK)
     return TRUE; // continue receiving notifications
-# elif defined(FEAT_GUI_MOTIF) || defined(FEAT_GUI_ATHENA)
+# elif defined(FEAT_GUI_MOTIF)
     // renew timeout
     if (mz_threads_allow && p_mzq > 0)
 	timer_id = XtAppAddTimeOut(app_context, p_mzq,
@@ -868,7 +868,7 @@ setup_timer(void)
     timer_id = SetTimer(NULL, 0, p_mzq, timer_proc);
 # elif defined(FEAT_GUI_GTK)
     timer_id = g_timeout_add((guint)p_mzq, (GSourceFunc)timer_proc, NULL);
-# elif defined(FEAT_GUI_MOTIF) || defined(FEAT_GUI_ATHENA)
+# elif defined(FEAT_GUI_MOTIF)
     timer_id = XtAppAddTimeOut(app_context, p_mzq, timer_proc, NULL);
 # endif
 }
@@ -880,7 +880,7 @@ remove_timer(void)
     KillTimer(NULL, timer_id);
 # elif defined(FEAT_GUI_GTK)
     g_source_remove(timer_id);
-# elif defined(FEAT_GUI_MOTIF) || defined(FEAT_GUI_ATHENA)
+# elif defined(FEAT_GUI_MOTIF)
     XtRemoveTimeOut(timer_id);
 # endif
     timer_id = 0;
@@ -1242,13 +1242,13 @@ mzscheme_init(void)
 #ifdef DYNAMIC_MZSCHEME
 	if (disabled || !mzscheme_enabled(TRUE))
 	{
-	    emsg(_("E815: Sorry, this command is disabled, the MzScheme libraries could not be loaded."));
+	    emsg(_(e_sorry_this_command_is_disabled_the_mzscheme_libraries_could_not_be_loaded));
 	    return -1;
 	}
 #endif
 	if (load_base_module_failed || startup_mzscheme())
 	{
-	    emsg(_("E895: Sorry, this command is disabled, the MzScheme's racket/base module could not be loaded."));
+	    emsg(_(e_sorry_this_command_is_disabled_the_mzscheme_racket_base_module_could_not_be_loaded));
 	    return -1;
 	}
 	initialized = TRUE;
@@ -1631,7 +1631,7 @@ vim_command(void *data, int argc, Scheme_Object **argv)
 
     // may be use do_cmdline_cmd?
     do_cmdline(BYTE_STRING_VALUE(cmd), NULL, NULL, DOCMD_NOWAIT|DOCMD_VERBOSE);
-    update_screen(VALID);
+    update_screen(UPD_VALID);
 
     MZ_GC_UNREG();
     raise_if_error();
@@ -1715,7 +1715,7 @@ get_option(void *data, int argc, Scheme_Object **argv)
     getoption_T	    rc;
     Scheme_Object   *rval = NULL;
     Scheme_Object   *name = NULL;
-    int		    opt_flags = 0;
+    int		    scope = 0;
     buf_T	    *save_curb = curbuf;
     win_T	    *save_curw = curwin;
 
@@ -1736,11 +1736,11 @@ get_option(void *data, int argc, Scheme_Object **argv)
 	}
 
 	if (argv[1] == M_global)
-	    opt_flags = OPT_GLOBAL;
+	    scope = OPT_GLOBAL;
 	else if (SCHEME_VIMBUFFERP(argv[1]))
 	{
 	    curbuf = get_valid_buffer(argv[1]);
-	    opt_flags = OPT_LOCAL;
+	    scope = OPT_LOCAL;
 	}
 	else if (SCHEME_VIMWINDOWP(argv[1]))
 	{
@@ -1748,14 +1748,14 @@ get_option(void *data, int argc, Scheme_Object **argv)
 
 	    curwin = win;
 	    curbuf = win->w_buffer;
-	    opt_flags = OPT_LOCAL;
+	    scope = OPT_LOCAL;
 	}
 	else
 	    scheme_wrong_type(prim->name, "vim-buffer/window", 1, argc, argv);
     }
 
     rc = get_option_value(BYTE_STRING_VALUE(name), &value, (char_u **)&strval,
-								    opt_flags);
+								  NULL, scope);
     curbuf = save_curb;
     curwin = save_curw;
 
@@ -1793,7 +1793,7 @@ get_option(void *data, int argc, Scheme_Object **argv)
 set_option(void *data, int argc, Scheme_Object **argv)
 {
     char_u	*command = NULL;
-    int		opt_flags = 0;
+    int		scope = 0;
     buf_T	*save_curb = curbuf;
     win_T	*save_curw = curwin;
     Vim_Prim	*prim = (Vim_Prim *)data;
@@ -1814,18 +1814,18 @@ set_option(void *data, int argc, Scheme_Object **argv)
 	}
 
 	if (argv[1] == M_global)
-	    opt_flags = OPT_GLOBAL;
+	    scope = OPT_GLOBAL;
 	else if (SCHEME_VIMBUFFERP(argv[1]))
 	{
 	    curbuf = get_valid_buffer(argv[1]);
-	    opt_flags = OPT_LOCAL;
+	    scope = OPT_LOCAL;
 	}
 	else if (SCHEME_VIMWINDOWP(argv[1]))
 	{
 	    win_T *win = get_valid_window(argv[1]);
 	    curwin = win;
 	    curbuf = win->w_buffer;
-	    opt_flags = OPT_LOCAL;
+	    scope = OPT_LOCAL;
 	}
 	else
 	    scheme_wrong_type(prim->name, "vim-buffer/window", 1, argc, argv);
@@ -1834,9 +1834,9 @@ set_option(void *data, int argc, Scheme_Object **argv)
     // do_set can modify cmd, make copy
     command = vim_strsave(BYTE_STRING_VALUE(cmd));
     MZ_GC_UNREG();
-    do_set(command, opt_flags);
+    do_set(command, scope);
     vim_free(command);
-    update_screen(NOT_VALID);
+    update_screen(UPD_NOT_VALID);
     curbuf = save_curb;
     curwin = save_curw;
     raise_if_error();
@@ -2106,7 +2106,7 @@ set_cursor(void *data, int argc, Scheme_Object **argv)
     win->win->w_cursor.lnum = lnum;
     win->win->w_cursor.col = col;
     win->win->w_set_curswant = TRUE;
-    update_screen(VALID);
+    update_screen(UPD_VALID);
 
     raise_if_error();
     return scheme_void;
@@ -2781,7 +2781,7 @@ insert_buffer_line_list(void *data, int argc, Scheme_Object **argv)
 	}
 
 	curbuf = savebuf;
-	update_screen(VALID);
+	update_screen(UPD_VALID);
 
 	MZ_GC_UNREG();
 	raise_if_error();
@@ -2841,7 +2841,7 @@ insert_buffer_line_list(void *data, int argc, Scheme_Object **argv)
 	free_array(array);
 	MZ_GC_UNREG();
 	curbuf = savebuf;
-	update_screen(VALID);
+	update_screen(UPD_VALID);
     }
 
     MZ_GC_UNREG();
@@ -3009,13 +3009,11 @@ vim_to_mzscheme_impl(typval_T *vim_value, int depth, Scheme_Hash_Table *visited)
 	result = scheme_make_integer((long)vim_value->vval.v_number);
 	MZ_GC_CHECK();
     }
-# ifdef FEAT_FLOAT
     else if (vim_value->v_type == VAR_FLOAT)
     {
 	result = scheme_make_double((double)vim_value->vval.v_float);
 	MZ_GC_CHECK();
     }
-# endif
     else if (vim_value->v_type == VAR_LIST)
     {
 	list_T		*list = vim_value->vval.v_list;
@@ -3208,13 +3206,11 @@ mzscheme_to_vim_impl(Scheme_Object *obj, typval_T *tv, int depth,
 	tv->v_type = VAR_BOOL;
 	tv->vval.v_number = SCHEME_TRUEP(obj);
     }
-# ifdef FEAT_FLOAT
     else if (SCHEME_DBLP(obj))
     {
 	tv->v_type = VAR_FLOAT;
 	tv->vval.v_float = SCHEME_DBL_VAL(obj);
     }
-# endif
     else if (SCHEME_BYTE_STRINGP(obj))
     {
 	tv->v_type = VAR_STRING;

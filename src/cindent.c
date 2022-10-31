@@ -32,7 +32,6 @@
 #define LOOKFOR_JS_KEY		11
 #define LOOKFOR_COMMA		12
 
-#if defined(FEAT_CINDENT) || defined(FEAT_SMARTINDENT)
 /*
  * Return TRUE if the string "line" starts with a word from 'cinwords'.
  */
@@ -64,9 +63,6 @@ cin_is_cinword(char_u *line)
     }
     return retval;
 }
-#endif
-
-#if defined(FEAT_CINDENT) || defined(FEAT_SYN_HL)
 
 /*
  * Skip to the end of a "string" and a 'c' character.
@@ -82,16 +78,16 @@ skip_string(char_u *p)
     {
 	if (p[0] == '\'')		    // 'c' or '\n' or '\000'
 	{
-	    if (!p[1])			    // ' at end of line
+	    if (p[1] == NUL)		    // ' at end of line
 		break;
 	    i = 2;
-	    if (p[1] == '\\')		    // '\n' or '\000'
+	    if (p[1] == '\\' && p[2] != NUL)    // '\n' or '\000'
 	    {
 		++i;
 		while (vim_isdigit(p[i - 1]))   // '\000'
 		    ++i;
 	    }
-	    if (p[i] == '\'')		    // check for trailing '
+	    if (p[i - 1] != NUL && p[i] == '\'')    // check for trailing '
 	    {
 		p += i;
 		continue;
@@ -138,6 +134,19 @@ skip_string(char_u *p)
 }
 
 /*
+ * Return TRUE if "line[col]" is inside a C string.
+ */
+    int
+is_pos_in_string(char_u *line, colnr_T col)
+{
+    char_u *p;
+
+    for (p = line; *p && (colnr_T)(p - line) < col; ++p)
+	p = skip_string(p);
+    return !((colnr_T)(p - line) <= col);
+}
+
+/*
  * Find the start of a comment, not knowing if we are in a comment right now.
  * Search starts at w_cursor.lnum and goes backwards.
  * Return NULL when not inside a comment.
@@ -152,8 +161,6 @@ ind_find_start_comment(void)	    // XXX
 find_start_comment(int ind_maxcomment)	// XXX
 {
     pos_T	*pos;
-    char_u	*line;
-    char_u	*p;
     int		cur_maxcomment = ind_maxcomment;
 
     for (;;)
@@ -164,10 +171,7 @@ find_start_comment(int ind_maxcomment)	// XXX
 
 	// Check if the comment start we found is inside a string.
 	// If it is then restrict the search to below this line and try again.
-	line = ml_get(pos->lnum);
-	for (p = line; *p && (colnr_T)(p - line) < pos->col; ++p)
-	    p = skip_string(p);
-	if ((colnr_T)(p - line) <= pos->col)
+	if (!is_pos_in_string(ml_get(pos->lnum), pos->col))
 	    break;
 	cur_maxcomment = curwin->w_cursor.lnum - pos->lnum - 1;
 	if (cur_maxcomment <= 0)
@@ -188,8 +192,6 @@ find_start_comment(int ind_maxcomment)	// XXX
 find_start_rawstring(int ind_maxcomment)	// XXX
 {
     pos_T	*pos;
-    char_u	*line;
-    char_u	*p;
     int		cur_maxcomment = ind_maxcomment;
 
     for (;;)
@@ -200,10 +202,7 @@ find_start_rawstring(int ind_maxcomment)	// XXX
 
 	// Check if the raw string start we found is inside a string.
 	// If it is then restrict the search to below this line and try again.
-	line = ml_get(pos->lnum);
-	for (p = line; *p && (colnr_T)(p - line) < pos->col; ++p)
-	    p = skip_string(p);
-	if ((colnr_T)(p - line) <= pos->col)
+	if (!is_pos_in_string(ml_get(pos->lnum), pos->col))
 	    break;
 	cur_maxcomment = curwin->w_cursor.lnum - pos->lnum - 1;
 	if (cur_maxcomment <= 0)
@@ -251,9 +250,7 @@ ind_find_start_CORS(linenr_T *is_raw)	    // XXX
     }
     return comment_pos;
 }
-#endif // FEAT_CINDENT || FEAT_SYN_HL
 
-#if defined(FEAT_CINDENT) || defined(PROTO)
 
 /*
  * Return TRUE if C-indenting is on.
@@ -262,9 +259,9 @@ ind_find_start_CORS(linenr_T *is_raw)	    // XXX
 cindent_on(void)
 {
     return (!p_paste && (curbuf->b_p_cin
-# ifdef FEAT_EVAL
+#ifdef FEAT_EVAL
 		    || *curbuf->b_p_inde != NUL
-# endif
+#endif
 		    ));
 }
 
@@ -417,23 +414,40 @@ cin_islabel_skip(char_u **s)
 }
 
 /*
- * Recognize a "public/private/protected" scope declaration label.
+ * Recognize a scope declaration label from the 'cinscopedecls' option.
  */
     static int
-cin_isscopedecl(char_u *s)
+cin_isscopedecl(char_u *p)
 {
-    int		i;
+    size_t  cinsd_len;
+    char_u  *cinsd_buf;
+    char_u  *cinsd;
+    size_t  len;
+    char_u  *skip;
+    char_u  *s = cin_skipcomment(p);
+    int	    found = FALSE;
 
-    s = cin_skipcomment(s);
-    if (STRNCMP(s, "public", 6) == 0)
-	i = 6;
-    else if (STRNCMP(s, "protected", 9) == 0)
-	i = 9;
-    else if (STRNCMP(s, "private", 7) == 0)
-	i = 7;
-    else
+    cinsd_len = STRLEN(curbuf->b_p_cinsd) + 1;
+    cinsd_buf = alloc(cinsd_len);
+    if (cinsd_buf == NULL)
 	return FALSE;
-    return (*(s = cin_skipcomment(s + i)) == ':' && s[1] != ':');
+
+    for (cinsd = curbuf->b_p_cinsd; *cinsd; )
+    {
+	len = copy_option_part(&cinsd, cinsd_buf, (int)cinsd_len, ",");
+	if (STRNCMP(s, cinsd_buf, len) == 0)
+	{
+	    skip = cin_skipcomment(s + len);
+	    if (*skip == ':' && skip[1] != ':')
+	    {
+		found = TRUE;
+		break;
+	    }
+	}
+    }
+
+    vim_free(cinsd_buf);
+    return found;
 }
 
 /*
@@ -755,6 +769,10 @@ cin_is_cpp_namespace(char_u *s)
     int		has_name_start = FALSE;
 
     s = cin_skipcomment(s);
+
+    if (STRNCMP(s, "inline", 6) == 0 && (s[6] == NUL || !vim_iswordc(s[6])))
+	s = cin_skipcomment(skipwhite(s + 6));
+
     if (STRNCMP(s, "namespace", 9) == 0 && (s[9] == NUL || !vim_iswordc(s[9])))
     {
 	p = cin_skipcomment(skipwhite(s + 9));
@@ -1219,7 +1237,7 @@ cin_isfuncdecl(
 	if (*s == ')' && cin_nocode(s + 1))
 	{
 	    // ')' at the end: may have found a match
-	    // Check for he previous line not to end in a backslash:
+	    // Check for the previous line not to end in a backslash:
 	    //       #if defined(x) && {backslash}
 	    //		 defined(y)
 	    lnum = first_lnum - 1;
@@ -1637,10 +1655,10 @@ get_baseclass_amount(int col)
     static pos_T *
 find_start_brace(void)	    // XXX
 {
-    pos_T	cursor_save;
-    pos_T	*trypos;
-    pos_T	*pos;
-    static pos_T	pos_copy;
+    pos_T	    cursor_save;
+    pos_T	    *trypos;
+    pos_T	    *pos;
+    static pos_T    pos_copy;
 
     cursor_save = curwin->w_cursor;
     while ((trypos = findmatchlimit(NULL, '{', FM_BLOCKSTOP, 0)) != NULL)
@@ -1654,7 +1672,7 @@ find_start_brace(void)	    // XXX
 		       && (pos = ind_find_start_CORS(NULL)) == NULL) // XXX
 	    break;
 	if (pos != NULL)
-	    curwin->w_cursor.lnum = pos->lnum;
+	    curwin->w_cursor = *pos;
     }
     curwin->w_cursor = cursor_save;
     return trypos;
@@ -1788,7 +1806,7 @@ parse_cino(buf_T *buf)
     buf->b_ind_unclosed2 = sw;
 
     // Suppress ignoring spaces from the indent of a line starting with an
-    // unclosed parentheses.
+    // unclosed parenthesis.
     buf->b_ind_unclosed_noignore = 0;
 
     // If the opening paren is the last nonwhite character on the line, and
@@ -1800,11 +1818,11 @@ parse_cino(buf_T *buf)
     // an unclosed parenthesis.
     buf->b_ind_unclosed_whiteok = 0;
 
-    // Indent a closing parentheses under the line start of the matching
-    // opening parentheses.
+    // Indent a closing parenthesis under the line start of the matching
+    // opening parenthesis.
     buf->b_ind_matching_paren = 0;
 
-    // Indent a closing parentheses under the previous line.
+    // Indent a closing parenthesis under the previous line.
     buf->b_ind_paren_prev = 0;
 
     // Extra indent for comments.
@@ -2090,7 +2108,7 @@ get_c_indent(void)
     // inserting new stuff.
     // For unknown reasons the cursor might be past the end of the line, thus
     // check for that.
-    if ((State & INSERT)
+    if ((State & MODE_INSERT)
 	    && curwin->w_cursor.col < (colnr_T)STRLEN(linecopy)
 	    && linecopy[curwin->w_cursor.col] == ')')
 	linecopy[curwin->w_cursor.col] = NUL;
@@ -2144,13 +2162,30 @@ get_c_indent(void)
 
     // If we're inside a "//" comment and there is a "//" comment in a
     // previous line, lineup with that one.
-    if (cin_islinecomment(theline)
-	    && (trypos = find_line_comment()) != NULL) // XXX
+    if (cin_islinecomment(theline))
     {
-	// find how indented the line beginning the comment is
-	getvcol(curwin, trypos, &col, NULL, NULL);
-	amount = col;
-	goto theend;
+	pos_T	linecomment_pos;
+
+	trypos = find_line_comment(); // XXX
+	if (trypos == NULL && curwin->w_cursor.lnum > 1)
+	{
+	    // There may be a statement before the comment, search from the end
+	    // of the line for a comment start.
+	    linecomment_pos.col =
+			  check_linecomment(ml_get(curwin->w_cursor.lnum - 1));
+	    if (linecomment_pos.col != MAXCOL)
+	    {
+		trypos = &linecomment_pos;
+		trypos->lnum = curwin->w_cursor.lnum - 1;
+	    }
+	}
+	if (trypos  != NULL)
+	{
+	    // find how indented the line beginning the comment is
+	    getvcol(curwin, trypos, &col, NULL, NULL);
+	    amount = col;
+	    goto theend;
+	}
     }
 
     // If we're inside a comment and not looking at the start of the
@@ -2232,7 +2267,8 @@ get_c_indent(void)
 			}
 			// If the start comment string doesn't match with the
 			// start of the comment, skip this entry.  XXX
-			else if (STRNCMP(ml_get(comment_pos->lnum) + comment_pos->col,
+			else if (STRNCMP(ml_get(comment_pos->lnum)
+							    + comment_pos->col,
 					     lead_start, lead_start_len) != 0)
 			    continue;
 		    }
@@ -2759,8 +2795,6 @@ get_c_indent(void)
 			    break;
 			}
 
-			l = ml_get_curline();
-
 			// If we're in a comment or raw string now, skip to
 			// the start of it.
 			trypos = ind_find_start_CORS(NULL);
@@ -2770,6 +2804,8 @@ get_c_indent(void)
 			    curwin->w_cursor.col = 0;
 			    continue;
 			}
+
+			l = ml_get_curline();
 
 			// Skip preprocessor directives and blank lines.
 			if (cin_ispreproc_cont(&l, &curwin->w_cursor.lnum,
@@ -2870,8 +2906,6 @@ get_c_indent(void)
 					      < ourscope - FIND_NAMESPACE_LIM)
 				break;
 
-			    l = ml_get_curline();
-
 			    // If we're in a comment or raw string now, skip
 			    // to the start of it.
 			    trypos = ind_find_start_CORS(NULL);
@@ -2881,6 +2915,8 @@ get_c_indent(void)
 				curwin->w_cursor.col = 0;
 				continue;
 			    }
+
+			    l = ml_get_curline();
 
 			    // Skip preprocessor directives and blank lines.
 			    if (cin_ispreproc_cont(&l, &curwin->w_cursor.lnum,
@@ -3161,11 +3197,16 @@ get_c_indent(void)
 				    && trypos->col < tryposBrace->col)))
 			trypos = NULL;
 
+		    l = ml_get_curline();
+
 		    // If we are looking for ',', we also look for matching
 		    // braces.
-		    if (trypos == NULL && terminated == ','
-					      && find_last_paren(l, '{', '}'))
-			trypos = find_start_brace();
+		    if (trypos == NULL && terminated == ',')
+		    {
+			if (find_last_paren(l, '{', '}'))
+			    trypos = find_start_brace();
+			l = ml_get_curline();
+		    }
 
 		    if (trypos != NULL)
 		    {
@@ -3198,6 +3239,7 @@ get_c_indent(void)
 			    --curwin->w_cursor.lnum;
 			    curwin->w_cursor.col = 0;
 			}
+			l = ml_get_curline();
 		    }
 
 		    // Get indent and pointer to text for current line,
@@ -3676,7 +3718,7 @@ term_again:
 	// Are we at the start of a cpp base class declaration or
 	// constructor initialization?  XXX
 	n = FALSE;
-	if (curbuf->b_ind_cpp_baseclass != 0 && theline[0] != '{')
+	if (curbuf->b_ind_cpp_baseclass != 0)
 	{
 	    n = cin_is_cpp_baseclass(&cache_cpp_baseclass);
 	    l = ml_get_curline();
@@ -3922,13 +3964,7 @@ in_cinkeys(
 	    try_match_word = FALSE;
 
 	// does it look like a control character?
-	if (*look == '^'
-#ifdef EBCDIC
-		&& (Ctrl_chr(look[1]) != 0)
-#else
-		&& look[1] >= '?' && look[1] <= '_'
-#endif
-		)
+	if (*look == '^' && look[1] >= '?' && look[1] <= '_')
 	{
 	    if (try_match && keytyped == Ctrl_chr(look[1]))
 		return TRUE;
@@ -4116,7 +4152,6 @@ do_c_expr_indent(void)
 # endif
 	fixthisline(get_c_indent);
 }
-#endif
 
 #if defined(FEAT_EVAL) || defined(PROTO)
 /*
@@ -4125,7 +4160,6 @@ do_c_expr_indent(void)
     void
 f_cindent(typval_T *argvars UNUSED, typval_T *rettv)
 {
-# ifdef FEAT_CINDENT
     pos_T	pos;
     linenr_T	lnum;
 
@@ -4141,7 +4175,6 @@ f_cindent(typval_T *argvars UNUSED, typval_T *rettv)
 	curwin->w_cursor = pos;
     }
     else
-# endif
 	rettv->vval.v_number = -1;
 }
 #endif

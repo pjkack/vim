@@ -85,6 +85,11 @@ sub do_line
          my $string = eval($2);
          $line = "$1 " . unpack "H*", $string;
       }
+      elsif( $line =~ m/^(SELECTION \d+) +(\[?)(.*?)(\]?)$/ ) {
+         # we're evil
+         my $string = eval($3);
+         $line = "$1 $2 " . unpack( "H*", $string ) . " $4";
+      }
 
       do_onetest if defined $command;
 
@@ -113,14 +118,17 @@ sub do_line
 
          $line = "$cmd $initial" . join( "", map sprintf("%02x", $_), unpack "C*", length $data ? eval($data) : "" ) . "$final";
       }
-      elsif( $line =~ m/^(escape|dcs) (\[?)(.*?)(\]?)$/ ) {
-         $line = "$1 $2" . join( "", map sprintf("%02x", $_), unpack "C*", eval($3) ) . "$4";
+      elsif( $line =~ m/^(escape|dcs|apc|pm|sos) (\[?)(.*?)(\]?)$/ ) {
+         $line = "$1 $2" . join( "", map sprintf("%02x", $_), unpack "C*", length $3 ? eval($3) : "" ) . "$4";
       }
       elsif( $line =~ m/^putglyph (\S+) (.*)$/ ) {
          $line = "putglyph " . join( ",", map sprintf("%x", $_), eval($1) ) . " $2";
       }
-      elsif( $line =~ m/^(?:movecursor|scrollrect|moverect|erase|damage|sb_pushline|sb_popline|settermprop|setmousefunc) / ) {
+      elsif( $line =~ m/^(?:movecursor|scrollrect|moverect|erase|damage|sb_pushline|sb_popline|sb_clear|settermprop|setmousefunc|selection-query) ?/ ) {
          # no conversion
+      }
+      elsif( $line =~ m/^(selection-set) (.*?) (\[?)(.*?)(\]?)$/ ) {
+         $line = "$1 $2 $3" . join( "", map sprintf("%02x", $_), unpack "C*", eval($4) ) . "$5";
       }
       else {
          warn "Unrecognised test expectation '$line'\n";
@@ -131,17 +139,23 @@ sub do_line
    # ?screen_row assertion is emulated here
    elsif( $line =~ s/^\?screen_row\s+(\d+)\s*=\s*// ) {
       my $row = $1;
-      my $row1 = $row + 1;
-      my $want = eval($line);
+      my $want;
+
+      if( $line =~ m/^"/ ) {
+         $want = eval($line);
+      }
+      else {
+         # Turn 0xDD,0xDD,... directly into bytes
+         $want = pack "C*", map { hex } split m/,/, $line;
+      }
 
       do_onetest if defined $command;
 
-      # TODO: may not be 80
-      $hin->print( "\?screen_chars $row,0,$row1,80\n" );
+      $hin->print( "\?screen_chars $row\n" );
       my $response = <$hout>;
       chomp $response;
 
-      $response = pack "C*", map hex, split m/,/, $response;
+      $response = pack "C*", map { hex } split m/,/, $response;
       if( $response ne $want ) {
          print "# line $linenum: Assert ?screen_row $row failed:\n" .
                "# Expected: $want\n" .

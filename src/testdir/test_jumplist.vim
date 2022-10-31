@@ -1,11 +1,7 @@
 " Tests for the jumplist functionality
 
-source check.vim
-
 " Tests for the getjumplist() function
 func Test_getjumplist()
-  CheckFeature jumplist
-
   %bwipe
   clearjumps
   call assert_equal([[], 0], getjumplist())
@@ -19,7 +15,7 @@ func Test_getjumplist()
   for i in range(1, 100)
     call add(lines, "Line " . i)
   endfor
-  call writefile(lines, "Xtest")
+  call writefile(lines, "Xtest", 'D')
 
   " Jump around and create a jump list
   edit Xtest
@@ -61,8 +57,45 @@ func Test_getjumplist()
   clearjumps
   call test_garbagecollect_now()
   call assert_equal(4, l[1])
+endfunc
 
-  call delete("Xtest")
+func Test_jumplist_invalid()
+  new
+  clearjumps
+  " put some randome text
+  put ='a'
+  let prev = bufnr('%')
+  setl nomodified bufhidden=wipe
+  e XXJumpListBuffer
+  let bnr = bufnr('%')
+  " 1) empty jumplist
+  let expected = [[
+   \ {'lnum': 2, 'bufnr': prev, 'col': 0, 'coladd': 0}], 1]
+  call assert_equal(expected, getjumplist())
+  let jumps = execute(':jumps')
+  call assert_equal('>', jumps[-1:])
+  " now jump back
+  exe ":norm! \<c-o>"
+  let expected = [[
+    \ {'lnum': 2, 'bufnr': prev, 'col': 0, 'coladd': 0},
+    \ {'lnum': 1, 'bufnr': bnr,  'col': 0, 'coladd': 0}], 0]
+  call assert_equal(expected, getjumplist())
+  let jumps = execute(':jumps')
+  call assert_match('>  0     2    0 -invalid-', jumps)
+endfunc
+
+" Test for '' mark in an empty buffer
+
+func Test_empty_buffer()
+  new
+  insert
+a
+b
+c
+d
+.
+  call assert_equal(1, line("''"))
+  bwipe!
 endfunc
 
 " vim: shiftwidth=2 sts=2 expandtab

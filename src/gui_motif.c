@@ -75,9 +75,6 @@ static Widget	tabLine;
 static Widget	tabLine_menu = 0;
 static int	showing_tabline = 0;
 #endif
-#ifdef FEAT_FOOTER
-static Widget footer;
-#endif
 #ifdef FEAT_MENU
 # if (XmVersion >= 1002)
 // remember the last set value for the tearoff item
@@ -87,10 +84,6 @@ static Widget menuBar;
 #endif
 
 #ifdef FEAT_TOOLBAR
-# ifdef FEAT_FOOTER
-static void toolbarbutton_enter_cb(Widget, XtPointer, XEvent *, Boolean *);
-static void toolbarbutton_leave_cb(Widget, XtPointer, XEvent *, Boolean *);
-# endif
 static void reset_focus(void);
 #endif
 
@@ -142,12 +135,12 @@ tabline_button_cb(
     XtPointer	client_data UNUSED,
     XtPointer	call_data UNUSED)
 {
-    int		cmd, tab_idx;
+    XtPointer	cmd, tab_idx;
 
     XtVaGetValues(w, XmNuserData, &cmd, NULL);
     XtVaGetValues(tabLine_menu, XmNuserData, &tab_idx, NULL);
 
-    send_tabline_menu_event(tab_idx, cmd);
+    send_tabline_menu_event((int)(long)tab_idx, (int)(long)cmd);
 }
 
 /*
@@ -235,15 +228,19 @@ tabline_menu_cb(
 	return;
     }
 
+    if (event->button == Button2)
+    {
+	// Middle mouse click on tabpage label closes that tab.
+	XtVaGetValues(tabLine_menu, XmNuserData, &tab_idx, NULL);
+	send_tabline_menu_event(tab_idx, (int)TABLINE_MENU_CLOSE);
+	return;
+    }
+
     if (event->button != Button3)
 	return;
 
     // When ignoring events don't show the menu.
-    if (hold_gui_events
-# ifdef FEAT_CMDWIN
-	    || cmdwin_type != 0
-# endif
-       )
+    if (hold_gui_events || cmdwin_type != 0)
 	return;
 
     if (event->subwindow != None)
@@ -254,7 +251,7 @@ tabline_menu_cb(
 	    XtVaGetValues(tab_w, XmNpageNumber, &tab_idx, NULL);
     }
 
-    XtVaSetValues(tabLine_menu, XmNuserData, tab_idx, NULL);
+    XtVaSetValues(tabLine_menu, XmNuserData, (XtPointer)(long)tab_idx, NULL);
     XtVaGetValues(tabLine_menu, XmNchildren, &children, XmNnumChildren,
 		  &numChildren, NULL);
     XtManageChildren(children, numChildren);
@@ -440,11 +437,6 @@ gui_x11_create_widgets(void)
 	menuBar = XmCreateMenuBar(vimForm, "menuBar", al, ac);
 	XtManageChild(menuBar);
 
-	// Remember the default colors, needed for ":hi clear".
-	XtVaGetValues(menuBar,
-	    XmNbackground, &gui.menu_def_bg_pixel,
-	    XmNforeground, &gui.menu_def_fg_pixel,
-	    NULL);
 	gui_motif_menu_colors(menuBar);
     }
 #endif
@@ -522,7 +514,7 @@ gui_x11_create_widgets(void)
 
     // Add the buttons to the tabline popup menu
     n = 0;
-    XtSetArg(args[n], XmNuserData, TABLINE_MENU_CLOSE); n++;
+    XtSetArg(args[n], XmNuserData, (XtPointer)TABLINE_MENU_CLOSE); n++;
     xms = XmStringCreate((char *)"Close tab", STRING_TAG);
     XtSetArg(args[n], XmNlabelString, xms); n++;
     button = XmCreatePushButton(tabLine_menu, "Close", args, n);
@@ -531,7 +523,7 @@ gui_x11_create_widgets(void)
     XmStringFree(xms);
 
     n = 0;
-    XtSetArg(args[n], XmNuserData, TABLINE_MENU_NEW); n++;
+    XtSetArg(args[n], XmNuserData, (XtPointer)TABLINE_MENU_NEW); n++;
     xms = XmStringCreate((char *)"New Tab", STRING_TAG);
     XtSetArg(args[n], XmNlabelString, xms); n++;
     button = XmCreatePushButton(tabLine_menu, "New Tab", args, n);
@@ -540,7 +532,7 @@ gui_x11_create_widgets(void)
     XmStringFree(xms);
 
     n = 0;
-    XtSetArg(args[n], XmNuserData, TABLINE_MENU_OPEN); n++;
+    XtSetArg(args[n], XmNuserData, (XtPointer)TABLINE_MENU_OPEN); n++;
     xms = XmStringCreate((char *)"Open tab...", STRING_TAG);
     XtSetArg(args[n], XmNlabelString, xms); n++;
     button = XmCreatePushButton(tabLine_menu, "Open tab...", args, n);
@@ -578,25 +570,6 @@ gui_x11_create_widgets(void)
 	XmNhighlightThickness, 0,
 	XmNshadowThickness, 0,
 	NULL);
-
-#ifdef FEAT_FOOTER
-    /*
-     * Create the Footer.
-     */
-    footer = XtVaCreateWidget("footer",
-	xmLabelGadgetClass, vimForm,
-	XmNalignment, XmALIGNMENT_BEGINNING,
-	XmNmarginHeight, 0,
-	XmNmarginWidth, 0,
-	XmNtraversalOn, False,
-	XmNrecomputeSize, False,
-	XmNleftAttachment, XmATTACH_FORM,
-	XmNleftOffset, 5,
-	XmNrightAttachment, XmATTACH_FORM,
-	XmNbottomAttachment, XmATTACH_FORM,
-	NULL);
-    gui_mch_set_footer((char_u *) "");
-#endif
 
     /*
      * Install the callbacks.
@@ -646,8 +619,7 @@ gui_x11_set_back_color(void)
 }
 
 /*
- * Manage dialog centered on pointer. This could be used by the Athena code as
- * well.
+ * Manage dialog centered on pointer.
  */
     void
 manage_centered(Widget dialog_child)
@@ -949,12 +921,20 @@ gui_mch_add_menu(vimmenu_T *menu, int idx)
 			   && tearoff_val == (int)XmTEAR_OFF_ENABLED ? 1 : 0),
 #endif
 	    NULL);
-    gui_motif_menu_colors(menu->id);
-    gui_motif_menu_fontlist(menu->id);
     XmStringFree(label);
 
     if (menu->id == (Widget)0)		// failed
 	return;
+
+    // The "Help" menu is a special case, and should be placed at the far
+    // right hand side of the menu-bar.  It's recognized by its high priority.
+    if (parent == NULL && menu->priority >= 9999)
+	XtVaSetValues(menuBar,
+		XmNmenuHelpWidget, menu->id,
+		NULL);
+
+    gui_motif_menu_colors(menu->id);
+    gui_motif_menu_fontlist(menu->id);
 
     // add accelerator text
     gui_motif_add_actext(menu);
@@ -983,19 +963,8 @@ gui_mch_add_menu(vimmenu_T *menu, int idx)
 	XmNsubMenuId, menu->submenu_id,
 	NULL);
 
-    /*
-     * The "Help" menu is a special case, and should be placed at the far
-     * right hand side of the menu-bar.  It's recognized by its high priority.
-     */
-    if (parent == NULL && menu->priority >= 9999)
-	XtVaSetValues(menuBar,
-		XmNmenuHelpWidget, menu->id,
-		NULL);
-
-    /*
-     * When we add a top-level item to the menu bar, we can figure out how
-     * high the menu bar should be.
-     */
+    // When we add a top-level item to the menu bar, we can figure out how
+    // high the menu bar should be.
     if (parent == NULL)
 	gui_mch_compute_menu_height(menu->id);
 }
@@ -1259,10 +1228,6 @@ gui_mch_add_menu_item(vimmenu_T *menu, int idx)
     XmString	label;
     vimmenu_T	*parent = menu->parent;
 
-# ifdef EBCDIC
-    menu->mnemonic = 0;
-# endif
-
 # if (XmVersion <= 1002)
     // Don't add Popup menu items when the popup menu isn't used.
     if (menu_is_child_of_popup(menu) && !mouse_model_popup())
@@ -1328,12 +1293,6 @@ gui_mch_add_menu_item(vimmenu_T *menu, int idx)
 	    {
 		XtAddCallback(menu->id,
 			XmNactivateCallback, gui_x11_menu_cb, menu);
-# ifdef FEAT_FOOTER
-		XtAddEventHandler(menu->id, EnterWindowMask, False,
-			toolbarbutton_enter_cb, menu);
-		XtAddEventHandler(menu->id, LeaveWindowMask, False,
-			toolbarbutton_leave_cb, menu);
-# endif
 	    }
 	}
 	else
@@ -1608,9 +1567,6 @@ gui_mch_destroy_menu(vimmenu_T *menu)
     // Please be sure to destroy the parent widget first (i.e. menu->id).
     // On the other hand, problems have been reported that the submenu must be
     // deleted first...
-    //
-    // This code should be basically identical to that in the file gui_athena.c
-    // because they are both Xt based.
     if (menu->submenu_id != (Widget)0)
     {
 	XtDestroyWidget(menu->submenu_id);
@@ -1676,12 +1632,10 @@ gui_mch_def_colors(void)
 {
     if (gui.in_use)
     {
-	// Use the values saved when starting up.  These should come from the
-	// window manager or a resources file.
-	gui.menu_fg_pixel = gui.menu_def_fg_pixel;
-	gui.menu_bg_pixel = gui.menu_def_bg_pixel;
-	gui.scroll_fg_pixel = gui.scroll_def_fg_pixel;
-	gui.scroll_bg_pixel = gui.scroll_def_bg_pixel;
+	gui.menu_fg_pixel = gui_get_color((char_u *)gui.rsrc_menu_fg_name);
+	gui.menu_bg_pixel = gui_get_color((char_u *)gui.rsrc_menu_bg_name);
+	gui.scroll_fg_pixel = gui_get_color((char_u *)gui.rsrc_scroll_fg_name);
+	gui.scroll_bg_pixel = gui_get_color((char_u *)gui.rsrc_scroll_bg_name);
 #ifdef FEAT_BEVAL_GUI
 	gui.tooltip_fg_pixel =
 			gui_get_color((char_u *)gui.rsrc_tooltip_fg_name);
@@ -1749,17 +1703,27 @@ gui_mch_set_scrollbar_pos(
     int
 gui_mch_get_scrollbar_xpadding(void)
 {
-    // TODO: Calculate the padding for adjust scrollbar position when the
-    // Window is maximized.
-    return 0;
+    int xpad;
+    Dimension tw, ww;
+    Position  tx;
+
+    XtVaGetValues(textArea, XtNwidth, &tw, XtNx, &tx, NULL);
+    XtVaGetValues(vimShell, XtNwidth, &ww, NULL);
+    xpad = ww - tw - tx - gui.scrollbar_width;
+    return (xpad < 0) ? 0 : xpad;
 }
 
     int
 gui_mch_get_scrollbar_ypadding(void)
 {
-    // TODO: Calculate the padding for adjust scrollbar position when the
-    // Window is maximized.
-    return 0;
+    int ypad;
+    Dimension th, wh;
+    Position  ty;
+
+    XtVaGetValues(textArea, XtNheight, &th, XtNy, &ty, NULL);
+    XtVaGetValues(vimShell, XtNheight, &wh, NULL);
+    ypad = wh - th - ty - gui.scrollbar_height;
+    return (ypad < 0) ? 0 : ypad;
 }
 
     void
@@ -1854,14 +1818,6 @@ gui_mch_create_scrollbar(
     sb->id = XtCreateWidget("scrollBar",
 	    xmScrollBarWidgetClass, textAreaForm, args, n);
 
-    // Remember the default colors, needed for ":hi clear".
-    if (gui.scroll_def_bg_pixel == (guicolor_T)0
-	    && gui.scroll_def_fg_pixel == (guicolor_T)0)
-	XtVaGetValues(sb->id,
-		XmNbackground, &gui.scroll_def_bg_pixel,
-		XmNforeground, &gui.scroll_def_fg_pixel,
-		NULL);
-
     if (sb->id != (Widget)0)
     {
 	gui_mch_set_scrollbar_colors(sb);
@@ -1889,20 +1845,22 @@ gui_mch_set_scrollbar_colors(scrollbar_T *sb)
 	if (gui.scroll_bg_pixel != INVALCOLOR)
 	{
 #if (XmVersion>=1002)
+	    // This should not only set the through color but also adjust
+	    // related colors, such as shadows.
 	    XmChangeColor(sb->id, gui.scroll_bg_pixel);
-#else
+#endif
+
+	    // Set the through color directly, in case XmChangeColor() decided
+	    // to change it.
 	    XtVaSetValues(sb->id,
 		    XmNtroughColor, gui.scroll_bg_pixel,
 		    NULL);
-#endif
 	}
 
 	if (gui.scroll_fg_pixel != INVALCOLOR)
 	    XtVaSetValues(sb->id,
 		    XmNforeground, gui.scroll_fg_pixel,
-#if (XmVersion<1002)
 		    XmNbackground, gui.scroll_fg_pixel,
-#endif
 		    NULL);
     }
 
@@ -2768,7 +2726,7 @@ gui_mch_dialog(
     // Create the dialog message.
     // Since LessTif is apparently having problems with the creation of
     // properly localized string, we use LtoR here. The symptom is that the
-    // string sill not show properly in multiple lines as it does in native
+    // string is not shown properly in multiple lines as it does in native
     // Motif.
     label = XmStringCreateLtoR((char *)message, STRING_TAG);
     if (label == NULL)
@@ -2868,58 +2826,6 @@ gui_mch_dialog(
     return dialogStatus;
 }
 #endif // FEAT_GUI_DIALOG
-
-#if defined(FEAT_FOOTER) || defined(PROTO)
-
-    static int
-gui_mch_compute_footer_height(void)
-{
-    Dimension	height;		    // total Toolbar height
-    Dimension	top;		    // XmNmarginTop
-    Dimension	bottom;		    // XmNmarginBottom
-    Dimension	shadow;		    // XmNshadowThickness
-
-    XtVaGetValues(footer,
-	    XmNheight, &height,
-	    XmNmarginTop, &top,
-	    XmNmarginBottom, &bottom,
-	    XmNshadowThickness, &shadow,
-	    NULL);
-
-    return (int) height + top + bottom + (shadow << 1);
-}
-
-    void
-gui_mch_enable_footer(int showit)
-{
-    if (showit)
-    {
-	gui.footer_height = gui_mch_compute_footer_height();
-	XtManageChild(footer);
-    }
-    else
-    {
-	gui.footer_height = 0;
-	XtUnmanageChild(footer);
-    }
-    XtVaSetValues(textAreaForm, XmNbottomOffset, gui.footer_height, NULL);
-}
-
-    void
-gui_mch_set_footer(char_u *s)
-{
-    XmString	xms;
-
-    xms = XmStringCreate((char *)s, STRING_TAG);
-    if (xms != NULL)
-    {
-	XtVaSetValues(footer, XmNlabelString, xms, NULL);
-	XmStringFree(xms);
-    }
-}
-
-#endif
-
 
 #if defined(FEAT_TOOLBAR) || defined(PROTO)
     void
@@ -3145,39 +3051,6 @@ motif_get_toolbar_colors(
 	    XmNhighlightColor, hsp,
 	    NULL);
 }
-
-# ifdef FEAT_FOOTER
-/*
- * The next toolbar enter/leave callbacks should really do balloon help.  But
- * I have to use footer help for backwards compatibility.  Hopefully both will
- * get implemented and the user will have a choice.
- */
-    static void
-toolbarbutton_enter_cb(
-    Widget	w UNUSED,
-    XtPointer	client_data,
-    XEvent	*event UNUSED,
-    Boolean	*cont UNUSED)
-{
-    vimmenu_T	*menu = (vimmenu_T *) client_data;
-
-    if (menu->strings[MENU_INDEX_TIP] != NULL)
-    {
-	if (vim_strchr(p_go, GO_FOOTER) != NULL)
-	    gui_mch_set_footer(menu->strings[MENU_INDEX_TIP]);
-    }
-}
-
-    static void
-toolbarbutton_leave_cb(
-    Widget	w UNUSED,
-    XtPointer	client_data UNUSED,
-    XEvent	*event UNUSED,
-    Boolean	*cont UNUSED)
-{
-    gui_mch_set_footer((char_u *) "");
-}
-# endif
 #endif
 
 #if defined(FEAT_GUI_TABLINE) || defined(PROTO)
@@ -3995,7 +3868,7 @@ gui_mch_replace_dialog(exarg_T *eap)
 }
 
 /*
- * Synchronize all gui elements, which are dependant upon the
+ * Synchronize all gui elements, which are dependent upon the
  * main text font used. Those are in esp. the find/replace dialogs.
  * If you don't understand why this should be needed, please try to
  * search for "pi\xea\xb6\xe6" in iso8859-2.

@@ -1,4 +1,4 @@
-*term.txt*      For Vim version 8.2.  Last change: 2021 Jan 14
+*term.txt*      For Vim version 9.0.  Last change: 2022 Oct 21
 
 
 		  VIM REFERENCE MANUAL    by Bram Moolenaar
@@ -43,15 +43,10 @@ On non-Unix systems a termcap is only available if Vim was compiled with
 TERMCAP defined.
 
 					*builtin-terms* *builtin_terms*
-Which builtin terminals are available depends on a few defines in feature.h,
-which need to be set at compile time:
-    define		output of ":version"	terminals builtin	~
-NO_BUILTIN_TCAPS	-builtin_terms		none
-SOME_BUILTIN_TCAPS	+builtin_terms		most common ones (default)
-ALL_BUILTIN_TCAPS	++builtin_terms		all available
-
-You can see a list of available builtin terminals with ":set term=xxx" (when
-not running the GUI).  Also see |+builtin_terms|.
+A number of builtin terminals are available.  Since patch 9.0.0280 there is no
+difference between Vim versions.  You can see a list of available builtin
+terminals in the error message you get for `:set term=xxx` (when not running
+the GUI).  Also see |++builtin_terms|.
 
 If the termcap code is included Vim will try to get the strings for the
 terminal you are using from the termcap file and the builtin termcaps.  Both
@@ -126,6 +121,39 @@ automatically, you can try using something like this: >
 	  exec "set t_PS=\e[200~"
 	  exec "set t_PE=\e[201~"
 	endif
+<
+							*tmux-integration*
+If you experience issues when running Vim inside tmux, here are a few hints.
+You can comment-out parts if something doesn't work (it may depend on the
+terminal that tmux is running in): >
+
+    if !has('gui_running') && &term =~ '^\%(screen\|tmux\)'
+        " Better mouse support, see  :help 'ttymouse'
+        set ttymouse=sgr
+
+        " Enable true colors, see  :help xterm-true-color
+        let &termguicolors = v:true
+        let &t_8f = "\<Esc>[38;2;%lu;%lu;%lum"
+        let &t_8b = "\<Esc>[48;2;%lu;%lu;%lum"
+
+        " Enable bracketed paste mode, see  :help xterm-bracketed-paste
+        let &t_BE = "\<Esc>[?2004h"
+        let &t_BD = "\<Esc>[?2004l"
+        let &t_PS = "\<Esc>[200~"
+        let &t_PE = "\<Esc>[201~"
+
+        " Enable focus event tracking, see  :help xterm-focus-event
+        let &t_fe = "\<Esc>[?1004h"
+        let &t_fd = "\<Esc>[?1004l"
+	execute "set <FocusGained>=\<Esc>[I"
+        execute "set <FocusLost>=\<Esc>[O"
+
+        " Enable modified arrow keys, see  :help arrow_modifiers
+        execute "silent! set <xUp>=\<Esc>[@;*A"
+        execute "silent! set <xDown>=\<Esc>[@;*B"
+        execute "silent! set <xRight>=\<Esc>[@;*C"
+        execute "silent! set <xLeft>=\<Esc>[@;*D"
+    endif
 <
 							*cs7-problem*
 Note: If the terminal settings are changed after running Vim, you might have
@@ -221,7 +249,19 @@ another code.  That is to avoid that the codes obtained from xterm directly
 Another special value is a termcap entry ending in "@;*X".  This is for cursor
 keys, which either use "CSI X" or "CSI 1 ; modifier X".  Thus the "@"
 stands for either "1" if a modifier follows, or nothing.
-							*xterm-scroll-region*
+							*arrow_modifiers*
+Several terminal emulators (alacritty, gnome, konsole, etc.) send special
+codes for keys with modifiers, but these do not have an entry in the
+termcap/terminfo database.  You can make them work by adding a few lines in
+your vimrc.  For example, to make the Control modifier work with arrow keys
+for the gnome terminal: >
+	if &term =~ 'gnome'
+	   execute "set <xUp>=\<Esc>[@;*A"
+	   execute "set <xDown>=\<Esc>[@;*B"
+	   execute "set <xRight>=\<Esc>[@;*C"
+	   execute "set <xLeft>=\<Esc>[@;*D"
+	endif
+<							*xterm-scroll-region*
 The default termcap entry for xterm on Sun and other platforms does not
 contain the entry for scroll regions.  Add ":cs=\E[%i%d;%dr:" to the xterm
 entry in /etc/termcap and everything should work.
@@ -327,8 +367,11 @@ OUTPUT CODES						*terminal-output-codes*
 
 Added by Vim (there are no standard codes for these):
 	t_AU	set underline color (ANSI)			*t_AU* *'t_AU'*
-	t_Ce	undercurl end					*t_Ce* *'t_Ce'*
-	t_Cs	undercurl mode					*t_Cs* *'t_Cs'*
+	t_Ce	undercurl and underline end			*t_Ce* *'t_Ce'*
+	t_Cs	undercurl (curly underline) mode		*t_Cs* *'t_Cs'*
+	t_Us	double underline mode				*t_Us* *'t_Us'*
+	t_ds	dotted underline mode				*t_ds* *'t_ds'*
+	t_Ds	dashed underline mode				*t_Ds* *'t_Ds'*
 	t_Te	strikethrough end				*t_Te* *'t_Te'*
 	t_Ts	strikethrough mode				*t_Ts* *'t_Ts'*
 	t_IS	set icon text start				*t_IS* *'t_IS'*
@@ -341,9 +384,10 @@ Added by Vim (there are no standard codes for these):
 	t_SR	start replace mode (underline cursor shape)	*t_SR* *'t_SR'*
 	t_EI	end insert or replace mode (block cursor shape)	*t_EI* *'t_EI'*
 		|termcap-cursor-shape|
-	t_RV	request terminal version string (for xterm)	*t_RV* *'t_RV'*
-		The response is stored in |v:termresponse|
-		|xterm-8bit| |'ttymouse'| |xterm-codes|
+	t_RV	request terminal version string (works for	*t_RV* *'t_RV'*
+		xterm and other terminal emulators)  The
+		response is stored in |v:termresponse| |xterm-8bit|
+		|'ttymouse'| |xterm-codes|
 	t_u7	request cursor position (for xterm)		*t_u7* *'t_u7'*
 		see |'ambiwidth'|
 		The response is stored in |v:termu7resp|
@@ -511,14 +555,21 @@ request the key codes directly from the xterm.  The responses are used to
 adjust the various t_ codes.  This avoids the problem that the xterm can
 produce different codes, depending on the mode it is in (8-bit, VT102,
 VT220, etc.).  The result is that codes like <xF1> are no longer needed.
-Note: This is only done on startup.  If the xterm options are changed after
-Vim has started, the escape sequences may not be recognized anymore.
+
+One of the codes that can change is 't_Co', the number of colors.  This will
+trigger a redraw.  If this is a problem, reset the 'xtermcodes' option as
+early as possible: >
+	set noxtermcodes
+
+Note: Requesting the key codes is only done on startup.  If the xterm options
+are changed after Vim has started, the escape sequences may not be recognized
+anymore.
 
 							*xterm-true-color*
 Vim supports using true colors in the terminal (taken from |highlight-guifg|
 and |highlight-guibg|), given that the terminal supports this. To make this
 work the 'termguicolors' option needs to be set.
-See https://gist.github.com/XVilka/8346728 for a list of terminals that
+See https://github.com/termstandard/colors for a list of terminals that
 support true colors.
 
 Sometimes setting 'termguicolors' is not enough and one has to set the |t_8f|
@@ -559,6 +610,13 @@ Focus event tracking is disabled by a 't_fd' sequence when exiting "raw" mode.
 If you would like to disable this feature, add the following to your .vimrc:
 	`set t_fd=`
 	`set t_fe=`
+If your terminal does support this but Vim does not recognize the terminal,
+you may have to set the options yourself: >
+	let &t_fe = "\<Esc>[?1004h"
+	let &t_fd = "\<Esc>[?1004l"
+	execute "set <FocusGained>=\<Esc>[I"
+        execute "set <FocusLost>=\<Esc>[O"
+If this causes garbage to show when Vim starts up then it doesn't work.
 
 							*termcap-colors*
 Note about colors: The 't_Co' option tells Vim the number of colors available.
@@ -570,10 +628,13 @@ When the GUI is running 't_Co' is set to 16777216.
 				*termcap-cursor-shape* *termcap-cursor-color*
 When Vim enters Insert mode the 't_SI' escape sequence is sent.  When Vim
 enters Replace mode the 't_SR' escape sequence is sent if it is set, otherwise
-'t_SI' is sent.  When leaving Insert mode or Replace mode 't_EI' is used. This
-can be used to change the shape or color of the cursor in Insert or Replace
-mode. These are not standard termcap/terminfo entries, you need to set them
-yourself.
+'t_SI' is sent.  When leaving Insert mode or Replace mode 't_EI' is used.
+Note: When 't_EI' is not set then 't_SI' and 't_SR' will not be sent.  And
+when 't_SI' or 't_SR' is not set then 't_EI' is sent only once.
+
+This can be used to change the shape or color of the cursor in Insert or
+Replace mode. These are not standard termcap/terminfo entries, you need to set
+them yourself.
 Example for an xterm, this changes the color of the cursor: >
     if &term =~ "xterm"
 	let &t_SI = "\<Esc>]12;purple\x7"
@@ -582,6 +643,18 @@ Example for an xterm, this changes the color of the cursor: >
     endif
 NOTE: When Vim exits the shape for Normal mode will remain.  The shape from
 before Vim started will not be restored.
+
+For Windows Terminal you can use something like this: >
+    " Note: This should be set after `set termguicolors` or `set t_Co=256`.
+    if &term =~ 'xterm' || &term == 'win32'
+	" Use DECSCUSR escape sequences
+	let &t_SI = "\e[5 q"    " blink bar
+	let &t_SR = "\e[3 q"    " blink underline
+	let &t_EI = "\e[1 q"    " blink block
+	let &t_ti ..= "\e[1 q"   " blink block
+	let &t_te ..= "\e[0 q"   " default (depends on terminal, normally blink block)
+    endif
+
 {not available when compiled without the |+cursorshape| feature}
 
 							*termcap-title*
@@ -666,12 +739,12 @@ size is wrong you can use the 'lines' and 'columns' options to set the
 correct values.
 
 One command can be used to set the screen size:
-
 						*:mod* *:mode* *E359*
 :mod[e] [mode]
 
 Without argument this only detects the screen size and redraws the screen.
-[mode] was used on MS-DOS, but it doesn't work anymore.
+[mode] was used on MS-DOS, but it doesn't work anymore.  In |Vim9| this
+command is not supported.
 
 ==============================================================================
 4. Slow and fast terminals			*slow-fast-terminal*
@@ -774,7 +847,7 @@ select and copy the text to the system, then press Esc.
 Another way is to temporarily use ":sh" to run a shell, copy the text, then
 exit the shell.  'mouse' can remain set to "a" then.
 							*xterm-clipboard*
-In the Athena and Motif GUI versions, when running in a terminal and there is
+In the Motif GUI version, when running in a terminal and there is
 access to the X-server (DISPLAY is set), the copy and paste will behave like
 in the GUI.  If not, the middle mouse button will insert the unnamed register.
 In that case, here is how you copy and paste a piece of text:
@@ -925,12 +998,14 @@ an #if/#else/#endif block, the selection becomes linewise.
 For MS-Windows and xterm the time for double clicking can be set with the
 'mousetime' option.  For the other systems this time is defined outside of Vim.
 An example, for using a double click to jump to the tag under the cursor: >
-	:map <2-LeftMouse> :exe "tag ". expand("<cword>")<CR>
+	:map <2-LeftMouse> :exe "tag " .. expand("<cword>")<CR>
 
 Dragging the mouse with a double click (button-down, button-up, button-down
 and then drag) will result in whole words to be selected.  This continues
 until the button is released, at which point the selection is per character
 again.
+
+For scrolling with the mouse see |scroll-mouse-wheel|.
 
 							*gpm-mouse*
 The GPM mouse is only supported when the |+mouse_gpm| feature was enabled at

@@ -212,8 +212,13 @@ void mbyte_im_set_active(int active_arg);
 # include "version.pro"
 # include "vim9script.pro"
 # ifdef FEAT_EVAL
+// include vim9.h here, the types defined there are used by function arguments.
+#  include "vim9.h"
+#  include "vim9cmds.pro"
 #  include "vim9compile.pro"
 #  include "vim9execute.pro"
+#  include "vim9expr.pro"
+#  include "vim9instr.pro"
 #  include "vim9type.pro"
 # endif
 # include "window.pro"
@@ -292,12 +297,6 @@ extern char_u *vimpty_getenv(const char_u *string);	// in misc2.c
 #   include "gui_motif.pro"
 #   include "gui_xmdlg.pro"
 #  endif
-#  ifdef FEAT_GUI_ATHENA
-#   include "gui_athena.pro"
-#   ifdef FEAT_BROWSE
-extern char *vim_SelFile(Widget toplevel, char *prompt, char *init_path, int (*show_entry)(), int x, int y, guicolor_T fg, guicolor_T bg, guicolor_T scroll_fg, guicolor_T scroll_bg);
-#   endif
-#  endif
 #  ifdef FEAT_GUI_HAIKU
 #   include "gui_haiku.pro"
 #  endif
@@ -331,6 +330,9 @@ extern char *vim_SelFile(Widget toplevel, char *prompt, char *init_path, int (*s
 
 # ifdef MACOS_CONVERT
 #  include "os_mac_conv.pro"
+# endif
+# ifdef MACOS_X
+#  include "os_macosx.pro"
 # endif
 # if defined(MACOS_X_DARWIN) && defined(FEAT_CLIPBOARD) && !defined(FEAT_GUI)
 // functions in os_macosx.m

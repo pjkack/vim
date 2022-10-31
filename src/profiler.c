@@ -90,23 +90,21 @@ profile_msg(proftime_T *tm)
     return buf;
 }
 
-# if defined(FEAT_FLOAT) || defined(PROTO)
 /*
  * Return a float that represents the time in "tm".
  */
     float_T
 profile_float(proftime_T *tm)
 {
-#  ifdef MSWIN
+# ifdef MSWIN
     LARGE_INTEGER   fr;
 
     QueryPerformanceFrequency(&fr);
     return (float_T)tm->QuadPart / (float_T)fr.QuadPart;
-#  else
+# else
     return (float_T)tm->tv_sec + (float_T)tm->tv_usec / 1000000.0;
-#  endif
-}
 # endif
+}
 
 /*
  * Put the time "msec" past now in "tm".
@@ -173,7 +171,7 @@ profile_zero(proftime_T *tm)
 
 # endif  // FEAT_PROFILE || FEAT_RELTIME
 
-#if defined(FEAT_SYN_HL) && defined(FEAT_RELTIME) && defined(FEAT_FLOAT) && defined(FEAT_PROFILE)
+#if defined(FEAT_SYN_HL) && defined(FEAT_RELTIME) && defined(FEAT_PROFILE)
 # if defined(HAVE_MATH_H)
 #  include <math.h>
 # endif
@@ -299,6 +297,82 @@ static char_u	*profile_fname = NULL;
 static proftime_T pause_time;
 
 /*
+ * Reset all profiling information.
+ */
+    static void
+profile_reset(void)
+{
+    int		id;
+    int		todo;
+    hashtab_T	*functbl;
+    hashitem_T	*hi;
+
+    // Reset sourced files.
+    for (id = 1; id <= script_items.ga_len; id++)
+    {
+	scriptitem_T *si = SCRIPT_ITEM(id);
+	if (si->sn_prof_on)
+	{
+	    si->sn_prof_on      = FALSE;
+	    si->sn_pr_force     = FALSE;
+	    profile_zero(&si->sn_pr_child);
+	    si->sn_pr_nest      = 0;
+	    si->sn_pr_count     = 0;
+	    profile_zero(&si->sn_pr_total);
+	    profile_zero(&si->sn_pr_self);
+	    profile_zero(&si->sn_pr_start);
+	    profile_zero(&si->sn_pr_children);
+	    ga_clear(&si->sn_prl_ga);
+	    profile_zero(&si->sn_prl_start);
+	    profile_zero(&si->sn_prl_children);
+	    profile_zero(&si->sn_prl_wait);
+	    si->sn_prl_idx      = -1;
+	    si->sn_prl_execed   = 0;
+	}
+    }
+
+    // Reset functions.
+    functbl = func_tbl_get();
+    todo = (int)functbl->ht_used;
+
+    for (hi = functbl->ht_array; todo > 0; ++hi)
+    {
+	ufunc_T *fp;
+	int	i;
+
+	if (HASHITEM_EMPTY(hi))
+	    continue;
+
+	todo--;
+	fp = HI2UF(hi);
+	if (fp->uf_prof_initialized)
+	{
+	    fp->uf_profiling    = 0;
+	    fp->uf_prof_initialized = FALSE;
+	    fp->uf_tm_count     = 0;
+	    profile_zero(&fp->uf_tm_total);
+	    profile_zero(&fp->uf_tm_self);
+	    profile_zero(&fp->uf_tm_children);
+
+	    for (i = 0; i < fp->uf_lines.ga_len; i++)
+	    {
+		fp->uf_tml_count[i] = 0;
+		profile_zero(&fp->uf_tml_total[i]);
+		profile_zero(&fp->uf_tml_self[i]);
+	    }
+
+	    profile_zero(&fp->uf_tml_start);
+	    profile_zero(&fp->uf_tml_children);
+	    profile_zero(&fp->uf_tml_wait);
+	    fp->uf_tml_idx      = -1;
+	    fp->uf_tml_execed   = 0;
+	}
+    }
+
+    VIM_CLEAR(profile_fname);
+}
+
+/*
  * ":profile cmd args"
  */
     void
@@ -313,14 +387,21 @@ ex_profile(exarg_T *eap)
 
     if (len == 5 && STRNCMP(eap->arg, "start", 5) == 0 && *e != NUL)
     {
-	vim_free(profile_fname);
+	VIM_CLEAR(profile_fname);
 	profile_fname = expand_env_save_opt(e, TRUE);
 	do_profiling = PROF_YES;
 	profile_zero(&prof_wait_time);
 	set_vim_var_nr(VV_PROFILING, 1L);
     }
     else if (do_profiling == PROF_NONE)
-	emsg(_("E750: First use \":profile start {fname}\""));
+	emsg(_(e_first_use_profile_start_fname));
+    else if (STRCMP(eap->arg, "stop") == 0)
+    {
+	profile_dump();
+	do_profiling = PROF_NONE;
+	set_vim_var_nr(VV_PROFILING, 0L);
+	profile_reset();
+    }
     else if (STRCMP(eap->arg, "pause") == 0)
     {
 	if (do_profiling == PROF_YES)
@@ -336,6 +417,8 @@ ex_profile(exarg_T *eap)
 	}
 	do_profiling = PROF_YES;
     }
+    else if (STRCMP(eap->arg, "dump") == 0)
+	profile_dump();
     else
     {
 	// The rest is similar to ":breakadd".
@@ -353,16 +436,20 @@ static enum
 static char *pexpand_cmds[] = {
 			"start",
 #define PROFCMD_START	0
+			"stop",
+#define PROFCMD_STOP	1
 			"pause",
-#define PROFCMD_PAUSE	1
+#define PROFCMD_PAUSE	2
 			"continue",
-#define PROFCMD_CONTINUE 2
+#define PROFCMD_CONTINUE 3
 			"func",
-#define PROFCMD_FUNC	3
+#define PROFCMD_FUNC	4
 			"file",
-#define PROFCMD_FILE	4
+#define PROFCMD_DUMP	5
+			"dump",
+#define PROFCMD_FILE	6
 			NULL
-#define PROFCMD_LAST	5
+#define PROFCMD_LAST	7
 };
 
 /*
@@ -376,7 +463,6 @@ get_profile_name(expand_T *xp UNUSED, int idx)
     {
     case PEXP_SUBCMD:
 	return (char_u *)pexpand_cmds[idx];
-    // case PEXP_FUNC: TODO
     default:
 	return NULL;
     }
@@ -399,14 +485,20 @@ set_context_in_profile_cmd(expand_T *xp, char_u *arg)
     if (*end_subcmd == NUL)
 	return;
 
-    if (end_subcmd - arg == 5 && STRNCMP(arg, "start", 5) == 0)
+    if ((end_subcmd - arg == 5 && STRNCMP(arg, "start", 5) == 0)
+	    || (end_subcmd - arg == 4 && STRNCMP(arg, "file", 4) == 0))
     {
 	xp->xp_context = EXPAND_FILES;
 	xp->xp_pattern = skipwhite(end_subcmd);
 	return;
     }
+    else if (end_subcmd - arg == 4 && STRNCMP(arg, "func", 4) == 0)
+    {
+	xp->xp_context = EXPAND_USER_FUNC;
+	xp->xp_pattern = skipwhite(end_subcmd);
+	return;
+    }
 
-    // TODO: expand function names after "func"
     xp->xp_context = EXPAND_NOTHING;
 }
 
@@ -624,8 +716,8 @@ prof_child_enter(
 {
     funccall_T *fc = get_current_funccal();
 
-    if (fc != NULL && fc->func->uf_profiling)
-	profile_start(&fc->prof_child);
+    if (fc != NULL && fc->fc_func->uf_profiling)
+	profile_start(&fc->fc_prof_child);
     script_prof_save(tm);
 }
 
@@ -639,12 +731,12 @@ prof_child_exit(
 {
     funccall_T *fc = get_current_funccal();
 
-    if (fc != NULL && fc->func->uf_profiling)
+    if (fc != NULL && fc->fc_func->uf_profiling)
     {
-	profile_end(&fc->prof_child);
-	profile_sub_wait(tm, &fc->prof_child); // don't count waiting time
-	profile_add(&fc->func->uf_tm_children, &fc->prof_child);
-	profile_add(&fc->func->uf_tml_children, &fc->prof_child);
+	profile_end(&fc->fc_prof_child);
+	profile_sub_wait(tm, &fc->fc_prof_child); // don't count waiting time
+	profile_add(&fc->fc_func->uf_tm_children, &fc->fc_prof_child);
+	profile_add(&fc->fc_func->uf_tml_children, &fc->fc_prof_child);
     }
     script_prof_restore(tm);
 }
@@ -659,7 +751,7 @@ prof_child_exit(
 func_line_start(void *cookie, long lnum)
 {
     funccall_T	*fcp = (funccall_T *)cookie;
-    ufunc_T	*fp = fcp->func;
+    ufunc_T	*fp = fcp->fc_func;
 
     if (fp->uf_profiling && lnum >= 1 && lnum <= fp->uf_lines.ga_len)
     {
@@ -681,7 +773,7 @@ func_line_start(void *cookie, long lnum)
 func_line_exec(void *cookie)
 {
     funccall_T	*fcp = (funccall_T *)cookie;
-    ufunc_T	*fp = fcp->func;
+    ufunc_T	*fp = fcp->fc_func;
 
     if (fp->uf_profiling && fp->uf_tml_idx >= 0)
 	fp->uf_tml_execed = TRUE;
@@ -694,7 +786,7 @@ func_line_exec(void *cookie)
 func_line_end(void *cookie)
 {
     funccall_T	*fcp = (funccall_T *)cookie;
-    ufunc_T	*fp = fcp->func;
+    ufunc_T	*fp = fcp->fc_func;
 
     if (fp->uf_profiling && fp->uf_tml_idx >= 0)
     {
@@ -921,7 +1013,7 @@ profile_dump(void)
     {
 	fd = mch_fopen((char *)profile_fname, "w");
 	if (fd == NULL)
-	    semsg(_(e_notopen), profile_fname);
+	    semsg(_(e_cant_open_file_str), profile_fname);
 	else
 	{
 	    script_dump_profile(fd);

@@ -1,7 +1,6 @@
 " Test for textobjects
 
 source check.vim
-CheckFeature textobjects
 
 func CpoM(line, useM, expected)
   new
@@ -41,6 +40,24 @@ func Test_inner_block_with_cpo_M_right_backslash()
   call CpoM('(red (blue\) green)', 1, ['red (blue\) green', 'blue\', 'red (blue\) green'])
 endfunc
 
+func Test_inner_block_single_char()
+  new
+  call setline(1, "(a)")
+
+  set selection=inclusive
+  let @" = ''
+  call assert_nobeep('norm! 0faviby')
+  call assert_equal('a', @")
+
+  set selection=exclusive
+  let @" = ''
+  call assert_nobeep('norm! 0faviby')
+  call assert_equal('a', @")
+
+  set selection&
+  bwipe!
+endfunc
+
 func Test_quote_selection_selection_exclusive()
   new
   call setline(1, "a 'bcde' f")
@@ -49,11 +66,11 @@ func Test_quote_selection_selection_exclusive()
   exe "norm! fdvhi'y"
   call assert_equal('bcde', @")
 
-  let @"='dummy'
+  let @" = 'dummy'
   exe "norm! $gevi'y"
   call assert_equal('bcde', @")
 
-  let @"='dummy'
+  let @" = 'dummy'
   exe "norm! 0fbhvi'y"
   call assert_equal('bcde', @")
 
@@ -88,101 +105,115 @@ endfunc
 
 " Tests for string and html text objects
 func Test_string_html_objects()
-  enew!
 
-  let t = '"wo\"rd\\" foo'
-  put =t
-  normal! da"
-  call assert_equal('foo', getline('.'))
+  for e in ['utf-8', 'latin1', 'cp932']
+    enew!
+    exe 'set enc=' .. e
 
-  let t = "'foo' 'bar' 'piep'"
-  put =t
-  normal! 0va'a'rx
-  call assert_equal("xxxxxxxxxxxx'piep'", getline('.'))
+    let t = '"wo\"rd\\" foo'
+    put =t
+    normal! da"
+    call assert_equal('foo', getline('.'), e)
 
-  let t = "bla bla `quote` blah"
-  put =t
-  normal! 02f`da`
-  call assert_equal("bla bla blah", getline('.'))
+    let t = "'foo' 'bar' 'piep'"
+    put =t
+    normal! 0va'a'rx
+    call assert_equal("xxxxxxxxxxxx'piep'", getline('.'), e)
 
-  let t = 'out " in "noXno"'
-  put =t
-  normal! 0fXdi"
-  call assert_equal('out " in ""', getline('.'))
+    let t = "bla bla `quote` blah"
+    put =t
+    normal! 02f`da`
+    call assert_equal("bla bla blah", getline('.'), e)
 
-  let t = "\"'\" 'blah' rep 'buh'"
-  put =t
-  normal! 03f'vi'ry
-  call assert_equal("\"'\" 'blah'yyyyy'buh'", getline('.'))
+    let t = 'out " in "noXno"'
+    put =t
+    normal! 0fXdi"
+    call assert_equal('out " in ""', getline('.'), e)
 
-  set quoteescape=+*-
-  let t = "bla `s*`d-`+++`l**` b`la"
-  put =t
-  normal! di`
-  call assert_equal("bla `` b`la", getline('.'))
+    let t = "\"'\" 'blah' rep 'buh'"
+    put =t
+    normal! 03f'vi'ry
+    call assert_equal("\"'\" 'blah'yyyyy'buh'", getline('.'), e)
 
-  let t = 'voo "nah" sdf " asdf" sdf " sdf" sd'
-  put =t
-  normal! $F"va"oha"i"rz
-  call assert_equal('voo "zzzzzzzzzzzzzzzzzzzzzzzzzzzzsd', getline('.'))
+    set quoteescape=+*-
+    let t = "bla `s*`d-`+++`l**` b`la"
+    put =t
+    normal! di`
+    call assert_equal("bla `` b`la", getline('.'), e)
 
-  let t = "-<b>asdf<i>Xasdf</i>asdf</b>-"
-  put =t
-  normal! fXdit
-  call assert_equal('-<b>asdf<i></i>asdf</b>-', getline('.'))
+    let t = 'voo "nah" sdf " asdf" sdf " sdf" sd'
+    put =t
+    normal! $F"va"oha"i"rz
+    call assert_equal('voo "zzzzzzzzzzzzzzzzzzzzzzzzzzzzsd', getline('.'), e)
 
-  let t = "-<b>asdX<i>a<i />sdf</i>asdf</b>-"
-  put =t
-  normal! 0fXdit
-  call assert_equal('-<b></b>-', getline('.'))
+    let t = "-<b>asdf<i>Xasdf</i>asdf</b>-"
+    put =t
+    normal! fXdit
+    call assert_equal('-<b>asdf<i></i>asdf</b>-', getline('.'), e)
 
-  let t = "-<b>asdf<i>Xasdf</i>asdf</b>-"
-  put =t
-  normal! fXdat
-  call assert_equal('-<b>asdfasdf</b>-', getline('.'))
+    let t = "-<b>asdX<i>a<i />sdf</i>asdf</b>-"
+    put =t
+    normal! 0fXdit
+    call assert_equal('-<b></b>-', getline('.'), e)
 
-  let t = "-<b>asdX<i>as<b />df</i>asdf</b>-"
-  put =t
-  normal! 0fXdat
-  call assert_equal('--', getline('.'))
+    let t = "-<b>asdf<i>Xasdf</i>asdf</b>-"
+    put =t
+    normal! fXdat
+    call assert_equal('-<b>asdfasdf</b>-', getline('.'), e)
 
-  let t = "-<b>\ninnertext object\n</b>"
-  put =t
-  normal! dit
-  call assert_equal('-<b></b>', getline('.'))
+    let t = "-<b>asdX<i>as<b />df</i>asdf</b>-"
+    put =t
+    normal! 0fXdat
+    call assert_equal('--', getline('.'), e)
 
-  " copy the tag block from leading indentation before the start tag
-  let t = "    <b>\ntext\n</b>"
-  $put =t
-  normal! 2kvaty
-  call assert_equal("<b>\ntext\n</b>", @")
+    let t = "-<b>\ninnertext object\n</b>"
+    put =t
+    normal! dit
+    call assert_equal('-<b></b>', getline('.'), e)
 
-  " copy the tag block from the end tag
-  let t = "<title>\nwelcome\n</title>"
-  $put =t
-  normal! $vaty
-  call assert_equal("<title>\nwelcome\n</title>", @")
+    " copy the tag block from leading indentation before the start tag
+    let t = "    <b>\ntext\n</b>"
+    $put =t
+    normal! 2kvaty
+    call assert_equal("<b>\ntext\n</b>", @", e)
 
-  " copy the outer tag block from a tag without an end tag
-  let t = "<html>\n<title>welcome\n</html>"
-  $put =t
-  normal! k$vaty
-  call assert_equal("<html>\n<title>welcome\n</html>", @")
+    " copy the tag block from the end tag
+    let t = "<title>\nwelcome\n</title>"
+    $put =t
+    normal! $vaty
+    call assert_equal("<title>\nwelcome\n</title>", @", e)
 
-  " nested tag that has < in a different line from >
-  let t = "<div><div\n></div></div>"
-  $put =t
-  normal! k0vaty
-  call assert_equal("<div><div\n></div></div>", @")
+    " copy the outer tag block from a tag without an end tag
+    let t = "<html>\n<title>welcome\n</html>"
+    $put =t
+    normal! k$vaty
+    call assert_equal("<html>\n<title>welcome\n</html>", @", e)
 
-  " nested tag with attribute that has < in a different line from >
-  let t = "<div><div\nattr=\"attr\"\n></div></div>"
-  $put =t
-  normal! 2k0vaty
-  call assert_equal("<div><div\nattr=\"attr\"\n></div></div>", @")
+    " nested tag that has < in a different line from >
+    let t = "<div><div\n></div></div>"
+    $put =t
+    normal! k0vaty
+    call assert_equal("<div><div\n></div></div>", @", e)
 
-  set quoteescape&
-  enew!
+    " nested tag with attribute that has < in a different line from >
+    let t = "<div><div\nattr=\"attr\"\n></div></div>"
+    $put =t
+    normal! 2k0vaty
+    call assert_equal("<div><div\nattr=\"attr\"\n></div></div>", @", e)
+
+    set quoteescape&
+
+    " this was going beyond the end of the line
+    %del
+    sil! norm i"\
+    sil! norm i"\
+    sil! norm i"\
+    call assert_equal('"\', getline(1))
+
+    bwipe!
+  endfor
+
+  set enc=utf-8
 endfunc
 
 func Test_empty_html_tag()
@@ -199,7 +230,7 @@ func Test_empty_html_tag()
   normal 0f<vitsaaa
   call assert_equal('aaa', getline(1))
 
-  " selecting a tag block in an non-empty blank line should fail
+  " selecting a tag block in a non-empty blank line should fail
   call setline(1, '    ')
   call assert_beeps('normal $vaty')
 
@@ -560,6 +591,20 @@ func Test_textobj_quote()
   call setline(1, "some    'special'string")
   normal 0ya'
   call assert_equal("    'special'", @")
+
+  " quoted string with odd or even number of backslashes.
+  call setline(1, 'char *s = "foo\"bar"')
+  normal $hhyi"
+  call assert_equal('foo\"bar', @")
+  call setline(1, 'char *s = "foo\\"bar"')
+  normal $hhyi"
+  call assert_equal('bar', @")
+  call setline(1, 'char *s = "foo\\\"bar"')
+  normal $hhyi"
+  call assert_equal('foo\\\"bar', @")
+  call setline(1, 'char *s = "foo\\\\"bar"')
+  normal $hhyi"
+  call assert_equal('bar', @")
 
   close!
 endfunc

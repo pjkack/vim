@@ -87,17 +87,17 @@ vim_mem_profile_dump(void)
     j = 0;
     for (i = 0; i < MEM_SIZES - 1; i++)
     {
-	if (mem_allocs[i] || mem_frees[i])
+	if (mem_allocs[i] == 0 && mem_frees[i] == 0)
+	    continue;
+
+	if (mem_frees[i] > mem_allocs[i])
+	    printf("\r\n%s", _("ERROR: "));
+	printf("[%4d / %4lu-%-4lu] ", i + 1, mem_allocs[i], mem_frees[i]);
+	j++;
+	if (j > 3)
 	{
-	    if (mem_frees[i] > mem_allocs[i])
-		printf("\r\n%s", _("ERROR: "));
-	    printf("[%4d / %4lu-%-4lu] ", i + 1, mem_allocs[i], mem_frees[i]);
-	    j++;
-	    if (j > 3)
-	    {
-		j = 0;
-		printf("\r\n");
-	    }
+	    j = 0;
+	    printf("\r\n");
 	}
     }
 
@@ -151,18 +151,20 @@ alloc(size_t size)
     return lalloc(size, TRUE);
 }
 
+#if defined(FEAT_QUICKFIX) || defined(PROTO)
 /*
  * alloc() with an ID for alloc_fail().
  */
     void *
 alloc_id(size_t size, alloc_id_T id UNUSED)
 {
-#ifdef FEAT_EVAL
+# ifdef FEAT_EVAL
     if (alloc_fail_id == id && alloc_does_fail(size))
 	return NULL;
-#endif
+# endif
     return lalloc(size, TRUE);
 }
+#endif
 
 /*
  * Allocate memory and set all bytes to zero.
@@ -224,7 +226,7 @@ lalloc(size_t size, int message)
     {
 	// Don't hide this message
 	emsg_silent = 0;
-	iemsg(_("E341: Internal error: lalloc(0, )"));
+	iemsg(_(e_internal_error_lalloc_zero));
 	return NULL;
     }
 
@@ -236,7 +238,7 @@ lalloc(size_t size, int message)
     // if some blocks are released call malloc again.
     for (;;)
     {
-	// Handle three kind of systems:
+	// Handle three kinds of systems:
 	// 1. No check for available memory: Just return.
 	// 2. Slow check for available memory: call mch_avail_mem() after
 	//    allocating KEEP_ROOM amount of memory.
@@ -330,22 +332,22 @@ mem_realloc(void *ptr, size_t size)
     void
 do_outofmem_msg(size_t size)
 {
-    if (!did_outofmem_msg)
-    {
-	// Don't hide this message
-	emsg_silent = 0;
+    if (did_outofmem_msg)
+	return;
 
-	// Must come first to avoid coming back here when printing the error
-	// message fails, e.g. when setting v:errmsg.
-	did_outofmem_msg = TRUE;
+    // Don't hide this message
+    emsg_silent = 0;
 
-	semsg(_("E342: Out of memory!  (allocating %lu bytes)"), (long_u)size);
+    // Must come first to avoid coming back here when printing the error
+    // message fails, e.g. when setting v:errmsg.
+    did_outofmem_msg = TRUE;
 
-	if (starting == NO_SCREEN)
-	    // Not even finished with initializations and already out of
-	    // memory?  Then nothing is going to work, exit.
-	    mch_exit(123);
-    }
+    semsg(_(e_out_of_memory_allocating_nr_bytes), (long_u)size);
+
+    if (starting == NO_SCREEN)
+	// Not even finished with initializations and already out of
+	// memory?  Then nothing is going to work, exit.
+	mch_exit(123);
 }
 
 #if defined(EXITFREE) || defined(PROTO)
@@ -400,6 +402,7 @@ free_all_mem(void)
 # ifdef FEAT_MENU
 	// Clear menus.
 	do_cmdline_cmd((char_u *)"aunmenu *");
+	do_cmdline_cmd((char_u *)"tlunmenu *");
 #  ifdef FEAT_MULTI_LANG
 	do_cmdline_cmd((char_u *)"menutranslate clear");
 #  endif
@@ -421,12 +424,8 @@ free_all_mem(void)
 # endif
     }
 
-# ifdef FEAT_TITLE
     free_titles();
-# endif
-# if defined(FEAT_SEARCHPATH)
     free_findfile();
-# endif
 
     // Obviously named calls.
     free_all_autocmds();
@@ -442,6 +441,7 @@ free_all_mem(void)
     free_prev_shellcmd();
     free_regexp_stuff();
     free_tag_stuff();
+    free_xim_stuff();
     free_cd_dir();
 # ifdef FEAT_SIGNS
     free_signs();
@@ -472,15 +472,7 @@ free_all_mem(void)
 # endif
 
 # ifdef FEAT_QUICKFIX
-    {
-	win_T	    *win;
-	tabpage_T   *tab;
-
-	qf_free_all(NULL);
-	// Free all location lists
-	FOR_ALL_TAB_WINDOWS(tab, win)
-	    qf_free_all(win);
-    }
+    free_quickfix();
 # endif
 
     // Close all script inputs.
@@ -561,6 +553,7 @@ free_all_mem(void)
 # endif
 
     free_termoptions();
+    free_cur_term();
 
     // screenlines (can't display anything now!)
     free_screenlines();
@@ -574,12 +567,18 @@ free_all_mem(void)
 # ifdef FEAT_GUI_GTK
     gui_mch_free_all();
 # endif
+# ifdef FEAT_TCL
+    vim_tcl_finalize();
+# endif
     clear_hl_tables();
 
     vim_free(IObuff);
     vim_free(NameBuff);
 # ifdef FEAT_QUICKFIX
     check_quickfix_busy();
+# endif
+# ifdef FEAT_EVAL
+    free_resub_eval_result();
 # endif
 }
 #endif
@@ -645,6 +644,7 @@ ga_clear_strings(garray_T *gap)
     ga_clear(gap);
 }
 
+#if defined(FEAT_EVAL) || defined(PROTO)
 /*
  * Copy a growing array that contains a list of strings.
  */
@@ -679,6 +679,7 @@ ga_copy_strings(garray_T *from, garray_T *to)
     to->ga_len = from->ga_len;
     return OK;
 }
+#endif
 
 /*
  * Initialize a growing array.	Don't forget to set ga_itemsize and
@@ -693,10 +694,10 @@ ga_init(garray_T *gap)
 }
 
     void
-ga_init2(garray_T *gap, int itemsize, int growsize)
+ga_init2(garray_T *gap, size_t itemsize, int growsize)
 {
     ga_init(gap);
-    gap->ga_itemsize = itemsize;
+    gap->ga_itemsize = (int)itemsize;
     gap->ga_growsize = growsize;
 }
 
@@ -710,6 +711,20 @@ ga_grow(garray_T *gap, int n)
     if (gap->ga_maxlen - gap->ga_len < n)
 	return ga_grow_inner(gap, n);
     return OK;
+}
+
+/*
+ * Same as ga_grow() but uses an allocation id for testing.
+ */
+    int
+ga_grow_id(garray_T *gap, int n, alloc_id_T id UNUSED)
+{
+#ifdef FEAT_EVAL
+    if (alloc_fail_id == id && alloc_does_fail(sizeof(list_T)))
+	return FAIL;
+#endif
+
+    return ga_grow(gap, n);
 }
 
     int
@@ -728,11 +743,11 @@ ga_grow_inner(garray_T *gap, int n)
     if (n < gap->ga_len / 2)
 	n = gap->ga_len / 2;
 
-    new_len = gap->ga_itemsize * (gap->ga_len + n);
+    new_len = (size_t)gap->ga_itemsize * (gap->ga_len + n);
     pp = vim_realloc(gap->ga_data, new_len);
     if (pp == NULL)
 	return FAIL;
-    old_len = gap->ga_itemsize * gap->ga_maxlen;
+    old_len = (size_t)gap->ga_itemsize * gap->ga_maxlen;
     vim_memset(pp + old_len, 0, new_len - old_len);
     gap->ga_maxlen = gap->ga_len + n;
     gap->ga_data = pp;
@@ -757,20 +772,20 @@ ga_concat_strings(garray_T *gap, char *sep)
 	len += (int)STRLEN(((char_u **)(gap->ga_data))[i]) + sep_len;
 
     s = alloc(len + 1);
-    if (s != NULL)
+    if (s == NULL)
+	return NULL;
+
+    *s = NUL;
+    p = s;
+    for (i = 0; i < gap->ga_len; ++i)
     {
-	*s = NUL;
-	p = s;
-	for (i = 0; i < gap->ga_len; ++i)
+	if (p != s)
 	{
-	    if (p != s)
-	    {
-		STRCPY(p, sep);
-		p += sep_len;
-	    }
-	    STRCPY(p, ((char_u **)(gap->ga_data))[i]);
-	    p += STRLEN(p);
+	    STRCPY(p, sep);
+	    p += sep_len;
 	}
+	STRCPY(p, ((char_u **)(gap->ga_data))[i]);
+	p += STRLEN(p);
     }
     return s;
 }
@@ -780,7 +795,7 @@ ga_concat_strings(garray_T *gap, char *sep)
  * When out of memory nothing changes and FAIL is returned.
  */
     int
-ga_add_string(garray_T *gap, char_u *p)
+ga_copy_string(garray_T *gap, char_u *p)
 {
     char_u *cp = vim_strsave(p);
 
@@ -797,8 +812,21 @@ ga_add_string(garray_T *gap, char_u *p)
 }
 
 /*
+ * Add string "p" to "gap".
+ * When out of memory "p" is freed and FAIL is returned.
+ */
+    int
+ga_add_string(garray_T *gap, char_u *p)
+{
+    if (ga_grow(gap, 1) == FAIL)
+	return FAIL;
+    ((char_u **)(gap->ga_data))[gap->ga_len++] = p;
+    return OK;
+}
+
+/*
  * Concatenate a string to a growarray which contains bytes.
- * When "s" is NULL does not do anything.
+ * When "s" is NULL memory allocation fails does not do anything.
  * Note: Does NOT copy the NUL at the end!
  */
     void
@@ -823,7 +851,7 @@ ga_concat(garray_T *gap, char_u *s)
     void
 ga_concat_len(garray_T *gap, char_u *s, size_t len)
 {
-    if (s == NULL || *s == NUL)
+    if (s == NULL || *s == NUL || len == 0)
 	return;
     if (ga_grow(gap, (int)len) == OK)
     {
@@ -835,14 +863,14 @@ ga_concat_len(garray_T *gap, char_u *s, size_t len)
 /*
  * Append one byte to a growarray which contains bytes.
  */
-    void
+    int
 ga_append(garray_T *gap, int c)
 {
-    if (ga_grow(gap, 1) == OK)
-    {
-	*((char *)gap->ga_data + gap->ga_len) = c;
-	++gap->ga_len;
-    }
+    if (ga_grow(gap, 1) == FAIL)
+	return FAIL;
+    *((char *)gap->ga_data + gap->ga_len) = c;
+    ++gap->ga_len;
+    return OK;
 }
 
 #if (defined(UNIX) && !defined(USE_SYSTEM)) || defined(MSWIN) \

@@ -199,10 +199,10 @@ ui_inchar(
      * while (not timed out)
      * {
      *     if (any-timer-triggered)
-     *        invoke-timer-callback;
+     *	      invoke-timer-callback;
      *     wait-for-character();
      *     if (character available)
-     *        break;
+     *	      break;
      * }
      *
      * wait-for-character() does:
@@ -210,13 +210,13 @@ ui_inchar(
      * {
      *     Wait for event;
      *     if (something on channel)
-     *        read/write channel;
-     *     else if (resized)
-     *        handle_resize();
-     *     else if (system event)
-     *        deal-with-system-event;
-     *     else if (character available)
-     *        break;
+     *	      read/write channel;
+     *	   else if (resized)
+     *	      handle_resize();
+     *	   else if (system event)
+     *	      deal-with-system-event;
+     *	   else if (character available)
+     *	      break;
      * }
      *
      */
@@ -460,7 +460,7 @@ ui_wait_for_chars_or_timer(
 	}
 	if (due_time <= 0 || (wtime > 0 && due_time > remaining))
 	    due_time = remaining;
-# if defined(FEAT_JOB_CHANNEL) || defined(FEAT_SOUND_CANBERRA)
+# if defined(FEAT_JOB_CHANNEL) || defined(FEAT_SOUND_CANBERRA) || defined(FEAT_SOUND_MACOSX)
 	if ((due_time < 0 || due_time > 10L) && (
 #  if defined(FEAT_JOB_CHANNEL)
 		(
@@ -468,11 +468,11 @@ ui_wait_for_chars_or_timer(
 		!gui.in_use &&
 #   endif
 		(has_pending_job() || channel_any_readahead()))
-#   ifdef FEAT_SOUND_CANBERRA
+#   if defined(FEAT_SOUND_CANBERRA) || defined(FEAT_SOUND_MACOSX)
 		||
 #   endif
 #  endif
-#  ifdef FEAT_SOUND_CANBERRA
+#  if defined(FEAT_SOUND_CANBERRA) ||  defined(FEAT_SOUND_MACOSX)
 		    has_any_sound_callback()
 #  endif
 		    ))
@@ -577,7 +577,7 @@ ui_suspend(void)
 suspend_shell(void)
 {
     if (*p_sh == NUL)
-	emsg(_(e_shellempty));
+	emsg(_(e_shell_option_is_empty));
     else
     {
 	msg_puts(_("new shell started\n"));
@@ -897,7 +897,8 @@ read_from_input_buf(char_u *buf, long maxlen)
 	maxlen = inbufcount;
     mch_memmove(buf, inbuf, (size_t)maxlen);
     inbufcount -= maxlen;
-    if (inbufcount)
+    // check "maxlen" to avoid clang warning
+    if (inbufcount > 0 && maxlen > 0)
 	mch_memmove(inbuf, inbuf + maxlen, (size_t)inbufcount);
     return (int)maxlen;
 }
@@ -1028,22 +1029,27 @@ fill_input_buf(int exit_on_error UNUSED)
 				     len + unconverted, INBUFLEN - inbufcount,
 				       rest == NULL ? &rest : NULL, &restlen);
 	}
-	while (len-- > 0)
+	while (len > 0)
 	{
 	    // If a CTRL-C was typed, remove it from the buffer and set
-	    // got_int.  Also recognize CTRL-C with modifyOtherKeys set, in two
-	    // forms.
+	    // got_int.  Also recognize CTRL-C with modifyOtherKeys set, lower
+	    // and upper case, in two forms.
 	    if (ctrl_c_interrupts && (inbuf[inbufcount] == 3
 			|| (len >= 10 && STRNCMP(inbuf + inbufcount,
 						   "\033[27;5;99~", 10) == 0)
+			|| (len >= 10 && STRNCMP(inbuf + inbufcount,
+						   "\033[27;5;67~", 10) == 0)
 			|| (len >= 7 && STRNCMP(inbuf + inbufcount,
-						       "\033[99;5u", 7) == 0)))
+						       "\033[99;5u", 7) == 0)
+			|| (len >= 7 && STRNCMP(inbuf + inbufcount,
+						       "\033[67;5u", 7) == 0)))
 	    {
 		// remove everything typed before the CTRL-C
-		mch_memmove(inbuf, inbuf + inbufcount, (size_t)(len + 1));
+		mch_memmove(inbuf, inbuf + inbufcount, (size_t)(len));
 		inbufcount = 0;
 		got_int = TRUE;
 	    }
+	    --len;
 	    ++inbufcount;
 	}
     }
@@ -1101,8 +1107,8 @@ check_col(int col)
 {
     if (col < 0)
 	return 0;
-    if (col >= (int)screen_Columns)
-	return (int)screen_Columns - 1;
+    if (col >= screen_Columns)
+	return screen_Columns - 1;
     return col;
 }
 
@@ -1114,8 +1120,8 @@ check_row(int row)
 {
     if (row < 0)
 	return 0;
-    if (row >= (int)screen_Rows)
-	return (int)screen_Rows - 1;
+    if (row >= screen_Rows)
+	return screen_Rows - 1;
     return row;
 }
 
@@ -1145,6 +1151,10 @@ ui_focus_change(
 	last_time = time(NULL);
     }
 
+#ifdef FEAT_TERMINAL
+    term_focus_change(in_focus);
+#endif
+
     /*
      * Fire the focus gained/lost autocommand.
      */
@@ -1152,34 +1162,11 @@ ui_focus_change(
 				: EVENT_FOCUSLOST, NULL, NULL, FALSE, curbuf);
 
     if (need_redraw)
-    {
-	// Something was executed, make sure the cursor is put back where it
-	// belongs.
-	need_wait_return = FALSE;
+	redraw_after_callback(TRUE, TRUE);
 
-	if (State & CMDLINE)
-	    redrawcmdline();
-	else if (State == HITRETURN || State == SETWSIZE || State == ASKMORE
-		|| State == EXTERNCMD || State == CONFIRM || exmode_active)
-	    repeat_message();
-	else if ((State & NORMAL) || (State & INSERT))
-	{
-	    if (must_redraw != 0)
-		update_screen(0);
-	    setcursor();
-	}
-	cursor_on();	    // redrawing may have switched it off
-	out_flush_cursor(FALSE, TRUE);
-# ifdef FEAT_GUI
-	if (gui.in_use)
-	    gui_update_scrollbars(FALSE);
-# endif
-    }
-#ifdef FEAT_TITLE
     // File may have been changed from 'readonly' to 'noreadonly'
     if (need_maketitle)
 	maketitle();
-#endif
 }
 
 #if defined(HAVE_INPUT_METHOD) || defined(PROTO)

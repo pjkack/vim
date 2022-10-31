@@ -324,6 +324,16 @@ func Test_edit_11_indentexpr()
   set cinkeys&vim indentkeys&vim
   set nocindent indentexpr=
   delfu Do_Indent
+
+  " Using a script-local function
+  func s:NewIndentExpr()
+  endfunc
+  set indentexpr=s:NewIndentExpr()
+  call assert_equal(expand('<SID>') .. 'NewIndentExpr()', &indentexpr)
+  set indentexpr=<SID>NewIndentExpr()
+  call assert_equal(expand('<SID>') .. 'NewIndentExpr()', &indentexpr)
+  set indentexpr&
+
   bw!
 endfunc
 
@@ -381,15 +391,13 @@ endfunc
 
 func Test_edit_13()
   " Test smartindenting
-  if exists("+smartindent")
-    new
-    set smartindent autoindent
-    call setline(1, ["\tabc"])
-    call feedkeys("A {\<cr>more\<cr>}\<esc>", 'tnix')
-    call assert_equal(["\tabc {", "\t\tmore", "\t}"], getline(1, '$'))
-    set smartindent& autoindent&
-    bwipe!
-  endif
+  new
+  set smartindent autoindent
+  call setline(1, ["\tabc"])
+  call feedkeys("A {\<cr>more\<cr>}\<esc>", 'tnix')
+  call assert_equal(["\tabc {", "\t\tmore", "\t}"], getline(1, '$'))
+  set smartindent& autoindent&
+  bwipe!
 
   " Test autoindent removing indent of blank line.
   new
@@ -416,35 +424,35 @@ endfunc
 " terminal.
 func Test_autoindent_remove_indent()
   CheckRunVimInTerminal
-  let buf = RunVimInTerminal('-N Xfile', {'rows': 6, 'cols' : 20})
+  let buf = RunVimInTerminal('-N Xarifile', {'rows': 6, 'cols' : 20})
   call TermWait(buf)
   call term_sendkeys(buf, ":set autoindent\n")
   " leaving insert mode in a new line with indent added by autoindent, should
   " remove the indent.
   call term_sendkeys(buf, "i\<Tab>foo\<CR>\<Esc>")
-  " Need to delay for sometime, otherwise the code in getchar.c will not be
+  " Need to delay for some time, otherwise the code in getchar.c will not be
   " exercised.
   call TermWait(buf, 50)
   " when a line is wrapped and the cursor is at the start of the second line,
   " leaving insert mode, should move the cursor back to the first line.
   call term_sendkeys(buf, "o" .. repeat('x', 20) .. "\<Esc>")
-  " Need to delay for sometime, otherwise the code in getchar.c will not be
+  " Need to delay for some time, otherwise the code in getchar.c will not be
   " exercised.
   call TermWait(buf, 50)
   call term_sendkeys(buf, ":w\n")
   call TermWait(buf)
   call StopVimInTerminal(buf)
-  call assert_equal(["\tfoo", '', repeat('x', 20)], readfile('Xfile'))
-  call delete('Xfile')
+  call assert_equal(["\tfoo", '', repeat('x', 20)], readfile('Xarifile'))
+  call delete('Xarifile')
 endfunc
 
 func Test_edit_CR()
   " Test for <CR> in insert mode
-  " basically only in quickfix mode ist tested, the rest
+  " basically only in quickfix mode it's tested, the rest
   " has been taken care of by other tests
   CheckFeature quickfix
   botright new
-  call writefile(range(1, 10), 'Xqflist.txt')
+  call writefile(range(1, 10), 'Xqflist.txt', 'D')
   call setqflist([{'filename': 'Xqflist.txt', 'lnum': 2}])
   copen
   set modifiable
@@ -464,9 +472,9 @@ func Test_edit_CR()
   call feedkeys("A\n", 'tnix')
   call feedkeys("A\r", 'tnix')
   call assert_equal(map(range(1, 10), 'string(v:val)') + ['', '', '', ''], getline(1, '$'))
+
   bw!
   lclose
-  call delete('Xqflist.txt')
 endfunc
 
 func Test_edit_CTRL_()
@@ -561,7 +569,7 @@ func Test_edit_CTRL_I()
   call feedkeys("Arunt\<c-x>\<c-f>\<tab>\<cr>\<esc>", 'tnix')
   call assert_match('runtest\.vim', getline(1))
   %d
-  call writefile(['one', 'two', 'three'], 'Xinclude.txt')
+  call writefile(['one', 'two', 'three'], 'Xinclude.txt', 'D')
   let include='#include Xinclude.txt'
   call setline(1, [include, ''])
   call cursor(2, 1)
@@ -573,14 +581,13 @@ func Test_edit_CTRL_I()
   call assert_equal([include, 'three', ''], getline(1, '$'))
   call feedkeys("2ggC\<c-x>\<tab>\<down>\<down>\<down>\<cr>\<esc>", 'tnix')
   call assert_equal([include, '', ''], getline(1, '$'))
-  call delete("Xinclude.txt")
   bw!
 endfunc
 
 func Test_edit_CTRL_K()
   " Test pressing CTRL-K (basically only dictionary completion and digraphs
   " the rest is already covered
-  call writefile(['A', 'AA', 'AAA', 'AAAA'], 'Xdictionary.txt')
+  call writefile(['A', 'AA', 'AAA', 'AAAA'], 'Xdictionary.txt', 'D')
   set dictionary=Xdictionary.txt
   new
   call setline(1, 'A')
@@ -636,7 +643,6 @@ func Test_edit_CTRL_K()
     " error sleeps 2 seconds, when v:testing is not set
     let v:testing = 0
   endtry
-  call delete('Xdictionary.txt')
 
   call test_override("char_avail", 1)
   set showcmd
@@ -723,8 +729,13 @@ func Test_edit_CTRL_N()
     call feedkeys("Ii\<c-n>\<cr>\<esc>", "tnix")
     call feedkeys("ILO\<c-n>\<cr>\<esc>", 'tnix')
     call assert_equal(['INFER', 'loWER', 'infer', 'LOWER', '', ''], getline(1, '$'), e)
-
-    set noignorecase noinfercase complete&
+    set noignorecase noinfercase
+    %d
+    call setline(1, ['one word', 'two word'])
+    exe "normal! Goo\<C-P>\<C-X>\<C-P>"
+    call assert_equal('one word', getline(3))
+    %d
+    set complete&
     bw!
   endfor
 endfunc
@@ -829,7 +840,7 @@ func Test_edit_CTRL_T()
   call assert_equal(["\<tab>abcxyz"], getline(1, '$'))
   set nopaste
   " CTRL-X CTRL-T (thesaurus complete)
-  call writefile(['angry furious mad enraged'], 'Xthesaurus')
+  call writefile(['angry furious mad enraged'], 'Xthesaurus', 'D')
   set thesaurus=Xthesaurus
   call setline(1, 'mad')
   call cursor(1, 1)
@@ -886,8 +897,73 @@ func Test_edit_CTRL_T()
     let v:testing = 0
   endtry
   call assert_equal(['mad'], getline(1, '$'))
-  call delete('Xthesaurus')
   bw!
+endfunc
+
+" Test thesaurus completion with different encodings
+func Test_thesaurus_complete_with_encoding()
+  call writefile(['angry furious mad enraged'], 'Xthesaurus', 'D')
+  set thesaurus=Xthesaurus
+  for e in ['latin1', 'utf-8']
+    exe 'set encoding=' .. e
+    new
+    call setline(1, 'mad')
+    call cursor(1, 1)
+    call feedkeys("A\<c-x>\<c-t>\<cr>\<esc>", 'tnix')
+    call assert_equal(['mad', ''], getline(1, '$'))
+    bw!
+  endfor
+  set thesaurus=
+endfunc
+
+" Test 'thesaurusfunc'
+func MyThesaurus(findstart, base)
+  let mythesaurus = [
+        \ #{word: "happy",
+        \   synonyms: "cheerful,blissful,flying high,looking good,peppy"},
+        \ #{word: "kind",
+        \   synonyms: "amiable,bleeding-heart,heart in right place"}]
+  if a:findstart
+    " locate the start of the word
+    let line = getline('.')
+    let start = col('.') - 1
+    while start > 0 && line[start - 1] =~ '\a'
+      let start -= 1
+    endwhile
+    return start
+  else
+    " find strings matching with "a:base"
+    let res = []
+    for w in mythesaurus
+      if w.word =~ '^' . a:base
+        call add(res, w.word)
+        call extend(res, split(w.synonyms, ","))
+      endif
+    endfor
+    return res
+  endif
+endfunc
+
+func Test_thesaurus_func()
+  new
+  set thesaurus=notused
+  set thesaurusfunc=NotUsed
+  setlocal thesaurusfunc=MyThesaurus
+  call setline(1, "an ki")
+  call cursor(1, 1)
+  call feedkeys("A\<c-x>\<c-t>\<c-n>\<cr>\<esc>", 'tnix')
+  call assert_equal(['an amiable', ''], getline(1, '$'))
+
+  setlocal thesaurusfunc=NonExistingFunc
+  call assert_fails("normal $a\<C-X>\<C-T>", 'E117:')
+
+  setlocal thesaurusfunc=
+  set thesaurusfunc=NonExistingFunc
+  call assert_fails("normal $a\<C-X>\<C-T>", 'E117:')
+  %bw!
+
+  set thesaurusfunc=
+  set thesaurus=
 endfunc
 
 func Test_edit_CTRL_U()
@@ -961,7 +1037,7 @@ func Test_edit_completefunc_delete()
   set completefunc=CompleteFunc
   call setline(1, ['', 'abcd', ''])
   2d
-  call assert_fails("normal 2G$a\<C-X>\<C-U>", 'E578:')
+  call assert_fails("normal 2G$a\<C-X>\<C-U>", 'E565:')
   bwipe!
 endfunc
 
@@ -991,14 +1067,14 @@ func Test_edit_DROP()
 endfunc
 
 func Test_edit_CTRL_V()
-  CheckFeature ebcdic
   new
   call setline(1, ['abc'])
   call cursor(2, 1)
+
   " force some redraws
   set showmode showcmd
-  "call test_override_char_avail(1)
-  call test_override('ALL', 1)
+  call test_override('char_avail', 1)
+
   call feedkeys("A\<c-v>\<c-n>\<c-v>\<c-l>\<c-v>\<c-b>\<esc>", 'tnix')
   call assert_equal(["abc\x0e\x0c\x02"], getline(1, '$'))
 
@@ -1011,8 +1087,19 @@ func Test_edit_CTRL_V()
     set norl
   endif
 
-  call test_override('ALL', 0)
   set noshowmode showcmd
+  call test_override('char_avail', 0)
+
+  " No modifiers should be applied to the char typed using i_CTRL-V_digit.
+  call feedkeys(":append\<CR>\<C-V>76c\<C-V>76\<C-F2>\<C-V>u3c0j\<C-V>u3c0\<M-F3>\<CR>.\<CR>", 'tnix')
+  call assert_equal('LcL<C-F2>πjπ<M-F3>', getline(2))
+
+  if has('osx')
+    " A char with a modifier should not be a valid char for i_CTRL-V_digit.
+    call feedkeys("o\<C-V>\<D-j>\<C-V>\<D-1>\<C-V>\<D-o>\<C-V>\<D-x>\<C-V>\<D-u>", 'tnix')
+    call assert_equal('<D-j><D-1><D-o><D-x><D-u>', getline(3))
+  endif
+
   bw!
 endfunc
 
@@ -1120,20 +1207,30 @@ func Test_edit_MOUSE()
   10new
   call setline(1, range(1, 100))
   call cursor(1, 1)
+  call assert_equal(1, line('w0'))
+  call assert_equal(10, line('w$'))
   set mouse=a
+  " One scroll event moves three lines.
   call feedkeys("A\<ScrollWheelDown>\<esc>", 'tnix')
-  call assert_equal([0, 4, 1, 0], getpos('.'))
-  " This should move by one pageDown, but only moves
-  " by one line when the test is run...
+  call assert_equal(4, line('w0'))
+  call assert_equal(13, line('w$'))
+  " This should move by one page down.
   call feedkeys("A\<S-ScrollWheelDown>\<esc>", 'tnix')
-  call assert_equal([0, 5, 1, 0], getpos('.'))
+  call assert_equal(14, line('w0'))
   set nostartofline
+  " Another page down.
   call feedkeys("A\<C-ScrollWheelDown>\<esc>", 'tnix')
-  call assert_equal([0, 6, 1, 0], getpos('.'))
+  call assert_equal(24, line('w0'))
+
+  call assert_equal([0, 24, 2, 0], getpos('.'))
+  call test_setmouse(4, 3)
   call feedkeys("A\<LeftMouse>\<esc>", 'tnix')
-  call assert_equal([0, 6, 1, 0], getpos('.'))
-  call feedkeys("A\<RightMouse>\<esc>", 'tnix')
-  call assert_equal([0, 6, 1, 0], getpos('.'))
+  call assert_equal([0, 27, 2, 0], getpos('.'))
+  set mousemodel=extend
+  call test_setmouse(5, 3)
+  call feedkeys("A\<RightMouse>\<esc>\<esc>", 'tnix')
+  call assert_equal([0, 28, 2, 0], getpos('.'))
+  set mousemodel&
   call cursor(1, 100)
   norm! zt
   " this should move by a screen up, but when the test
@@ -1276,6 +1373,7 @@ func Test_edit_forbidden()
   call assert_fails(':Sandbox', 'E48:')
   delcom Sandbox
   call assert_equal(['a'], getline(1,'$'))
+
   " 2) edit with textlock set
   fu! DoIt()
     call feedkeys("i\<del>\<esc>", 'tnix')
@@ -1295,6 +1393,7 @@ func Test_edit_forbidden()
   catch /^Vim\%((\a\+)\)\=:E117/ " catch E117: unknown function
   endtry
   au! InsertCharPre
+
   " 3) edit when completion is shown
   fun! Complete(findstart, base)
     if a:findstart
@@ -1312,6 +1411,7 @@ func Test_edit_forbidden()
   endtry
   delfu Complete
   set completefunc=
+
   if has("rightleft") && exists("+fkmap")
     " 4) 'R' when 'fkmap' and 'revins' is set.
     set revins fkmap
@@ -1388,10 +1488,10 @@ func Test_edit_complete_very_long_name()
   " Long directory names only work on Unix.
   CheckUnix
 
-  let dirname = getcwd() . "/Xdir"
+  let dirname = getcwd() . "/Xlongdir"
   let longdirname = dirname . repeat('/' . repeat('d', 255), 4)
   try
-    call mkdir(longdirname, 'p')
+    call mkdir(longdirname, 'pR')
   catch /E739:/
     " Long directory name probably not supported.
     call delete(dirname, 'rf')
@@ -1426,12 +1526,11 @@ func Test_edit_complete_very_long_name()
   let longfilename = longdirname . '/' . repeat('a', 255)
   call writefile(['Totum', 'Table'], longfilename)
   new
-  exe "next Xfile " . longfilename
+  exe "next Xnofile " . longfilename
   exe "normal iT\<C-N>"
 
   bwipe!
   exe 'bwipe! ' . longfilename
-  call delete(dirname, 'rf')
   let &columns = save_columns
   if winposx >= 0 && winposy >= 0
     exe 'winpos ' . winposx . ' ' . winposy
@@ -1533,11 +1632,7 @@ endfunc
 func Test_edit_special_chars()
   new
 
-  if has("ebcdic")
-    let t = "o\<C-V>193\<C-V>xc2\<C-V>o303 \<C-V>90a\<C-V>xfg\<C-V>o578\<Esc>"
-  else
-    let t = "o\<C-V>65\<C-V>x42\<C-V>o103 \<C-V>33a\<C-V>xfg\<C-V>o78\<Esc>"
-  endif
+  let t = "o\<C-V>65\<C-V>x42\<C-V>o103 \<C-V>33a\<C-V>xfg\<C-V>o78\<Esc>"
 
   exe "normal " . t
   call assert_equal("ABC !a\<C-O>g\<C-G>8", getline(2))
@@ -1629,7 +1724,7 @@ endfunc
 " Test for editing a directory
 func Test_edit_is_a_directory()
   CheckEnglish
-  let dirname = getcwd() . "/Xdir"
+  let dirname = getcwd() . "/Xeditdir"
   call mkdir(dirname, 'p')
 
   new
@@ -1654,19 +1749,18 @@ endfunc
 " Test for editing a file using invalid file encoding
 func Test_edit_invalid_encoding()
   CheckEnglish
-  call writefile([], 'Xfile')
+  call writefile([], 'Xinvfile', 'D')
   redir => msg
-  new ++enc=axbyc Xfile
+  new ++enc=axbyc Xinvfile
   redir END
   call assert_match('\[NOT converted\]', msg)
-  call delete('Xfile')
   close!
 endfunc
 
 " Test for the "charconvert" option
 func Test_edit_charconvert()
   CheckEnglish
-  call writefile(['one', 'two'], 'Xfile')
+  call writefile(['one', 'two'], 'Xccfile', 'D')
 
   " set 'charconvert' to a non-existing function
   set charconvert=NonExitingFunc()
@@ -1674,7 +1768,7 @@ func Test_edit_charconvert()
   let caught_e117 = v:false
   try
     redir => msg
-    edit ++enc=axbyc Xfile
+    edit ++enc=axbyc Xccfile
   catch /E117:/
     let caught_e117 = v:true
   finally
@@ -1692,7 +1786,7 @@ func Test_edit_charconvert()
   set charconvert=Cconv1()
   new
   redir => msg
-  edit ++enc=axbyc Xfile
+  edit ++enc=axbyc Xccfile
   redir END
   call assert_equal(['one', 'two'], getline(1, '$'))
   call assert_match("can't read output of 'charconvert'", msg)
@@ -1707,10 +1801,10 @@ func Test_edit_charconvert()
     call writefile(data, v:fname_out)
   endfunc
   set charconvert=Cconv2()
-  new Xfile
-  write ++enc=ucase Xfile1
-  call assert_equal(['ONE', 'TWO'], readfile('Xfile1'))
-  call delete('Xfile1')
+  new Xccfile
+  write ++enc=ucase Xccfile1
+  call assert_equal(['ONE', 'TWO'], readfile('Xccfile1'))
+  call delete('Xccfile1')
   close!
   delfunc Cconv2
   set charconvert&
@@ -1721,13 +1815,11 @@ func Test_edit_charconvert()
   endfunc
   set charconvert=Cconv3()
   new
-  call assert_fails('edit ++enc=lcase Xfile', 'E202:')
+  call assert_fails('edit ++enc=lcase Xccfile', 'E202:')
   call assert_equal([''], getline(1, '$'))
   close!
   delfunc Cconv3
   set charconvert&
-
-  call delete('Xfile')
 endfunc
 
 " Test for editing a file without read permission
@@ -1735,28 +1827,58 @@ func Test_edit_file_no_read_perm()
   CheckUnix
   CheckNotRoot
 
-  call writefile(['one', 'two'], 'Xfile')
-  call setfperm('Xfile', '-w-------')
+  call writefile(['one', 'two'], 'Xnrpfile', 'D')
+  call setfperm('Xnrpfile', '-w-------')
   new
   redir => msg
-  edit Xfile
+  edit Xnrpfile
   redir END
   call assert_equal(1, &readonly)
   call assert_equal([''], getline(1, '$'))
   call assert_match('\[Permission Denied\]', msg)
   close!
-  call delete('Xfile')
+endfunc
+
+" Using :edit without leaving 'insertmode' should not cause Insert mode to be
+" re-entered immediately after <C-L>
+func Test_edit_insertmode_ex_edit()
+  CheckRunVimInTerminal
+
+  let lines =<< trim END
+    set insertmode noruler
+    inoremap <C-B> <Cmd>edit Xfoo<CR>
+  END
+  call writefile(lines, 'Xtest_edit_insertmode_ex_edit', 'D')
+
+  let buf = RunVimInTerminal('-S Xtest_edit_insertmode_ex_edit', #{rows: 6, wait_for_ruler: 0})
+  " Somehow when using valgrind "INSERT" does not show up unless we send
+  " something to the terminal.
+  for i in range(30)
+    if term_getline(buf, 6) =~ 'INSERT'
+      break
+    endif
+    call term_sendkeys(buf, "-")
+    sleep 100m
+  endfor
+  call WaitForAssert({-> assert_match('^-- INSERT --\s*$', term_getline(buf, 6))})
+  call term_sendkeys(buf, "\<C-B>\<C-L>")
+  call WaitForAssert({-> assert_notmatch('^-- INSERT --\s*$', term_getline(buf, 6))})
+
+  " clean up
+  call StopVimInTerminal(buf)
 endfunc
 
 " Pressing escape in 'insertmode' should beep
-func Test_edit_insertmode_esc_beeps()
+" FIXME: Execute this later, when using valgrind it makes the next test
+" Test_edit_insertmode_ex_edit() fail.
+func Test_z_edit_insertmode_esc_beeps()
   new
   set insertmode
   call assert_beeps("call feedkeys(\"one\<Esc>\", 'xt')")
   set insertmode&
-  " unsupported CTRL-G command should beep in insert mode.
+  " unsupported "CTRL-G l" command should beep in insert mode.
   call assert_beeps("normal i\<C-G>l")
-  close!
+  bwipe!
 endfunc
 
 " Test for 'hkmap' and 'hkmapp'
@@ -1893,6 +2015,79 @@ func Test_edit_revins()
   call assert_equal(['one two three', 'ruof'], getline(1, '$'))
   set revins&
   bw!
+endfunc
+
+" Test for getting the character of the line below after "p"
+func Test_edit_put_CTRL_E()
+  set encoding=latin1
+  new
+  let @" = ''
+  sil! norm orggRx
+  sil! norm pr
+  call assert_equal(['r', 'r'], getline(1, 2))
+  bwipe!
+  set encoding=utf-8
+endfunc
+
+" Test toggling of input method. See :help i_CTRL-^
+func Test_edit_CTRL_hat()
+  CheckFeature xim
+
+  " FIXME: test fails with Motif GUI.
+  "        test also fails when running in the GUI.
+  CheckFeature gui_gtk
+  CheckNotGui
+
+  new
+
+  call assert_equal(0, &iminsert)
+  call feedkeys("i\<C-^>", 'xt')
+  call assert_equal(2, &iminsert)
+  call feedkeys("i\<C-^>", 'xt')
+  call assert_equal(0, &iminsert)
+
+  bwipe!
+endfunc
+
+" Weird long file name was going over the end of NameBuff
+func Test_edit_overlong_file_name()
+  CheckUnix
+
+  file 0000000000000000000000000000
+  file %%%%%%%%%%%%%%%%%%%%%%%%%%
+  file %%%%%%
+  set readonly
+  set ls=2 
+
+  redraw!
+  set noreadonly ls&
+  bwipe!
+endfunc
+
+func Test_edit_shift_bs()
+  CheckMSWindows
+
+  " FIXME: this works interactively, but the test fails
+  throw 'Skipped: Shift-Backspace Test not working correctly :('
+
+  " Need to run this in Win32 Terminal, do not use CheckRunVimInTerminal
+  if !has("terminal")
+    return
+  endif
+
+  " Shift Backspace should work like Backspace in insert mode
+  let lines =<< trim END
+    call setline(1, ['abc'])
+  END
+  call writefile(lines, 'Xtest_edit_shift_bs', 'D')
+
+  let buf = RunVimInTerminal('-S Xtest_edit_shift_bs', #{rows: 3})
+  call term_sendkeys(buf, "A\<S-BS>-\<esc>")
+  call TermWait(buf, 50)
+  call assert_equal('ab-', term_getline(buf, 1))
+
+  " clean up
+  call StopVimInTerminal(buf)
 endfunc
 
 " vim: shiftwidth=2 sts=2 expandtab

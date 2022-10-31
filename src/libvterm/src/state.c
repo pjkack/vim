@@ -79,6 +79,10 @@ static VTermState *vterm_state_new(VTerm *vt)
   state->callbacks = NULL;
   state->cbdata    = NULL;
 
+  state->selection.callbacks = NULL;
+  state->selection.user      = NULL;
+  state->selection.buffer    = NULL;
+
   vterm_state_newpen(state);
 
   state->bold_is_highbright = 0;
@@ -276,7 +280,6 @@ static void set_lineinfo(VTermState *state, int row, int force, int dwl, int dhl
 static int on_text(const char bytes[], size_t len, void *user)
 {
   VTermState *state = user;
-  uint32_t *codepoints;
   int npoints = 0;
   size_t eaten = 0;
   VTermEncodingInstance *encoding;
@@ -286,9 +289,8 @@ static int on_text(const char bytes[], size_t len, void *user)
 
   // We'll have at most len codepoints, plus one from a previous incomplete
   // sequence.
-  codepoints = vterm_allocator_malloc(state->vt, (len + 1) * sizeof(uint32_t));
-  if (codepoints == NULL)
-    return 0;
+  uint32_t *codepoints = (uint32_t *)(state->vt->tmpbuffer);
+  size_t maxpoints = (state->vt->tmpbuffer_len) / sizeof(uint32_t);
 
   encoding =
     state->gsingle_set     ? &state->encoding[state->gsingle_set] :
@@ -297,7 +299,7 @@ static int on_text(const char bytes[], size_t len, void *user)
                              &state->encoding[state->gr_set];
 
   (*encoding->enc->decode)(encoding->enc, encoding->data,
-      codepoints, &npoints, state->gsingle_set ? 1 : (int)len,
+      codepoints, &npoints, state->gsingle_set ? 1 : (int)maxpoints,
       bytes, &eaten, len);
 
   /* There's a chance an encoding (e.g. UTF-8) hasn't found enough bytes yet
@@ -305,7 +307,6 @@ static int on_text(const char bytes[], size_t len, void *user)
    */
   if(!npoints)
   {
-    vterm_allocator_free(state->vt, codepoints);
     return (int)eaten;
   }
 
@@ -359,13 +360,14 @@ static int on_text(const char bytes[], size_t len, void *user)
     int glyph_starts = i;
     int glyph_ends;
     int width = 0;
-    uint32_t *chars;
 
-    for(glyph_ends = i + 1; glyph_ends < npoints; glyph_ends++)
+    for(glyph_ends = i + 1;
+        (glyph_ends < npoints) && (glyph_ends < glyph_starts + VTERM_MAX_CHARS_PER_CELL);
+        glyph_ends++)
       if(!vterm_unicode_is_combining(codepoints[glyph_ends]))
         break;
 
-    chars = vterm_allocator_malloc(state->vt, (glyph_ends - glyph_starts + 1) * sizeof(uint32_t));
+    uint32_t *chars = vterm_allocator_malloc(state->vt, (VTERM_MAX_CHARS_PER_CELL + 1) * sizeof(uint32_t));
     if (chars == NULL)
       break;
 
@@ -385,8 +387,11 @@ static int on_text(const char bytes[], size_t len, void *user)
       }
 #endif
       if (i == glyph_starts || this_width > width)
-	width = this_width;
+	width = this_width;  // TODO: should be += ?
     }
+
+    while(i < npoints && vterm_unicode_is_combining(codepoints[i]))
+      i++;
 
     chars[glyph_ends - glyph_starts] = 0;
     i--;
@@ -457,7 +462,6 @@ static int on_text(const char bytes[], size_t len, void *user)
   }
 #endif
 
-  vterm_allocator_free(state->vt, codepoints);
   return (int)eaten;
 }
 
@@ -948,6 +952,12 @@ static void request_dec_mode(VTermState *state, int num)
   vterm_push_output_sprintf_ctrl(state->vt, C1_CSI, "?%d;%d$y", num, reply ? 1 : 2);
 }
 
+static void request_version_string(VTermState *state)
+{
+  vterm_push_output_sprintf_str(state->vt, C1_DCS, TRUE, ">|libvterm(%d.%d)",
+      VTERM_VERSION_MAJOR, VTERM_VERSION_MINOR);
+}
+
 static int on_csi(const char *leader, const long args[], int argcount, const char *intermed, char command, void *user)
 {
   VTermState *state = user;
@@ -1141,6 +1151,12 @@ static int on_csi(const char *leader, const long args[], int argcount, const cha
       for(row = rect.start_row; row < rect.end_row; row++)
 	set_lineinfo(state, row, FORCE, DWL_OFF, DHL_OFF);
       erase(state, rect, selective);
+      break;
+
+    case 3:
+      if(state->callbacks && state->callbacks->sb_clear)
+        if((*state->callbacks->sb_clear)(state->cbdata))
+          return 1;
       break;
     }
     break;
@@ -1384,6 +1400,29 @@ static int on_csi(const char *leader, const long args[], int argcount, const cha
     vterm_state_setpen(state, args, argcount);
     break;
 
+  case LEADER('?', 0x6d): // DECSGR
+    /* No actual DEC terminal recognised these, but some printers did. These
+     * are alternative ways to request subscript/superscript/off
+     */
+    for(int argi = 0; argi < argcount; argi++) {
+      long arg;
+      switch(arg = CSI_ARG(args[argi])) {
+        case 4: // Superscript on
+          arg = 73;
+          vterm_state_setpen(state, &arg, 1);
+          break;
+        case 5: // Subscript on
+          arg = 74;
+          vterm_state_setpen(state, &arg, 1);
+          break;
+        case 24: // Super+subscript off
+          arg = 75;
+          vterm_state_setpen(state, &arg, 1);
+          break;
+      }
+    }
+    break;
+
   case LEADER('>', 0x6d): // xterm resource modifyOtherKeys
     if (argcount == 2 && args[0] == 4)
       state->mode.modify_other_keys = args[1] == 2;
@@ -1417,6 +1456,10 @@ static int on_csi(const char *leader, const long args[], int argcount, const cha
 
   case LEADER('?', INTERMED('$', 0x70)):
     request_dec_mode(state, CSI_ARG(args[0]));
+    break;
+
+  case LEADER('>', 0x71): // XTVERSION - xterm query version string
+    request_version_string(state);
     break;
 
   case INTERMED(' ', 0x71): // DECSCUSR - DEC set cursor shape
@@ -1615,6 +1658,176 @@ static int on_csi(const char *leader, const long args[], int argcount, const cha
   return 1;
 }
 
+static char base64_one(uint8_t b)
+{
+  if(b < 26)
+    return 'A' + b;
+  else if(b < 52)
+    return 'a' + b - 26;
+  else if(b < 62)
+    return '0' + b - 52;
+  else if(b == 62)
+    return '+';
+  else if(b == 63)
+    return '/';
+  return 0;
+}
+
+static uint8_t unbase64one(char c)
+{
+  if(c >= 'A' && c <= 'Z')
+    return c - 'A';
+  else if(c >= 'a' && c <= 'z')
+    return c - 'a' + 26;
+  else if(c >= '0' && c <= '9')
+    return c - '0' + 52;
+  else if(c == '+')
+    return 62;
+  else if(c == '/')
+    return 63;
+
+  return 0xFF;
+}
+
+static void osc_selection(VTermState *state, VTermStringFragment frag)
+{
+  if(frag.initial) {
+    state->tmp.selection.mask = 0;
+    state->tmp.selection.state = SELECTION_INITIAL;
+  }
+
+  while(!state->tmp.selection.state && frag.len) {
+    /* Parse selection parameter */
+    switch(frag.str[0]) {
+      case 'c':
+        state->tmp.selection.mask |= VTERM_SELECTION_CLIPBOARD;
+        break;
+      case 'p':
+        state->tmp.selection.mask |= VTERM_SELECTION_PRIMARY;
+        break;
+      case 'q':
+        state->tmp.selection.mask |= VTERM_SELECTION_SECONDARY;
+        break;
+      case 's':
+        state->tmp.selection.mask |= VTERM_SELECTION_SELECT;
+        break;
+      case '0':
+      case '1':
+      case '2':
+      case '3':
+      case '4':
+      case '5':
+      case '6':
+      case '7':
+        state->tmp.selection.mask |= (VTERM_SELECTION_CUT0 << (frag.str[0] - '0'));
+        break;
+
+      case ';':
+        state->tmp.selection.state = SELECTION_SELECTED;
+        if(!state->tmp.selection.mask)
+          state->tmp.selection.mask = VTERM_SELECTION_SELECT|VTERM_SELECTION_CUT0;
+        break;
+    }
+
+    frag.str++;
+    frag.len--;
+  }
+
+  if(!frag.len)
+    return;
+
+  if(state->tmp.selection.state == SELECTION_SELECTED) {
+    if(frag.str[0] == '?') {
+      state->tmp.selection.state = SELECTION_QUERY;
+    }
+    else {
+      state->tmp.selection.state = SELECTION_SET_INITIAL;
+      state->tmp.selection.recvpartial = 0;
+    }
+  }
+
+  if(state->tmp.selection.state == SELECTION_QUERY) {
+    if(state->selection.callbacks->query)
+      (*state->selection.callbacks->query)(state->tmp.selection.mask, state->selection.user);
+    return;
+  }
+
+  if(state->selection.callbacks->set) {
+    size_t bufcur = 0;
+    char *buffer = state->selection.buffer;
+
+    uint32_t x = 0; /* Current decoding value */
+    int n = 0;      /* Number of sextets consumed */
+
+    if(state->tmp.selection.recvpartial) {
+      n = state->tmp.selection.recvpartial >> 24;
+      x = state->tmp.selection.recvpartial & 0x03FFFF; /* could be up to 18 bits of state in here */
+
+      state->tmp.selection.recvpartial = 0;
+    }
+
+    while((state->selection.buflen - bufcur) >= 3 && frag.len) {
+      if(frag.str[0] == '=') {
+        if(n == 2) {
+          buffer[0] = (x >> 4) & 0xFF;
+          buffer += 1, bufcur += 1;
+        }
+        if(n == 3) {
+          buffer[0] = (x >> 10) & 0xFF;
+          buffer[1] = (x >>  2) & 0xFF;
+          buffer += 2, bufcur += 2;
+        }
+
+        while(frag.len && frag.str[0] == '=')
+          frag.str++, frag.len--;
+
+        n = 0;
+      }
+      else {
+        uint8_t b = unbase64one(frag.str[0]);
+        if(b == 0xFF) {
+          DEBUG_LOG1("base64decode bad input %02X\n", (uint8_t)frag.str[0]);
+        }
+        else {
+          x = (x << 6) | b;
+          n++;
+        }
+        frag.str++, frag.len--;
+
+        if(n == 4) {
+          buffer[0] = (x >> 16) & 0xFF;
+          buffer[1] = (x >>  8) & 0xFF;
+          buffer[2] = (x >>  0) & 0xFF;
+
+          buffer += 3, bufcur += 3;
+          x = 0;
+          n = 0;
+        }
+      }
+
+      if(!frag.len || (state->selection.buflen - bufcur) < 3) {
+        if(bufcur) {
+	  VTermStringFragment setfrag = {
+	    state->selection.buffer, // str
+	    bufcur, // len
+	    state->tmp.selection.state == SELECTION_SET_INITIAL, // initial
+	    frag.final // final
+	  };
+          (*state->selection.callbacks->set)(state->tmp.selection.mask,
+	      setfrag, state->selection.user);
+          state->tmp.selection.state = SELECTION_SET;
+        }
+
+        buffer = state->selection.buffer;
+        bufcur = 0;
+      }
+    }
+
+    if(n)
+      state->tmp.selection.recvpartial = (n << 24) | x;
+  }
+}
+
 static int on_osc(int command, VTermStringFragment frag, void *user)
 {
   VTermState *state = user;
@@ -1656,6 +1869,12 @@ static int on_osc(int command, VTermStringFragment frag, void *user)
       settermprop_string(state, VTERM_PROP_CURSORCOLOR, frag);
       return 1;
 
+    case 52:
+      if(state->selection.callbacks)
+        osc_selection(state, frag);
+
+      return 1;
+
     default:
       if(state->fallbacks && state->fallbacks->osc)
         if((*state->fallbacks->osc)(command, frag, state->fbdata))
@@ -1670,11 +1889,11 @@ static void request_status_string(VTermState *state, VTermStringFragment frag)
   VTerm *vt = state->vt;
 
   char *tmp = state->tmp.decrqss;
-  size_t i = 0;
 
   if(frag.initial)
     tmp[0] = tmp[1] = tmp[2] = tmp[3] = 0;
 
+  size_t i = 0;
   while(i < sizeof(state->tmp.decrqss)-1 && tmp[i])
     i++;
   while(i < sizeof(state->tmp.decrqss)-1 && frag.len--)
@@ -1690,14 +1909,13 @@ static void request_status_string(VTermState *state, VTermStringFragment frag)
       long args[20];
       int argc = vterm_state_getpen(state, args, sizeof(args)/sizeof(args[0]));
       size_t cur = 0;
-      int argi;
 
       cur += SNPRINTF(vt->tmpbuffer + cur, vt->tmpbuffer_len - cur,
           vt->mode.ctrl8bit ? "\x90" "1$r" : ESC_S "P" "1$r"); // DCS 1$r ...
       if(cur >= vt->tmpbuffer_len)
         return;
 
-      for(argi = 0; argi < argc; argi++) {
+      for(int argi = 0; argi < argc; argi++) {
         cur += SNPRINTF(vt->tmpbuffer + cur, vt->tmpbuffer_len - cur,
             argi == argc - 1             ? "%ld" :
             CSI_ARG_HAS_MORE(args[argi]) ? "%ld:" :
@@ -1718,12 +1936,14 @@ static void request_status_string(VTermState *state, VTermStringFragment frag)
 
     case 'r':
       // Query DECSTBM
-      vterm_push_output_sprintf_dcs(vt, "1$r%d;%dr", state->scrollregion_top+1, SCROLLREGION_BOTTOM(state));
+      vterm_push_output_sprintf_str(vt, C1_DCS, TRUE,
+          "1$r%d;%dr", state->scrollregion_top+1, SCROLLREGION_BOTTOM(state));
       return;
 
     case 's':
       // Query DECSLRM
-      vterm_push_output_sprintf_dcs(vt, "1$r%d;%ds", SCROLLREGION_LEFT(state)+1, SCROLLREGION_RIGHT(state));
+      vterm_push_output_sprintf_str(vt, C1_DCS, TRUE,
+          "1$r%d;%ds", SCROLLREGION_LEFT(state)+1, SCROLLREGION_RIGHT(state));
       return;
 
     case ' '|('q'<<8): {
@@ -1736,17 +1956,19 @@ static void request_status_string(VTermState *state, VTermStringFragment frag)
       }
       if(state->mode.cursor_blink)
         reply--;
-      vterm_push_output_sprintf_dcs(vt, "1$r%d q", reply);
+      vterm_push_output_sprintf_str(vt, C1_DCS, TRUE,
+          "1$r%d q", reply);
       return;
     }
 
     case '\"'|('q'<<8):
       // Query DECSCA
-      vterm_push_output_sprintf_dcs(vt, "1$r%d\"q", state->protected_cell ? 1 : 2);
+      vterm_push_output_sprintf_str(vt, C1_DCS, TRUE,
+          "1$r%d\"q", state->protected_cell ? 1 : 2);
       return;
   }
 
-  vterm_push_output_sprintf_dcs(state->vt, "0$r%s", tmp);
+  vterm_push_output_sprintf_str(state->vt, C1_DCS, TRUE, "0$r%s", tmp);
 }
 
 static int on_dcs(const char *command, size_t commandlen, VTermStringFragment frag, void *user)
@@ -1765,19 +1987,54 @@ static int on_dcs(const char *command, size_t commandlen, VTermStringFragment fr
   return 0;
 }
 
+static int on_apc(VTermStringFragment frag, void *user)
+{
+  VTermState *state = user;
+
+  if(state->fallbacks && state->fallbacks->apc)
+    if((*state->fallbacks->apc)(frag, state->fbdata))
+      return 1;
+
+  /* No DEBUG_LOG because all APCs are unhandled */
+  return 0;
+}
+
+static int on_pm(VTermStringFragment frag, void *user)
+{
+  VTermState *state = user;
+
+  if(state->fallbacks && state->fallbacks->pm)
+    if((*state->fallbacks->pm)(frag, state->fbdata))
+      return 1;
+
+  /* No DEBUG_LOG because all PMs are unhandled */
+  return 0;
+}
+
+static int on_sos(VTermStringFragment frag, void *user)
+{
+  VTermState *state = user;
+
+  if(state->fallbacks && state->fallbacks->sos)
+    if((*state->fallbacks->sos)(frag, state->fbdata))
+      return 1;
+
+  /* No DEBUG_LOG because all SOSs are unhandled */
+  return 0;
+}
+
 static int on_resize(int rows, int cols, void *user)
 {
   VTermState *state = user;
   VTermPos oldpos = state->pos;
-  VTermStateFields fields;
 
   if(cols != state->cols) {
-    int col;
     unsigned char *newtabstops = vterm_allocator_malloc(state->vt, (cols + 7) / 8);
     if (newtabstops == NULL)
       return 0;
 
     /* TODO: This can all be done much more efficiently bytewise */
+    int col;
     for(col = 0; col < state->cols && col < cols; col++) {
       unsigned char mask = 1 << (col & 7);
       if(state->tabstops[col >> 3] & mask)
@@ -1798,33 +2055,6 @@ static int on_resize(int rows, int cols, void *user)
     state->tabstops = newtabstops;
   }
 
-  if(rows != state->rows) {
-    int bufidx;
-    for(bufidx = BUFIDX_PRIMARY; bufidx <= BUFIDX_ALTSCREEN; bufidx++) {
-      int row;
-      VTermLineInfo *oldlineinfo = state->lineinfos[bufidx];
-      VTermLineInfo *newlineinfo;
-      if(!oldlineinfo)
-        continue;
-
-      newlineinfo = vterm_allocator_malloc(state->vt, rows * sizeof(VTermLineInfo));
-
-      for(row = 0; row < state->rows && row < rows; row++) {
-        newlineinfo[row] = oldlineinfo[row];
-      }
-
-      for( ; row < rows; row++) {
-	VTermLineInfo lineInfo = {0x0};
-	newlineinfo[row] = lineInfo;
-      }
-
-      vterm_allocator_free(state->vt, state->lineinfos[bufidx]);
-      state->lineinfos[bufidx] = newlineinfo;
-    }
-
-    state->lineinfo = state->lineinfos[state->mode.alt_screen ? BUFIDX_ALTSCREEN : BUFIDX_PRIMARY];
-  }
-
   state->rows = rows;
   state->cols = cols;
 
@@ -1833,12 +2063,45 @@ static int on_resize(int rows, int cols, void *user)
   if(state->scrollregion_right > -1)
     UBOUND(state->scrollregion_right, state->cols);
 
+  VTermStateFields fields;
   fields.pos = state->pos;
+  fields.lineinfos[0] = state->lineinfos[0];
+  fields.lineinfos[1] = state->lineinfos[1];
 
-  if(state->callbacks && state->callbacks->resize)
+  if(state->callbacks && state->callbacks->resize) {
     (*state->callbacks->resize)(rows, cols, &fields, state->cbdata);
+    state->pos = fields.pos;
 
-  state->pos = fields.pos;
+    state->lineinfos[0] = fields.lineinfos[0];
+    state->lineinfos[1] = fields.lineinfos[1];
+  }
+  else {
+    if(rows != state->rows) {
+      for(int bufidx = BUFIDX_PRIMARY; bufidx <= BUFIDX_ALTSCREEN; bufidx++) {
+        VTermLineInfo *oldlineinfo = state->lineinfos[bufidx];
+        if(!oldlineinfo)
+          continue;
+
+        VTermLineInfo *newlineinfo = vterm_allocator_malloc(state->vt, rows * sizeof(VTermLineInfo));
+
+        int row;
+        for(row = 0; row < state->rows && row < rows; row++) {
+          newlineinfo[row] = oldlineinfo[row];
+        }
+
+        for( ; row < rows; row++) {
+          newlineinfo[row] = (VTermLineInfo){
+            .doublewidth = 0,
+          };
+        }
+
+        vterm_allocator_free(state->vt, state->lineinfos[bufidx]);
+        state->lineinfos[bufidx] = newlineinfo;
+      }
+    }
+  }
+
+  state->lineinfo = state->lineinfos[state->mode.alt_screen ? BUFIDX_ALTSCREEN : BUFIDX_PRIMARY];
 
   if(state->at_phantom && state->pos.col < cols-1) {
     state->at_phantom = 0;
@@ -1866,6 +2129,9 @@ static const VTermParserCallbacks parser_callbacks = {
   on_csi, // csi
   on_osc, // osc
   on_dcs, // dcs
+  on_apc, // apc
+  on_pm, // pm
+  on_sos, // sos
   on_resize // resize
 };
 
@@ -1875,11 +2141,10 @@ static const VTermParserCallbacks parser_callbacks = {
  */
 VTermState *vterm_obtain_state(VTerm *vt)
 {
-  VTermState *state;
   if(vt->state)
     return vt->state;
 
-  state = vterm_state_new(vt);
+  VTermState *state = vterm_state_new(vt);
   if (state == NULL)
     return NULL;
   vt->state = state;
@@ -1891,8 +2156,6 @@ VTermState *vterm_obtain_state(VTerm *vt)
 
 void vterm_state_reset(VTermState *state, int hard)
 {
-  VTermEncoding *default_enc;
-
   state->scrollregion_top = 0;
   state->scrollregion_bottom = -1;
   state->scrollregion_left = 0;
@@ -1909,39 +2172,32 @@ void vterm_state_reset(VTermState *state, int hard)
   state->mode.bracketpaste    = 0;
   state->mode.report_focus    = 0;
 
+  state->mouse_flags = 0;
+
   state->vt->mode.ctrl8bit   = 0;
 
-  {
-    int col;
-    for(col = 0; col < state->cols; col++)
-      if(col % 8 == 0)
-	set_col_tabstop(state, col);
-      else
-	clear_col_tabstop(state, col);
-  }
+  for(int col = 0; col < state->cols; col++)
+    if(col % 8 == 0)
+      set_col_tabstop(state, col);
+    else
+      clear_col_tabstop(state, col);
 
-  {
-    int row;
-    for(row = 0; row < state->rows; row++)
-      set_lineinfo(state, row, FORCE, DWL_OFF, DHL_OFF);
-  }
+  for(int row = 0; row < state->rows; row++)
+    set_lineinfo(state, row, FORCE, DWL_OFF, DHL_OFF);
 
   if(state->callbacks && state->callbacks->initpen)
     (*state->callbacks->initpen)(state->cbdata);
 
   vterm_state_resetpen(state);
 
-  default_enc = state->vt->mode.utf8 ?
+  VTermEncoding *default_enc = state->vt->mode.utf8 ?
       vterm_lookup_encoding(ENC_UTF8,      'u') :
       vterm_lookup_encoding(ENC_SINGLE_94, 'B');
 
-  {
-    int i;
-    for(i = 0; i < 4; i++) {
-      state->encoding[i].enc = default_enc;
-      if(default_enc->init)
-	(*default_enc->init)(default_enc, state->encoding[i].data);
-    }
+  for(int i = 0; i < 4; i++) {
+    state->encoding[i].enc = default_enc;
+    if(default_enc->init)
+      (*default_enc->init)(default_enc, state->encoding[i].data);
   }
 
   state->gl_set = 0;
@@ -1956,12 +2212,11 @@ void vterm_state_reset(VTermState *state, int hard)
   settermprop_int (state, VTERM_PROP_CURSORSHAPE,   VTERM_PROP_CURSORSHAPE_BLOCK);
 
   if(hard) {
-    VTermRect rect = { 0, 0, 0, 0 };
-
     state->pos.row = 0;
     state->pos.col = 0;
     state->at_phantom = 0;
 
+    VTermRect rect = { 0, 0, 0, 0 };
     rect.end_row = state->rows;
     rect.end_col =  state->cols;
     erase(state, rect, 0);
@@ -2086,4 +2341,97 @@ void vterm_state_focus_out(VTermState *state)
 const VTermLineInfo *vterm_state_get_lineinfo(const VTermState *state, int row)
 {
   return state->lineinfo + row;
+}
+
+void vterm_state_set_selection_callbacks(VTermState *state, const VTermSelectionCallbacks *callbacks, void *user,
+    char *buffer, size_t buflen)
+{
+  if(buflen && !buffer)
+    buffer = vterm_allocator_malloc(state->vt, buflen);
+
+  state->selection.callbacks = callbacks;
+  state->selection.user      = user;
+  state->selection.buffer    = buffer;
+  state->selection.buflen    = buflen;
+}
+
+void vterm_state_send_selection(VTermState *state, VTermSelectionMask mask, VTermStringFragment frag)
+{
+  VTerm *vt = state->vt;
+
+  if(frag.initial) {
+    /* TODO: support sending more than one mask bit */
+    static char selection_chars[] = "cpqs";
+    int idx;
+    for(idx = 0; idx < 4; idx++)
+      if(mask & (1 << idx))
+        break;
+
+    vterm_push_output_sprintf_str(vt, C1_OSC, FALSE, "52;%c;", selection_chars[idx]);
+
+    state->tmp.selection.sendpartial = 0;
+  }
+
+  if(frag.len) {
+    size_t bufcur = 0;
+    char *buffer = state->selection.buffer;
+
+    uint32_t x = 0;
+    int n = 0;
+
+    if(state->tmp.selection.sendpartial) {
+      n = state->tmp.selection.sendpartial >> 24;
+      x = state->tmp.selection.sendpartial & 0xFFFFFF;
+
+      state->tmp.selection.sendpartial = 0;
+    }
+
+    while((state->selection.buflen - bufcur) >= 4 && frag.len) {
+      x = (x << 8) | frag.str[0];
+      n++;
+      frag.str++, frag.len--;
+
+      if(n == 3) {
+        buffer[0] = base64_one((x >> 18) & 0x3F);
+        buffer[1] = base64_one((x >> 12) & 0x3F);
+        buffer[2] = base64_one((x >>  6) & 0x3F);
+        buffer[3] = base64_one((x >>  0) & 0x3F);
+
+        buffer += 4, bufcur += 4;
+        x = 0;
+        n = 0;
+      }
+
+      if(!frag.len || (state->selection.buflen - bufcur) < 4) {
+        if(bufcur)
+          vterm_push_output_bytes(vt, state->selection.buffer, bufcur);
+
+        buffer = state->selection.buffer;
+        bufcur = 0;
+      }
+    }
+
+    if(n)
+      state->tmp.selection.sendpartial = (n << 24) | x;
+  }
+
+  if(frag.final) {
+    if(state->tmp.selection.sendpartial) {
+      int n      = state->tmp.selection.sendpartial >> 24;
+      uint32_t x = state->tmp.selection.sendpartial & 0xFFFFFF;
+      char *buffer = state->selection.buffer;
+
+      /* n is either 1 or 2 now */
+      x <<= (n == 1) ? 16 : 8;
+
+      buffer[0] = base64_one((x >> 18) & 0x3F);
+      buffer[1] = base64_one((x >> 12) & 0x3F);
+      buffer[2] = (n == 1) ? '=' : base64_one((x >>  6) & 0x3F);
+      buffer[3] = '=';
+
+      vterm_push_output_sprintf_str(vt, 0, TRUE, "%.*s", 4, buffer);
+    }
+    else
+      vterm_push_output_sprintf_str(vt, 0, TRUE, "");
+  }
 }

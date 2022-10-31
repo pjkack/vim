@@ -160,9 +160,6 @@ endfunc
 
 " Test for menu item completion in command line
 func Test_menu_expand()
-  " Make sure we don't have stale menu items like Buffers menu.
-  source $VIMRUNTIME/delmenu.vim
-
   " Create the menu itmes for test
   menu Dummy.Nothing lll
   for i in range(1, 4)
@@ -369,6 +366,10 @@ func Test_menu_info()
         \ display: 'tlnoremenu', modes: 'tl', enabled: v:true, silent: v:false,
         \ rhs: ':tlnoremenu<CR>', noremenu: v:true, script: v:false},
         \ menu_info('Test.tlnoremenu', 'tl'))
+
+  " Test for getting all the top-level menu names
+  call assert_notequal(menu_info('').submenus, [])
+
   aunmenu Test
   tlunmenu Test
   call assert_equal({}, menu_info('Test'))
@@ -478,6 +479,35 @@ func Test_popup_menu()
   unmenu PopUp
 endfunc
 
+" Test for MenuPopup autocommand
+func Test_autocmd_MenuPopup()
+  CheckNotGui
+
+  set mouse=a
+  set mousemodel=popup
+  aunmenu *
+  autocmd MenuPopup * exe printf(
+    \ 'anoremenu PopUp.Foo <Cmd>let g:res = ["%s", "%s"]<CR>',
+    \ expand('<afile>'), expand('<amatch>'))
+
+  call feedkeys("\<RightMouse>\<Down>\<CR>", 'tnix')
+  call assert_equal(['n', 'n'], g:res)
+
+  call feedkeys("v\<RightMouse>\<Down>\<CR>\<Esc>", 'tnix')
+  call assert_equal(['v', 'v'], g:res)
+
+  call feedkeys("gh\<RightMouse>\<Down>\<CR>\<Esc>", 'tnix')
+  call assert_equal(['s', 's'], g:res)
+
+  call feedkeys("i\<RightMouse>\<Down>\<CR>\<Esc>", 'tnix')
+  call assert_equal(['i', 'i'], g:res)
+
+  autocmd! MenuPopup
+  aunmenu PopUp.Foo
+  unlet g:res
+  set mouse& mousemodel&
+endfunc
+
 " Test for listing the menus using the :menu command
 func Test_show_menus()
   " In the GUI, tear-off menu items are present in the output below
@@ -523,6 +553,19 @@ func Test_tmenu()
   [TEXT]
   call assert_equal(exp, split(execute('tmenu'), "\n"))
   tunmenu Test
+endfunc
+
+func Test_only_modifier()
+  exe "tmenu a.b \x80\xfc0"
+  let exp =<< trim [TEXT]
+  --- Menus ---
+  500 a
+    500 b
+        t  - <T-2-^@>
+  [TEXT]
+  call assert_equal(exp, split(execute('tmenu'), "\n"))
+
+  tunmenu a.b
 endfunc
 
 " vim: shiftwidth=2 sts=2 expandtab

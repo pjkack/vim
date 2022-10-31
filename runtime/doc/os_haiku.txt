@@ -1,4 +1,4 @@
-*os_haiku.txt*	For Vim version 8.2.  Last change: 2020 May 13
+*os_haiku.txt*	For Vim version 9.0.  Last change: 2020 May 13
 
 
 		  VIM REFERENCE MANUAL    by Bram Moolenaar
@@ -47,7 +47,7 @@ features you can enable/disable.
 
 Haiku uses "ncurses6" as its terminal library, therefore you need to have
 "ncurses6_devel" package installed from HaikuDepot in order to configure
-the Haiku build.  Just append "--with-tlib=ncurses6" to ./configure command
+the Haiku build.  Just append "--with-tlib=ncurses" to ./configure command.
 
 Now you should use "make" to compile Vim, then "make install" to install it.
 For seamless integration into Haiku, the GUI-less vim binary should be
@@ -56,12 +56,14 @@ additionally installed over the GUI version.  Typical build commands are:
   ./configure --prefix=`finddir B_SYSTEM_NONPACKAGED_DIRECTORY` \
     --datarootdir=`finddir B_SYSTEM_NONPACKAGED_DATA_DIRECTORY` \
     --mandir=`finddir B_SYSTEM_NONPACKAGED_DIRECTORY`/documentation/man \
+    --with-tlib=ncurses \
   make clean
   make install
 
   ./configure --prefix=`finddir B_SYSTEM_NONPACKAGED_DIRECTORY`  \
     --datarootdir=`finddir B_SYSTEM_NONPACKAGED_DATA_DIRECTORY` \
     --mandir=`finddir B_SYSTEM_NONPACKAGED_DIRECTORY`/documentation/man \
+    --with-tlib=ncurses \
     --disable-gui
   make clean
   make install
@@ -194,9 +196,8 @@ $VIM/macros/swapmous.vim for an example.		|gui-mouse-mapping|
 
 11. Color names						*haiku-colors*
 
-Vim has a number of color names built-in.  Additional names are read from the
-file $VIMRUNTIME/rgb.txt, if present.  This file is basically the color
-database from X.  Names used from this file are cached for efficiency.
+Vim has a number of color names built-in. Additional names can be defined in
+|v:colornames|. See |:colorscheme| for details.
 
 
 12. GUI Toolbar Images					*haiku-toolbar-images*

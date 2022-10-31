@@ -109,6 +109,7 @@
       <Optimization>Disabled</Optimization>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <MinimalRebuild>false</MinimalRebuild>
+      <AdditionalOptions>/source-charset:utf-8 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
       <TargetMachine>MachineX86</TargetMachine>
@@ -133,6 +134,7 @@
       <Optimization>Disabled</Optimization>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <MinimalRebuild>false</MinimalRebuild>
+      <AdditionalOptions>/source-charset:utf-8 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -162,6 +164,7 @@
       <BufferSecurityCheck>false</BufferSecurityCheck>
       <MinimalRebuild>false</MinimalRebuild>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <AdditionalOptions>/source-charset:utf-8 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
       <TargetMachine>MachineX86</TargetMachine>
@@ -195,6 +198,7 @@
       <BufferSecurityCheck>false</BufferSecurityCheck>
       <MinimalRebuild>false</MinimalRebuild>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <AdditionalOptions>/source-charset:utf-8 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -255,11 +259,11 @@
     <ClCompile Include="float.c" />
     <ClCompile Include="fold.c" />
     <ClCompile Include="getchar.c" />
-    <ClCompile Include="glbl_ime.cpp" />
     <ClCompile Include="gui.c" />
     <ClCompile Include="gui_beval.c" />
     <ClCompile Include="gui_dwrite.cpp" />
     <ClCompile Include="gui_w32.c" />
+    <ClCompile Include="gui_xim.c" />
     <ClCompile Include="hardcopy.c" />
     <ClCompile Include="hashtab.c" />
     <ClCompile Include="help.c" />
@@ -333,8 +337,11 @@
     <ClCompile Include="usercmd.c" />
     <ClCompile Include="userfunc.c" />
     <ClCompile Include="version.c" />
+    <ClCompile Include="vim9cmds.c" />
     <ClCompile Include="vim9compile.c" />
     <ClCompile Include="vim9execute.c" />
+    <ClCompile Include="vim9expr.c" />
+    <ClCompile Include="vim9instr.c" />
     <ClCompile Include="vim9script.c" />
     <ClCompile Include="vim9type.c" />
     <ClCompile Include="viminfo.c" />
@@ -505,8 +512,11 @@
     <None Include="proto\usercmd.pro" />
     <None Include="proto\userfunc.pro" />
     <None Include="proto\version.pro" />
+    <None Include="proto\vim9cmds.pro" />
     <None Include="proto\vim9compile.pro" />
     <None Include="proto\vim9execute.pro" />
+    <None Include="proto\vim9expr.pro" />
+    <None Include="proto\vim9instr.pro" />
     <None Include="proto\vim9script.pro" />
     <None Include="proto\vim9type.pro" />
     <None Include="proto\viminfo.pro" />

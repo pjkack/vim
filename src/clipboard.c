@@ -77,7 +77,7 @@ clip_update_selection(Clipboard_T *clip)
     pos_T	    start, end;
 
     // If visual mode is only due to a redo command ("."), then ignore it
-    if (!redo_VIsual_busy && VIsual_active && (State & NORMAL))
+    if (!redo_VIsual_busy && VIsual_active && (State & MODE_NORMAL))
     {
 	if (LT_POS(VIsual, curwin->w_cursor))
 	{
@@ -142,12 +142,12 @@ clip_own_selection(Clipboard_T *cbd)
 	    // selected area.  There is no specific redraw command for this,
 	    // just redraw all windows on the current buffer.
 	    if (cbd->owned
-		    && (get_real_state() == VISUAL
-					    || get_real_state() == SELECTMODE)
+		    && (get_real_state() == MODE_VISUAL
+					    || get_real_state() == MODE_SELECT)
 		    && (cbd == &clip_star ? clip_isautosel_star()
 						      : clip_isautosel_plus())
 		    && HL_ATTR(HLF_V) != HL_ATTR(HLF_VNC))
-		redraw_curbuf_later(INVERTED_ALL);
+		redraw_curbuf_later(UPD_INVERTED_ALL);
 	}
     }
 #else
@@ -195,13 +195,14 @@ clip_lose_selection(Clipboard_T *cbd)
 	// area.  There is no specific redraw command for this, just redraw all
 	// windows on the current buffer.
 	if (was_owned
-		&& (get_real_state() == VISUAL
-					    || get_real_state() == SELECTMODE)
+		&& (get_real_state() == MODE_VISUAL
+					    || get_real_state() == MODE_SELECT)
 		&& (cbd == &clip_star ?
 				clip_isautosel_star() : clip_isautosel_plus())
-		&& HL_ATTR(HLF_V) != HL_ATTR(HLF_VNC))
+		&& HL_ATTR(HLF_V) != HL_ATTR(HLF_VNC)
+		&& !exiting)
 	{
-	    update_curbuf(INVERTED_ALL);
+	    update_curbuf(UPD_INVERTED_ALL);
 	    setcursor();
 	    cursor_on();
 	    out_flush_cursor(TRUE, FALSE);
@@ -213,7 +214,7 @@ clip_lose_selection(Clipboard_T *cbd)
     static void
 clip_copy_selection(Clipboard_T *clip)
 {
-    if (VIsual_active && (State & NORMAL) && clip->available)
+    if (VIsual_active && (State & MODE_NORMAL) && clip->available)
     {
 	clip_update_selection(clip);
 	clip_free_selection(clip);
@@ -566,7 +567,7 @@ clip_get_word_boundaries(Clipboard_T *cb, int row, int col)
 	return;
 
     p = ScreenLines + LineOffset[row];
-    // Correct for starting in the right halve of a double-wide char
+    // Correct for starting in the right half of a double-wide char
     if (enc_dbcs != 0)
 	col -= dbcs_screen_head_off(p, p + col);
     else if (enc_utf8 && p[col] == 0)
@@ -1029,7 +1030,7 @@ clip_copy_modeless_selection(int both UNUSED)
     if (row2 > clip_star.max_row)
 	row2 = clip_star.max_row;
 #endif
-    // correct starting point for being on right halve of double-wide char
+    // correct starting point for being on right half of double-wide char
     p = ScreenLines + LineOffset[row1];
     if (enc_dbcs != 0)
 	col1 -= (*mb_head_off)(p, p + col1);
@@ -1139,7 +1140,7 @@ clip_copy_modeless_selection(int both UNUSED)
 									bufp);
 			}
 		    }
-		    // Skip right halve of double-wide character.
+		    // Skip right half of double-wide character.
 		    if (ScreenLines[off + i + 1] == 0)
 			++i;
 		}
@@ -1304,12 +1305,12 @@ check_clipboard_option(void)
 	    p += 8;
 	    new_exclude_prog = vim_regcomp(p, RE_MAGIC);
 	    if (new_exclude_prog == NULL)
-		errmsg = e_invarg;
+		errmsg = e_invalid_argument;
 	    break;
 	}
 	else
 	{
-	    errmsg = e_invarg;
+	    errmsg = e_invalid_argument;
 	    break;
 	}
 	if (*p == ',')
@@ -1353,7 +1354,7 @@ check_clipboard_option(void)
 
 /*
  * Open the application context (if it hasn't been opened yet).
- * Used for Motif and Athena GUI and the xterm clipboard.
+ * Used for Motif GUI and the xterm clipboard.
  */
     void
 open_app_context(void)
@@ -1487,7 +1488,7 @@ clip_x11_convert_selection_cb(
 	// create NUL terminated string which XmbTextListToTextProperty wants
 	mch_memmove(string_nt, string, (size_t)*length);
 	string_nt[*length] = NUL;
-	conv_result = XmbTextListToTextProperty(X_DISPLAY, (char **)&string_nt,
+	conv_result = XmbTextListToTextProperty(X_DISPLAY, &string_nt,
 					   1, XCompoundTextStyle, &text_prop);
 	if (conv_result != Success)
 	{
@@ -1539,6 +1540,7 @@ clip_x11_notify_cb(Widget w UNUSED, Atom *sel_atom UNUSED, Atom *target UNUSED)
 /*
  * Property callback to get a timestamp for XtOwnSelection.
  */
+# if (defined(FEAT_X11) && defined(FEAT_XCLIPBOARD)) || defined(PROTO)
     static void
 clip_x11_timestamp_cb(
     Widget	w,
@@ -1591,6 +1593,7 @@ x11_setup_selection(Widget w)
     XtAddEventHandler(w, PropertyChangeMask, False,
 	    /*(XtEventHandler)*/clip_x11_timestamp_cb, (XtPointer)NULL);
 }
+# endif
 
     static void
 clip_x11_request_selection_cb(

@@ -7,6 +7,14 @@ source view_util.vim
 source check.vim
 source screendump.vim
 
+func SetUp()
+  set laststatus=2
+endfunc
+
+func TearDown()
+  set laststatus&
+endfunc
+
 func s:get_statusline()
   return ScreenLines(&lines - 1, &columns)[0]
 endfunc
@@ -35,7 +43,6 @@ endfunc
 
 func Test_caught_error_in_statusline()
   let s:func_in_statusline_called = 0
-  set laststatus=2
   let statusline = '%{StatuslineWithCaughtError()}'
   let &statusline = statusline
   redrawstatus
@@ -46,7 +53,6 @@ endfunc
 
 func Test_statusline_will_be_disabled_with_error()
   let s:func_in_statusline_called = 0
-  set laststatus=2
   let statusline = '%{StatuslineWithError()}'
   try
     let &statusline = statusline
@@ -73,7 +79,6 @@ func Test_statusline()
   call assert_match('^ ((2) of 2)\s*$', s:get_statusline())
 
   only
-  set laststatus=2
   set splitbelow
   call setline(1, range(1, 10000))
 
@@ -196,7 +201,16 @@ func Test_statusline()
   set virtualedit=all
   norm 10|
   call assert_match('^10,-10\s*$', s:get_statusline())
+  set list
+  call assert_match('^10,-10\s*$', s:get_statusline())
   set virtualedit&
+  exe "norm A\<Tab>\<Tab>a\<Esc>"
+  " In list mode a <Tab> is shown as "^I", which is 2-wide.
+  call assert_match('^9,-9\s*$', s:get_statusline())
+  set list&
+  " Now the second <Tab> ends at the 16th screen column.
+  call assert_match('^17,-17\s*$', s:get_statusline())
+  undo
 
   " %w: Preview window flag, text is "[Preview]".
   " %W: Preview window flag, text is ",PRV".
@@ -251,7 +265,7 @@ func Test_statusline()
   call assert_match('^vimLineComment\s*$', s:get_statusline())
   syntax off
 
-  "%{%expr%}: evaluates enxpressions present in result of expr
+  "%{%expr%}: evaluates expressions present in result of expr
   func! Inner_eval()
     return '%n some other text'
   endfunc
@@ -423,7 +437,6 @@ func Test_statusline()
   %bw!
   call delete('Xstatusline')
   set statusline&
-  set laststatus&
   set splitbelow&
 endfunc
 
@@ -457,15 +470,13 @@ func Test_statusline_removed_group()
     set laststatus=2
     let &statusline = '%#StatColorHi2#%(✓%#StatColorHi2#%) Q≡'
   END
-  call writefile(lines, 'XTest_statusline')
+  call writefile(lines, 'XTest_statusline', 'D')
 
   let buf = RunVimInTerminal('-S XTest_statusline', {'rows': 10, 'cols': 50})
-  call TermWait(buf, 50)
   call VerifyScreenDump(buf, 'Test_statusline_1', {})
 
   " clean up
   call StopVimInTerminal(buf)
-  call delete('XTest_statusline')
 endfunc
 
 func Test_statusline_using_mode()
@@ -476,7 +487,7 @@ func Test_statusline_using_mode()
     split
     setlocal statusline=+%{mode()}+
   END
-  call writefile(lines, 'XTest_statusline')
+  call writefile(lines, 'XTest_statusline', 'D')
 
   let buf = RunVimInTerminal('-S XTest_statusline', {'rows': 7, 'cols': 50})
   call VerifyScreenDump(buf, 'Test_statusline_mode_1', {})
@@ -487,7 +498,6 @@ func Test_statusline_using_mode()
   " clean up
   call term_sendkeys(buf, "close\<CR>")
   call StopVimInTerminal(buf)
-  call delete('XTest_statusline')
 endfunc
 
 func Test_statusline_after_split_vsplit()
@@ -510,7 +520,6 @@ endfunc
 " with a custom 'statusline'
 func Test_statusline_mbyte_fillchar()
   only
-  set laststatus=2
   set fillchars=vert:\|,fold:-,stl:━,stlnc:═
   set statusline=a%=b
   call assert_match('^a\+━\+b$', s:get_statusline())
@@ -518,8 +527,35 @@ func Test_statusline_mbyte_fillchar()
   call assert_match('^a\+━\+b━a\+═\+b$', s:get_statusline())
   wincmd w
   call assert_match('^a\+═\+b═a\+━\+b$', s:get_statusline())
-  set statusline& fillchars& laststatus&
+  set statusline& fillchars&
   %bw!
+endfunc
+
+" Used to write beyond allocated memory.  This assumes MAXPATHL is 4096 bytes.
+func Test_statusline_verylong_filename()
+  let fname = repeat('x', 4090)
+  exe "new " .. fname
+  set buftype=help
+  set previewwindow
+  redraw
+  bwipe!
+endfunc
+
+func Test_statusline_highlight_truncate()
+  CheckScreendump
+
+  let lines =<< trim END
+    set laststatus=2
+    hi! link User1 Directory
+    hi! link User2 ErrorMsg
+    set statusline=%.5(%1*ABC%2*DEF%1*GHI%)
+  END
+  call writefile(lines, 'XTest_statusline', 'D')
+
+  let buf = RunVimInTerminal('-S XTest_statusline', {'rows': 6})
+  call VerifyScreenDump(buf, 'Test_statusline_hl', {})
+
+  call StopVimInTerminal(buf)
 endfunc
 
 " vim: shiftwidth=2 sts=2 expandtab

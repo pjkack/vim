@@ -30,13 +30,6 @@ extern HWND vim_parent_hwnd;
 # define FINAL
 #endif
 
-#if (defined(_MSC_VER) && _MSC_VER < 1300) || !defined(MAXULONG_PTR)
-/* Work around old versions of basetsd.h which wrongly declares
- * UINT_PTR as unsigned long */
-# undef UINT_PTR
-# define UINT_PTR UINT
-#endif
-
 #include "if_ole.h"	// Interface definitions
 #include "iid_ole.c"	// UUID definitions (compile here)
 
@@ -388,7 +381,7 @@ CVim::Eval(BSTR expr, BSTR *result)
 
     /* Evaluate the expression */
     ++emsg_skip;
-    str = (char *)eval_to_string((char_u *)buffer, TRUE);
+    str = (char *)eval_to_string((char_u *)buffer, TRUE, FALSE);
     --emsg_skip;
     vim_free(buffer);
     if (str == NULL)

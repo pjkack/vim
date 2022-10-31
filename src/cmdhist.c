@@ -37,11 +37,13 @@ get_histentry(int hist_type)
     return history[hist_type];
 }
 
+#if defined(FEAT_VIMINFO) || defined(PROTO)
     void
 set_histentry(int hist_type, histentry_T *entry)
 {
     history[hist_type] = entry;
 }
+#endif
 
     int *
 get_hisidx(int hist_type)
@@ -49,11 +51,13 @@ get_hisidx(int hist_type)
     return &hisidx[hist_type];
 }
 
+#if defined(FEAT_VIMINFO) || defined(PROTO)
     int *
 get_hisnum(int hist_type)
 {
     return &hisnum[hist_type];
 }
+#endif
 
 /*
  * Translate a history character to the associated type number.
@@ -95,15 +99,15 @@ static char *(history_names[]) =
     char_u *
 get_history_arg(expand_T *xp UNUSED, int idx)
 {
-    static char_u compl[2] = { NUL, NUL };
-    char *short_names = ":=@>?/";
-    int short_names_count = (int)STRLEN(short_names);
-    int history_name_count = ARRAY_LENGTH(history_names) - 1;
+    char    *short_names = ":=@>?/";
+    int	    short_names_count = (int)STRLEN(short_names);
+    int	    history_name_count = ARRAY_LENGTH(history_names) - 1;
 
     if (idx < short_names_count)
     {
-	compl[0] = (char_u)short_names[idx];
-	return compl;
+	xp->xp_buf[0] = (char_u)short_names[idx];
+	xp->xp_buf[1] = NUL;
+	return xp->xp_buf;
     }
     if (idx < short_names_count + history_name_count)
 	return (char_u *)history_names[idx - short_names_count];
@@ -724,7 +728,7 @@ ex_history(exarg_T *eap)
 	    else
 	    {
 		*end = i;
-		semsg(_(e_trailing_arg), arg);
+		semsg(_(e_trailing_characters_str), arg);
 		return;
 	    }
 	}
@@ -736,7 +740,7 @@ ex_history(exarg_T *eap)
 	end = arg;
     if (!get_list_range(&end, &hisidx1, &hisidx2) || *end != NUL)
     {
-	semsg(_(e_trailing_arg), end);
+	semsg(_(e_trailing_characters_str), end);
 	return;
     }
 

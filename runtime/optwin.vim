@@ -1,7 +1,7 @@
 " These commands create the option window.
 "
 " Maintainer:	Bram Moolenaar <Bram@vim.org>
-" Last Change:	2020 Oct 27
+" Last Change:	2022 Oct 28
 
 " If there already is an option window, jump to that one.
 let buf = bufnr('option-window')
@@ -260,6 +260,8 @@ call <SID>OptionG("sect", &sect)
 call <SID>AddOption("path", gettext("list of directory names used for file searching"))
 call append("$", "\t" .. s:global_or_local)
 call <SID>OptionG("pa", &pa)
+call <SID>AddOption("cdhome", gettext(":cd without argument goes to the home directory"))
+call <SID>BinOptionG("cdh", &cdh)
 call <SID>AddOption("cdpath", gettext("list of directory names used for :cd"))
 call <SID>OptionG("cd", &cd)
 if exists("+autochdir")
@@ -341,6 +343,9 @@ call <SID>Header(gettext("displaying text"))
 call <SID>AddOption("scroll", gettext("number of lines to scroll for CTRL-U and CTRL-D"))
 call append("$", "\t" .. s:local_to_window)
 call <SID>OptionL("scr")
+call <SID>AddOption("smoothscroll", gettext("scroll by screen line"))
+call append("$", "\t" .. s:local_to_window)
+call <SID>BinOptionL("sms")
 call <SID>AddOption("scrolloff", gettext("number of screen lines to show around the cursor"))
 call append("$", " \tset so=" . &so)
 call <SID>AddOption("wrap", gettext("long lines wrap"))
@@ -511,6 +516,8 @@ call <SID>AddOption("switchbuf", gettext("\"useopen\" and/or \"split\"; which wi
 call <SID>OptionG("swb", &swb)
 call <SID>AddOption("splitbelow", gettext("a new window is put below the current one"))
 call <SID>BinOptionG("sb", &sb)
+call <SID>AddOption("splitkeep", gettext("determines scroll behavior for split windows"))
+call <SID>BinOptionG("spk", &spk)
 call <SID>AddOption("splitright", gettext("a new window is put right of the current one"))
 call <SID>BinOptionG("spr", &spr)
 call <SID>AddOption("scrollbind", gettext("this window scrolls together with other bound windows"))
@@ -560,14 +567,22 @@ endif
 call <SID>Header(gettext("terminal"))
 call <SID>AddOption("term", gettext("name of the used terminal"))
 call <SID>OptionG("term", &term)
+
 call <SID>AddOption("ttytype", gettext("alias for 'term'"))
 call <SID>OptionG("tty", &tty)
+
 call <SID>AddOption("ttybuiltin", gettext("check built-in termcaps first"))
 call <SID>BinOptionG("tbi", &tbi)
+
 call <SID>AddOption("ttyfast", gettext("terminal connection is fast"))
 call <SID>BinOptionG("tf", &tf)
+
+call <SID>AddOption("xtermcodes", gettext("request terminal key codes when an xterm is detected"))
+call <SID>BinOptionG("xtermcodes", &xtermcodes)
+
 call <SID>AddOption("weirdinvert", gettext("terminal that requires extra redrawing"))
 call <SID>BinOptionG("wiv", &wiv)
+
 call <SID>AddOption("esckeys", gettext("recognize keys that start with <Esc> in Insert mode"))
 call <SID>BinOptionG("ek", &ek)
 call <SID>AddOption("scrolljump", gettext("minimal number of lines to scroll at a time"))
@@ -614,6 +629,8 @@ call <SID>BinOptionG("scf", &scf)
 if has("gui")
   call <SID>AddOption("mousehide", gettext("hide the mouse pointer while typing"))
   call <SID>BinOptionG("mh", &mh)
+  call <SID>AddOption("mousemoveevent", gettext("report mouse movement events"))
+  call <SID>BinOptionG("mousemev", &mousemev)
 endif
 call <SID>AddOption("mousemodel", gettext("\"extend\", \"popup\" or \"popup_setpos\"; what the right\nmouse button is used for"))
 call <SID>OptionG("mousem", &mousem)
@@ -652,6 +669,8 @@ if has("gui")
     endif
     call <SID>AddOption("guiheadroom", gettext("room (in pixels) left above/below the window"))
     call append("$", " \tset ghr=" . &ghr)
+    call <SID>AddOption("guiligatures", gettext("list of ASCII characters that can be combined into complex shapes"))
+    call <SID>OptionG("gli", &gli)
   endif
   if has("directx")
     call <SID>AddOption("renderoptions", gettext("options for text rendering"))
@@ -840,6 +859,9 @@ if has("insert_expand")
   call <SID>AddOption("thesaurus", gettext("list of thesaurus files for keyword completion"))
   call append("$", "\t" .. s:global_or_local)
   call <SID>OptionG("tsr", &tsr)
+  call <SID>AddOption("thesaurusfunc", gettext("function used for thesaurus completion"))
+  call append("$", "\t" .. s:global_or_local)
+  call <SID>OptionG("tsrfu", &tsrfu)
 endif
 call <SID>AddOption("infercase", gettext("adjust case of a keyword completion match"))
 call append("$", "\t" .. s:local_to_buffer)
@@ -912,6 +934,9 @@ if has("cindent")
   call <SID>AddOption("cinwords", gettext("list of words that cause more C-indent"))
   call append("$", "\t" .. s:local_to_buffer)
   call <SID>OptionL("cinw")
+  call <SID>AddOption("cinscopedecls", gettext("list of scope declaration names used by cino-g"))
+  call append("$", "\t" .. s:local_to_buffer)
+  call <SID>OptionL("cinsd")
   call <SID>AddOption("indentexpr", gettext("expression used to obtain the indent of a line"))
   call append("$", "\t" .. s:local_to_buffer)
   call <SID>OptionL("inde")
@@ -931,6 +956,8 @@ if has("lispindent")
   call <SID>BinOptionL("lisp")
   call <SID>AddOption("lispwords", gettext("words that change how lisp indenting works"))
   call <SID>OptionL("lw")
+  call <SID>AddOption("lispoptions", gettext("options for Lisp indenting"))
+  call <SID>OptionL("lop")
 endif
 
 
@@ -1020,6 +1047,9 @@ call <SID>BinOptionL("bin")
 call <SID>AddOption("endofline", gettext("last line in the file has an end-of-line"))
 call append("$", "\t" .. s:local_to_buffer)
 call <SID>BinOptionL("eol")
+call <SID>AddOption("endoffile", gettext("last line in the file followed by CTRL-Z"))
+call append("$", "\t" .. s:local_to_buffer)
+call <SID>BinOptionL("eof")
 call <SID>AddOption("fixendofline", gettext("fixes missing end-of-line at end of text file"))
 call append("$", "\t" .. s:local_to_buffer)
 call <SID>BinOptionL("fixeol")

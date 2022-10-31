@@ -28,34 +28,35 @@
 # Updated 2014 Oct 13.
 
 #>>>>> choose options:
-# FEATURES=[TINY | SMALL | NORMAL | BIG | HUGE]
-# Set to TINY to make minimal version (few features).
+# FEATURES=[TINY | NORMAL | HUGE]
+# Set to TINY to make a minimal version (no optional features).
 FEATURES=HUGE
 
-# set to yes for a debug build
+# Set to yes for a debug build.
 DEBUG=no
 
-# set to yes to create a mapfile
+# Set to yes to create a mapfile.
 #MAP=yes
 
-# set to yes to measure code coverage
+# Set to yes to measure code coverage.
 COVERAGE=no
 
-# better encryption support using libsodium
+# Better encryption support using libsodium.
+# Set to yes or specify the path to the libsodium directory to enable it.
 #SODIUM=yes
 
-# set to SIZE for size, SPEED for speed, MAXSPEED for maximum optimization
+# Set to SIZE for size, SPEED for speed, MAXSPEED for maximum optimization.
 OPTIMIZE=MAXSPEED
 
-# set to yes to make gvim, no for vim
+# Set to yes to make gvim, no for vim.
 GUI=yes
 
-# set to yes to enable the DLL support (EXPERIMENTAL).
+# Set to yes to enable the DLL support (EXPERIMENTAL).
 # Creates vim{32,64}.dll, and stub gvim.exe and vim.exe.
 # "GUI" should be also set to "yes".
 #VIMDLL=yes
 
-# set to no if you do not want to use DirectWrite (DirectX)
+# Set to no if you do not want to use DirectWrite (DirectX).
 # MinGW-w64 is needed, and ARCH should be set to i686 or x86-64.
 DIRECTX=yes
 
@@ -86,10 +87,9 @@ POSTSCRIPT=no
 # Set to yes to enable OLE support.
 OLE=no
 
-# Set the default $(WINVER).  Use 0x0501 to make it work with WinXP.
+# Set the default $(WINVER).  Use 0x0601 to make it work with Windows 7.
 ifndef WINVER
-# WINVER = 0x0501
-WINVER = 0x0600
+WINVER = 0x0601
 endif
 
 # Set to yes to enable Cscope support.
@@ -113,7 +113,7 @@ TERMINAL=no
 endif
 
 # Set to yes to enable sound support.
-ifneq ($(findstring $(FEATURES),BIG HUGE),)
+ifneq ($(findstring $(FEATURES),HUGE),)
 SOUND=yes
 else
 SOUND=no
@@ -216,8 +216,14 @@ MKDIR = mkdir
 DIRSLASH = \\
  endif
 endif
+# set $CC to "gcc" unless it matches "clang"
+ifeq ($(findstring clang,$(CC)),)
 CC := $(CROSS_COMPILE)gcc
+endif
+# set $CXX to "g++" unless it matches "clang"
+ifeq ($(findstring clang,$(CXX)),)
 CXX := $(CROSS_COMPILE)g++
+endif
 ifeq ($(UNDER_CYGWIN),yes)
 WINDRES := $(CROSS_COMPILE)windres
 else
@@ -435,7 +441,7 @@ endif
 #	  RUBY=[Path to Ruby directory] (Set inside Make_cyg.mak or Make_ming.mak)
 #	  DYNAMIC_RUBY=yes (to load the Ruby DLL dynamically, "no" for static)
 #	  RUBY_VER=[Ruby version, eg 19, 22] (default is 22)
-#	  RUBY_API_VER_LONG=[Ruby API version, eg 1.8, 1.9.1, 2.2.0]
+#	  RUBY_API_VER_LONG=[Ruby API version, eg 1.9.1, 2.2.0]
 #			    (default is 2.2.0)
 #	    You must set RUBY_API_VER_LONG when changing RUBY_VER.
 #	    Note: If you use Ruby 1.9.3, set as follows:
@@ -460,42 +466,32 @@ RUBY_API_VER = $(subst .,,$(RUBY_API_VER_LONG))
  endif
 
  ifndef RUBY_PLATFORM
-  ifeq ($(RUBY_VER), 16)
-RUBY_PLATFORM = i586-mswin32
-  else ifneq ($(wildcard $(RUBY)/lib/ruby/$(RUBY_API_VER_LONG)/i386-mingw32),)
+  ifneq ($(wildcard $(RUBY)/lib/ruby/$(RUBY_API_VER_LONG)/i386-mingw32),)
 RUBY_PLATFORM = i386-mingw32
   else ifneq ($(wildcard $(RUBY)/lib/ruby/$(RUBY_API_VER_LONG)/x64-mingw32),)
 RUBY_PLATFORM = x64-mingw32
+  else ifneq ($(wildcard $(RUBY)/lib/ruby/$(RUBY_API_VER_LONG)/x64-mingw-ucrt),)
+RUBY_PLATFORM = x64-mingw-ucrt
   else
 RUBY_PLATFORM = i386-mswin32
   endif
  endif
 
  ifndef RUBY_INSTALL_NAME
-  ifeq ($(RUBY_VER), 16)
-RUBY_INSTALL_NAME = mswin32-ruby$(RUBY_API_VER)
-  else
-   ifndef RUBY_MSVCRT_NAME
+  ifndef RUBY_MSVCRT_NAME
 # Base name of msvcrXX.dll which is used by ruby's dll.
 RUBY_MSVCRT_NAME = msvcrt
-   endif
-   ifeq ($(ARCH),x86-64)
+  endif
+  ifeq ($(RUBY_PLATFORM),x64-mingw-ucrt)
+RUBY_INSTALL_NAME = x64-ucrt-ruby$(RUBY_API_VER)
+  else ifeq ($(ARCH),x86-64)
 RUBY_INSTALL_NAME = x64-$(RUBY_MSVCRT_NAME)-ruby$(RUBY_API_VER)
-   else
+  else
 RUBY_INSTALL_NAME = $(RUBY_MSVCRT_NAME)-ruby$(RUBY_API_VER)
-   endif
   endif
  endif
 
- ifeq (19, $(word 1,$(sort 19 $(RUBY_VER))))
-RUBY_19_OR_LATER = 1
- endif
-
- ifdef RUBY_19_OR_LATER
 RUBYINC = -I $(RUBY)/include/ruby-$(RUBY_API_VER_LONG) -I $(RUBY)/include/ruby-$(RUBY_API_VER_LONG)/$(RUBY_PLATFORM)
- else
-RUBYINC = -I $(RUBY)/lib/ruby/$(RUBY_API_VER_LONG)/$(RUBY_PLATFORM)
- endif
  ifeq (no, $(DYNAMIC_RUBY))
 RUBYLIB = -L$(RUBY)/lib -l$(RUBY_INSTALL_NAME)
  endif
@@ -515,14 +511,12 @@ endif
 ###########################################################################
 
 CFLAGS = -I. -Iproto $(DEFINES) -pipe -march=$(ARCH) -Wall
+# To get additional compiler warnings
+#CFLAGS += -Wextra -pedantic
 CXXFLAGS = -std=gnu++11
 # This used to have --preprocessor, but it's no longer supported
 WINDRES_FLAGS =
 EXTRA_LIBS =
-
-ifdef SODIUM
-DEFINES += -DHAVE_SODIUM
-endif
 
 ifdef GETTEXT
 DEFINES += -DHAVE_GETTEXT -DHAVE_LOCALE_H
@@ -667,8 +661,22 @@ DEFINES += -DFEAT_DIRECTX_COLOR_EMOJI
  endif
 endif
 
-ifeq ($(SODIUM),yes)
+ifdef SODIUM
+DEFINES += -DHAVE_SODIUM
+ ifeq ($(SODIUM),yes)
+SODIUM_DLL = libsodium-23.dll
+ else
+SODIUM_DLL = libsodium.dll
+CFLAGS += -I $(SODIUM)/include
+ endif
+ ifndef DYNAMIC_SODIUM
+DYNAMIC_SODIUM=yes
+ endif
+ ifeq ($(DYNAMIC_SODIUM),yes)
+DEFINES += -DDYNAMIC_SODIUM -DDYNAMIC_SODIUM_DLL=\"$(SODIUM_DLL)\"
+ else
 SODIUMLIB = -lsodium
+ endif
 endif
 
 # Only allow XPM for a GUI build.
@@ -707,7 +715,11 @@ else
 CFLAGS += -Os
  else ifeq ($(OPTIMIZE), MAXSPEED)
 CFLAGS += -O3
-CFLAGS += -fomit-frame-pointer -freg-struct-return
+CFLAGS += -fomit-frame-pointer
+  ifeq ($(findstring clang,$(CC)),)
+# Only GCC supports the "reg-struct-return" option. Clang doesn't support this.
+CFLAGS += -freg-struct-return
+  endif
  else  # SPEED
 CFLAGS += -O2
  endif
@@ -717,6 +729,17 @@ endif
 ifeq ($(COVERAGE),yes)
 CFLAGS += --coverage
 LFLAGS += --coverage
+endif
+
+# If the ASAN=yes argument is supplied, then compile Vim with the address
+# sanitizer (asan).  Only supported by MingW64 clang compiler.
+# May make Vim twice as slow.  Errors are reported on stderr.
+# More at: https://code.google.com/p/address-sanitizer/
+# Useful environment variable:
+#     set ASAN_OPTIONS=print_stacktrace=1 log_path=asan
+ifeq ($(ASAN),yes)
+#CFLAGS += -g -O0  -fsanitize-recover=all -fsanitize=address -fsanitize=undefined -fno-omit-frame-pointer
+CFLAGS += -g -O0  -fsanitize-recover=all -fsanitize=address -fno-omit-frame-pointer
 endif
 
 LIB = -lkernel32 -luser32 -lgdi32 -ladvapi32 -lcomdlg32 -lcomctl32 -lnetapi32 -lversion
@@ -825,8 +848,11 @@ OBJ = \
 	$(OUTDIR)/usercmd.o \
 	$(OUTDIR)/userfunc.o \
 	$(OUTDIR)/version.o \
+	$(OUTDIR)/vim9cmds.o \
 	$(OUTDIR)/vim9compile.o \
 	$(OUTDIR)/vim9execute.o \
+	$(OUTDIR)/vim9expr.o \
+	$(OUTDIR)/vim9instr.o \
 	$(OUTDIR)/vim9script.o \
 	$(OUTDIR)/vim9type.o \
 	$(OUTDIR)/viminfo.o \
@@ -1058,6 +1084,13 @@ ifeq (yes, $(MAP))
 LFLAGS += -Wl,-Map=$(TARGET).map
 endif
 
+# The default stack size on Windows is 2 MB.  With the default stack size, the
+# following tests fail with the clang address sanitizer:
+#   Test_listdict_compare, Test_listdict_compare_complex, Test_deep_recursion,
+#   Test_map_error, Test_recursive_define, Test_recursive_addstate
+# To increase the stack size to 16MB, uncomment the following line:
+#LFLAGS += -Wl,-stack -Wl,0x1000000
+
 all: $(MAIN_TARGET) vimrun.exe xxd/xxd.exe tee/tee.exe install.exe uninstall.exe GvimExt/gvimext.dll
 
 vimrun.exe: vimrun.c
@@ -1101,7 +1134,7 @@ xxd/xxd.exe: xxd/xxd.c
 	$(MAKE) -C xxd -f Make_ming.mak CC='$(CC)'
 
 tee/tee.exe: tee/tee.c
-	$(MAKE) -C tee CC='$(CC)'
+	$(MAKE) -C tee -f Make_ming.mak CC='$(CC)'
 
 GvimExt/gvimext.dll: GvimExt/gvimext.cpp GvimExt/gvimext.rc GvimExt/gvimext.h
 	$(MAKE) -C GvimExt -f Make_ming.mak CROSS=$(CROSS) CROSS_COMPILE=$(CROSS_COMPILE) CXX='$(CXX)' STATIC_STDCPLUS=$(STATIC_STDCPLUS)
@@ -1128,19 +1161,29 @@ ifdef MZSCHEME
 endif
 	$(MAKE) -C GvimExt -f Make_ming.mak clean
 	$(MAKE) -C xxd -f Make_ming.mak clean
-	$(MAKE) -C tee clean
+	$(MAKE) -C tee -f Make_ming.mak clean
 
 # Run vim script to generate the Ex command lookup table.
 # This only needs to be run when a command name has been added or changed.
 # If this fails because you don't have Vim yet, first build and install Vim
 # without changes.
 cmdidxs: ex_cmds.h
-	vim --clean -X --not-a-term -u create_cmdidxs.vim
+	vim --clean -N -X --not-a-term -u create_cmdidxs.vim -c quit
+
+# Run vim script to generate the normal/visual mode command lookup table.
+# This only needs to be run when a new normal/visual mode command has been
+# added.  If this fails because you don't have Vim yet:
+#   - change nv_cmds[] in nv_cmds.h to add the new normal/visual mode command.
+#   - run "make nvcmdidxs" to generate nv_cmdidxs.h
+nvcmdidxs: nv_cmds.h
+	$(CC) $(CFLAGS) -o create_nvcmdidxs.exe create_nvcmdidxs.c $(LIB)
+	vim --clean -N -X --not-a-term -u create_nvcmdidxs.vim -c quit
+	-$(DEL) create_nvcmdidxs.exe
 
 ###########################################################################
 INCL =	vim.h alloc.h ascii.h ex_cmds.h feature.h errors.h globals.h \
 	keymap.h macros.h option.h os_dos.h os_win32.h proto.h regexp.h \
-	spell.h structs.h term.h beval.h $(NBDEBUG_INCL)
+	spell.h structs.h termdefs.h beval.h $(NBDEBUG_INCL)
 GUI_INCL = gui.h
 ifeq ($(DIRECTX),yes)
 GUI_INCL += gui_dwrite.h
@@ -1199,17 +1242,25 @@ $(OUTDIR)/hardcopy.o: hardcopy.c $(INCL) version.h
 
 $(OUTDIR)/misc1.o: misc1.c $(INCL) version.h
 
+$(OUTDIR)/normal.o: normal.c $(INCL) nv_cmdidxs.h nv_cmds.h
+
 $(OUTDIR)/netbeans.o: netbeans.c $(INCL) version.h
 
 $(OUTDIR)/version.o: version.c $(INCL) version.h
 
-$(OUTDIR)/vim9compile.o: vim9compile.c $(INCL) version.h
+$(OUTDIR)/vim9cmds.o: vim9cmds.c $(INCL) vim9.h
 
-$(OUTDIR)/vim9execute.o: vim9execute.c $(INCL) version.h
+$(OUTDIR)/vim9compile.o: vim9compile.c $(INCL) vim9.h
 
-$(OUTDIR)/vim9script.o: vim9script.c $(INCL) version.h
+$(OUTDIR)/vim9execute.o: vim9execute.c $(INCL) vim9.h
 
-$(OUTDIR)/vim9type.o: vim9type.c $(INCL) version.h
+$(OUTDIR)/vim9expr.o: vim9expr.c $(INCL) vim9.h
+
+$(OUTDIR)/vim9instr.o: vim9instr.c $(INCL) vim9.h
+
+$(OUTDIR)/vim9script.o: vim9script.c $(INCL) vim9.h
+
+$(OUTDIR)/vim9type.o: vim9type.c $(INCL) vim9.h
 
 $(OUTDIR)/viminfo.o: viminfo.c $(INCL) version.h
 
@@ -1228,7 +1279,7 @@ $(OUTDIR)/gui_beval.o:	gui_beval.c $(INCL) $(GUI_INCL)
 $(OUTDIR)/gui_w32.o:	gui_w32.c $(INCL) $(GUI_INCL) version.h
 	$(CC) -c $(CFLAGS) gui_w32.c -o $@
 
-$(OUTDIR)/if_cscope.o:	if_cscope.c $(INCL) if_cscope.h
+$(OUTDIR)/if_cscope.o:	if_cscope.c $(INCL)
 	$(CC) -c $(CFLAGS) if_cscope.c -o $@
 
 $(OUTDIR)/if_mzsch.o:	if_mzsch.c $(INCL) $(MZSCHEME_INCL) $(MZ_EXTRA_DEP)
@@ -1255,7 +1306,7 @@ ifeq (16, $(RUBY))
 endif
 
 $(OUTDIR)/iscygpty.o:	iscygpty.c $(CUI_INCL)
-	$(CC) -c $(CFLAGS) iscygpty.c -o $(OUTDIR)/iscygpty.o -U_WIN32_WINNT -D_WIN32_WINNT=0x0600 -DUSE_DYNFILEID -DENABLE_STUB_IMPL
+	$(CC) -c $(CFLAGS) iscygpty.c -o $@
 
 $(OUTDIR)/main.o:	main.c $(INCL) $(CUI_INCL)
 	$(CC) -c $(CFLAGS) main.c -o $@

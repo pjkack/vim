@@ -258,7 +258,7 @@ enc2macroman(
 		kCFStringEncodingMacRoman,
 		0, // no lossy conversion
 		0, // not external representation (since vim
-		   // handles this internally
+		   // handles this internally)
 		to, maxtolen, &l))
     {
 	CFRelease(cfstr);
@@ -585,7 +585,7 @@ mac_lang_init(void)
 #   ifdef HAVE_LOCALE_H
 	    setlocale(LC_ALL, "");
 #   endif
-#   if defined(FEAT_FLOAT) && defined(LC_NUMERIC)
+#   if defined(LC_NUMERIC)
 	    // Make sure strtod() uses a decimal point, not a comma.
 	    setlocale(LC_NUMERIC, "C");
 #   endif

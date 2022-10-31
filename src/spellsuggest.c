@@ -23,13 +23,13 @@
  * vs "ht") and goes down in the list.
  * Used when 'spellsuggest' is set to "best".
  */
-#define RESCORE(word_score, sound_score) ((3 * word_score + sound_score) / 4)
+#define RESCORE(word_score, sound_score) ((3 * (word_score) + (sound_score)) / 4)
 
 /*
  * Do the opposite: based on a maximum end score and a known sound score,
  * compute the maximum word score that can be used.
  */
-#define MAXSCORE(word_score, sound_score) ((4 * word_score - sound_score) / 3)
+#define MAXSCORE(word_score, sound_score) ((4 * (word_score) - (sound_score)) / 3)
 
 // only used for su_badflags
 #define WF_MIXCAP   0x20	// mix of upper and lower case: macaRONI
@@ -70,7 +70,7 @@ typedef struct suggest_S
 #define SUG(ga, i) (((suggest_T *)(ga).ga_data)[i])
 
 // TRUE if a word appears in the list of banned words.
-#define WAS_BANNED(su, word) (!HASHITEM_EMPTY(hash_find(&su->su_banned, word)))
+#define WAS_BANNED(su, word) (!HASHITEM_EMPTY(hash_find(&(su)->su_banned, word)))
 
 // Number of suggestions kept when cleaning up.  We need to keep more than
 // what is displayed, because when rescore_suggestions() is called the score
@@ -112,13 +112,13 @@ typedef struct suggest_S
 #define SCORE_THRES3	100	// word count threshold for COMMON3
 
 // When trying changed soundfold words it becomes slow when trying more than
-// two changes.  With less then two changes it's slightly faster but we miss a
+// two changes.  With less than two changes it's slightly faster but we miss a
 // few good suggestions.  In rare cases we need to try three of four changes.
 #define SCORE_SFMAX1	200	// maximum score for first try
 #define SCORE_SFMAX2	300	// maximum score for second try
 #define SCORE_SFMAX3	400	// maximum score for third try
 
-#define SCORE_BIG	SCORE_INS * 3	// big difference
+#define SCORE_BIG	(SCORE_INS * 3)	// big difference
 #define SCORE_MAXMAX	999999		// accept any score
 #define SCORE_LIMITMAX	350		// for spell_edit_score_limit()
 
@@ -196,6 +196,8 @@ typedef struct trystate_S
 #define PFD_NOPREFIX	0xff	// not using prefixes
 #define PFD_PREFIXTREE	0xfe	// walking through the prefix tree
 #define PFD_NOTSPECIAL	0xfd	// highest value that's not special
+
+static long spell_suggest_timeout = 5000;
 
 static void spell_find_suggest(char_u *badptr, int badlen, suginfo_T *su, int maxcount, int banbadword, int need_cap, int interactive);
 #ifdef FEAT_EVAL
@@ -429,7 +431,10 @@ spell_check_sps(void)
 	else if (STRCMP(buf, "double") == 0)
 	    f = SPS_DOUBLE;
 	else if (STRNCMP(buf, "expr:", 5) != 0
-		&& STRNCMP(buf, "file:", 5) != 0)
+		&& STRNCMP(buf, "file:", 5) != 0
+		&& (STRNCMP(buf, "timeout:", 8) != 0
+		    || (!VIM_ISDIGIT(buf[8])
+				  && !(buf[8] == '-' && VIM_ISDIGIT(buf[9])))))
 	    f = -1;
 
 	if (f == -1 || (sps_flags != 0 && f != 0))
@@ -481,7 +486,7 @@ spell_suggest(int count)
 
     if (*curwin->w_s->b_p_spl == NUL)
     {
-	emsg(_(e_no_spell));
+	emsg(_(e_spell_checking_is_not_possible));
 	return;
     }
 
@@ -501,6 +506,10 @@ spell_suggest(int count)
 	    curwin->w_cursor.col = VIsual.col;
 	++badlen;
 	end_visual_mode();
+	// make sure we don't include the NUL at the end of the line
+	line = ml_get_curline();
+	if (badlen > (int)STRLEN(line) - (int)curwin->w_cursor.col)
+	    badlen = (int)STRLEN(line) - (int)curwin->w_cursor.col;
     }
     // Find the start of the badly spelled word.
     else if (spell_move_to(curwin, FORWARD, TRUE, TRUE, NULL) == 0
@@ -583,15 +592,17 @@ spell_suggest(int count)
 	msg_scroll = TRUE;
 	for (i = 0; i < sug.su_ga.ga_len; ++i)
 	{
+	    int el;
+
 	    stp = &SUG(sug.su_ga, i);
 
 	    // The suggested word may replace only part of the bad word, add
-	    // the not replaced part.
+	    // the not replaced part.  But only when it's not getting too long.
 	    vim_strncpy(wcopy, stp->st_word, MAXWLEN);
-	    if (sug.su_badlen > stp->st_orglen)
+	    el = sug.su_badlen - stp->st_orglen;
+	    if (el > 0 && stp->st_wordlen + el <= MAXWLEN)
 		vim_strncpy(wcopy + stp->st_wordlen,
-					       sug.su_badptr + stp->st_orglen,
-					      sug.su_badlen - stp->st_orglen);
+					   sug.su_badptr + stp->st_orglen, el);
 	    vim_snprintf((char *)IObuff, IOSIZE, "%2d", i + 1);
 #ifdef FEAT_RIGHTLEFT
 	    if (cmdmsg_rl)
@@ -672,6 +683,8 @@ spell_suggest(int count)
 	p = alloc(STRLEN(line) - stp->st_orglen + stp->st_wordlen + 1);
 	if (p != NULL)
 	{
+	    int len_diff = stp->st_wordlen - stp->st_orglen;
+
 	    c = (int)(sug.su_badptr - line);
 	    mch_memmove(p, line, c);
 	    STRCPY(p + c, stp->st_word);
@@ -689,6 +702,11 @@ spell_suggest(int count)
 	    curwin->w_cursor.col = c;
 
 	    changed_bytes(curwin->w_cursor.lnum, c);
+#if defined(FEAT_PROP_POPUP)
+	    if (curbuf->b_has_textprop && len_diff != 0)
+		adjust_prop_columns(curwin->w_cursor.lnum, c, len_diff,
+							       APC_SUBSTITUTE);
+#endif
 	}
     }
     else
@@ -774,8 +792,8 @@ spell_find_suggest(
 
     // Set the info in "*su".
     CLEAR_POINTER(su);
-    ga_init2(&su->su_ga, (int)sizeof(suggest_T), 10);
-    ga_init2(&su->su_sga, (int)sizeof(suggest_T), 10);
+    ga_init2(&su->su_ga, sizeof(suggest_T), 10);
+    ga_init2(&su->su_sga, sizeof(suggest_T), 10);
     if (*badptr == NUL)
 	return;
     hash_init(&su->su_banned);
@@ -842,6 +860,7 @@ spell_find_suggest(
     sps_copy = vim_strsave(p_sps);
     if (sps_copy == NULL)
 	return;
+    spell_suggest_timeout = 5000;
 
     // Loop over the items in 'spellsuggest'.
     for (p = sps_copy; *p != NUL; )
@@ -864,6 +883,9 @@ spell_find_suggest(
 	else if (STRNCMP(buf, "file:", 5) == 0)
 	    // Use list of suggestions in a file.
 	    spell_suggest_file(su, buf + 5);
+	else if (STRNCMP(buf, "timeout:", 8) == 0)
+	    // Limit the time searching for suggestions.
+	    spell_suggest_timeout = atol((char *)buf + 8);
 	else if (!did_intern)
 	{
 	    // Use internal method once.
@@ -935,7 +957,7 @@ spell_suggest_file(suginfo_T *su, char_u *fname)
     fd = mch_fopen((char *)fname, "r");
     if (fd == NULL)
     {
-	semsg(_(e_notopen), fname);
+	semsg(_(e_cant_open_file_str), fname);
 	return;
     }
 
@@ -1178,6 +1200,11 @@ suggest_try_change(suginfo_T *su)
     p = su->su_badptr + su->su_badlen;
     (void)spell_casefold(curwin, p, (int)STRLEN(p), fword + n, MAXWLEN - n);
 
+    // Make sure the resulting text is not longer than the original text.
+    n = (int)STRLEN(su->su_badptr);
+    if (n < MAXWLEN)
+	fword[n] = NUL;
+
     for (lpi = 0; lpi < curwin->w_s->b_langp.ga_len; ++lpi)
     {
 	lp = LANGP_ENTRY(curwin->w_s->b_langp, lpi);
@@ -1200,7 +1227,7 @@ suggest_try_change(suginfo_T *su)
 
 // Check the maximum score, if we go over it we won't try this change.
 #define TRY_DEEPER(su, stack, depth, add) \
-		(stack[depth].ts_score + (add) < su->su_maxscore)
+       ((depth) < MAXWLEN - 1 && (stack)[depth].ts_score + (add) < (su)->su_maxscore)
 
 /*
  * Try finding suggestions by adding/removing/swapping letters.
@@ -1272,6 +1299,9 @@ suggest_trie_walk(
     char_u	changename[MAXWLEN][80];
 #endif
     int		breakcheckcount = 1000;
+#ifdef FEAT_RELTIME
+    proftime_T	time_limit;
+#endif
     int		compound_ok;
 
     // Go through the whole case-fold tree, try changes at each node.
@@ -1316,6 +1346,12 @@ suggest_trie_walk(
 	    sp->ts_state = STATE_START;
 	}
     }
+#ifdef FEAT_RELTIME
+    // The loop may take an indefinite amount of time. Break out after some
+    // time.
+    if (spell_suggest_timeout > 0)
+	profile_setlimit(spell_suggest_timeout, &time_limit);
+#endif
 
     // Loop to find all suggestions.  At each round we either:
     // - For the current state try one operation, advance "ts_curi",
@@ -1350,7 +1386,8 @@ suggest_trie_walk(
 
 		// At end of a prefix or at start of prefixtree: check for
 		// following word.
-		if (byts[arridx] == 0 || n == (int)STATE_NOPREFIX)
+		if (depth < MAXWLEN - 1
+			    && (byts[arridx] == 0 || n == (int)STATE_NOPREFIX))
 		{
 		    // Set su->su_badflags to the caps type at this position.
 		    // Use the caps type until here for the prefix itself.
@@ -1614,7 +1651,7 @@ suggest_trie_walk(
 		    // char, e.g., "thes," -> "these".
 		    p = fword + sp->ts_fidx;
 		    MB_PTR_BACK(fword, p);
-		    if (!spell_iswordp(p, curwin))
+		    if (!spell_iswordp(p, curwin) && *preword != NUL)
 		    {
 			p = preword + STRLEN(preword);
 			MB_PTR_BACK(preword, p);
@@ -1920,7 +1957,8 @@ suggest_trie_walk(
 #endif
 		    ++depth;
 		    sp = &stack[depth];
-		    ++sp->ts_fidx;
+		    if (fword[sp->ts_fidx] != NUL)
+			++sp->ts_fidx;
 		    tword[sp->ts_twordlen++] = c;
 		    sp->ts_arridx = idxs[arridx];
 		    if (newscore == SCORE_SUBST)
@@ -1939,7 +1977,8 @@ suggest_trie_walk(
 			    sp->ts_isdiff = (newscore != 0)
 						       ? DIFF_YES : DIFF_NONE;
 			}
-			else if (sp->ts_isdiff == DIFF_INSERT)
+			else if (sp->ts_isdiff == DIFF_INSERT
+							    && sp->ts_fidx > 0)
 			    // When inserting trail bytes don't advance in the
 			    // bad word.
 			    --sp->ts_fidx;
@@ -2644,6 +2683,11 @@ suggest_trie_walk(
 	    {
 		ui_breakcheck();
 		breakcheckcount = 1000;
+#ifdef FEAT_RELTIME
+		if (spell_suggest_timeout > 0
+					  && profile_passed_limit(&time_limit))
+		    got_int = TRUE;
+#endif
 	    }
 	}
     }
@@ -2938,7 +2982,7 @@ score_combine(suginfo_T *su)
     check_suggestions(su, &su->su_sga);
     (void)cleanup_suggestions(&su->su_sga, su->su_maxscore, su->su_maxcount);
 
-    ga_init2(&ga, (int)sizeof(suginfo_T), 1);
+    ga_init2(&ga, sizeof(suginfo_T), 1);
     if (ga_grow(&ga, su->su_ga.ga_len + su->su_sga.ga_len) == FAIL)
 	return;
 
@@ -3048,7 +3092,7 @@ typedef struct
 } sftword_T;
 
 static sftword_T dumsft;
-#define HIKEY2SFT(p)  ((sftword_T *)(p - (dumsft.sft_word - (char_u *)&dumsft)))
+#define HIKEY2SFT(p)  ((sftword_T *)((p) - (dumsft.sft_word - (char_u *)&dumsft)))
 #define HI2SFT(hi)     HIKEY2SFT((hi)->hi_key)
 
 /*
@@ -3100,11 +3144,11 @@ suggest_try_soundalike(suginfo_T *su)
 	    // TODO: also soundfold the next words, so that we can try joining
 	    // and splitting
 #ifdef SUGGEST_PROFILE
-	prof_init();
+	    prof_init();
 #endif
 	    suggest_trie_walk(su, lp, salword, TRUE);
 #ifdef SUGGEST_PROFILE
-	prof_report("soundalike");
+	    prof_report("soundalike");
 #endif
 	}
     }

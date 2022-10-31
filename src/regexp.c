@@ -20,6 +20,11 @@
 # define BT_REGEXP_DEBUG_LOG_NAME	"bt_regexp_debug.log"
 #endif
 
+#ifdef FEAT_RELTIME
+static sig_atomic_t dummy_timeout_flag = 0;
+static volatile sig_atomic_t *timeout_flag = &dummy_timeout_flag;
+#endif
+
 /*
  * Magic characters have a special meaning, they don't match literally.
  * Magic characters are negative.  This separates them from literal characters
@@ -45,6 +50,64 @@ toggle_Magic(int x)
     return Magic(x);
 }
 
+#ifdef FEAT_RELTIME
+static int timeout_nesting = 0;
+
+/*
+ * Start a timer that will cause the regexp to abort after "msec".
+ * This doesn't work well recursively.  In case it happens anyway, the first
+ * set timeout will prevail, nested ones are ignored.
+ * The caller must make sure there is a matching disable_regexp_timeout() call!
+ */
+    void
+init_regexp_timeout(long msec)
+{
+    if (timeout_nesting == 0)
+	timeout_flag = start_timeout(msec);
+    ++timeout_nesting;
+}
+
+    void
+disable_regexp_timeout(void)
+{
+    if (timeout_nesting == 0)
+	iemsg("disable_regexp_timeout() called without active timer");
+    else if (--timeout_nesting == 0)
+    {
+	stop_timeout();
+	timeout_flag = &dummy_timeout_flag;
+    }
+}
+#endif
+
+#if defined(FEAT_EVAL) || defined(PROTO)
+# ifdef FEAT_RELTIME
+static sig_atomic_t *saved_timeout_flag;
+# endif
+
+/*
+ * Used at the debug prompt: disable the timeout so that expression evaluation
+ * can used patterns.
+ * Must be followed by calling restore_timeout_for_debugging().
+ */
+    void
+save_timeout_for_debugging(void)
+{
+# ifdef FEAT_RELTIME
+    saved_timeout_flag = (sig_atomic_t *)timeout_flag;
+    timeout_flag = &dummy_timeout_flag;
+# endif
+}
+
+    void
+restore_timeout_for_debugging(void)
+{
+# ifdef FEAT_RELTIME
+    timeout_flag = saved_timeout_flag;
+# endif
+}
+#endif
+
 /*
  * The first byte of the BT regexp internal "program" is actually this magic
  * number; the start node begins in the second byte.  It's used to catch the
@@ -66,21 +129,10 @@ toggle_Magic(int x)
 #define EMSG2_RET_NULL(m, c) return (semsg((const char *)(m), (c) ? "" : "\\"), rc_did_emsg = TRUE, (void *)NULL)
 #define EMSG3_RET_NULL(m, c, a) return (semsg((const char *)(m), (c) ? "" : "\\", (a)), rc_did_emsg = TRUE, (void *)NULL)
 #define EMSG2_RET_FAIL(m, c) return (semsg((const char *)(m), (c) ? "" : "\\"), rc_did_emsg = TRUE, FAIL)
-#define EMSG_ONE_RET_NULL EMSG2_RET_NULL(_("E369: invalid item in %s%%[]"), reg_magic == MAGIC_ALL)
+#define EMSG_ONE_RET_NULL EMSG2_RET_NULL(_(e_invalid_item_in_str_brackets), reg_magic == MAGIC_ALL)
 
 
 #define MAX_LIMIT	(32767L << 16L)
-
-static char_u e_missingbracket[] = N_("E769: Missing ] after %s[");
-static char_u e_reverse_range[] = N_("E944: Reverse range in character class");
-static char_u e_large_class[] = N_("E945: Range too large in character class");
-#ifdef FEAT_SYN_HL
-static char_u e_z_not_allowed[] = N_("E66: \\z( not allowed here");
-static char_u e_z1_not_allowed[] = N_("E67: \\z1 - \\z9 not allowed here");
-#endif
-static char_u e_missing_sb[] = N_("E69: Missing ] after %s%%[");
-static char_u e_empty_sb[]  = N_("E70: Empty %s%%[]");
-static char_u e_recursive[]  = N_("E956: Cannot use pattern recursively");
 
 #define NOT_MULTI	0
 #define MULTI_ONE	1
@@ -242,21 +294,11 @@ init_class_tab(void)
 	    class_tab[i] = RI_DIGIT + RI_HEX + RI_WORD;
 	else if (i >= 'a' && i <= 'f')
 	    class_tab[i] = RI_HEX + RI_WORD + RI_HEAD + RI_ALPHA + RI_LOWER;
-#ifdef EBCDIC
-	else if ((i >= 'g' && i <= 'i') || (i >= 'j' && i <= 'r')
-						    || (i >= 's' && i <= 'z'))
-#else
 	else if (i >= 'g' && i <= 'z')
-#endif
 	    class_tab[i] = RI_WORD + RI_HEAD + RI_ALPHA + RI_LOWER;
 	else if (i >= 'A' && i <= 'F')
 	    class_tab[i] = RI_HEX + RI_WORD + RI_HEAD + RI_ALPHA + RI_UPPER;
-#ifdef EBCDIC
-	else if ((i >= 'G' && i <= 'I') || ( i >= 'J' && i <= 'R')
-						    || (i >= 'S' && i <= 'Z'))
-#else
 	else if (i >= 'G' && i <= 'Z')
-#endif
 	    class_tab[i] = RI_WORD + RI_HEAD + RI_ALPHA + RI_UPPER;
 	else if (i == '_')
 	    class_tab[i] = RI_WORD + RI_HEAD;
@@ -268,15 +310,15 @@ init_class_tab(void)
     done = TRUE;
 }
 
-#define ri_digit(c)	(c < 0x100 && (class_tab[c] & RI_DIGIT))
-#define ri_hex(c)	(c < 0x100 && (class_tab[c] & RI_HEX))
-#define ri_octal(c)	(c < 0x100 && (class_tab[c] & RI_OCTAL))
-#define ri_word(c)	(c < 0x100 && (class_tab[c] & RI_WORD))
-#define ri_head(c)	(c < 0x100 && (class_tab[c] & RI_HEAD))
-#define ri_alpha(c)	(c < 0x100 && (class_tab[c] & RI_ALPHA))
-#define ri_lower(c)	(c < 0x100 && (class_tab[c] & RI_LOWER))
-#define ri_upper(c)	(c < 0x100 && (class_tab[c] & RI_UPPER))
-#define ri_white(c)	(c < 0x100 && (class_tab[c] & RI_WHITE))
+#define ri_digit(c)	((c) < 0x100 && (class_tab[c] & RI_DIGIT))
+#define ri_hex(c)	((c) < 0x100 && (class_tab[c] & RI_HEX))
+#define ri_octal(c)	((c) < 0x100 && (class_tab[c] & RI_OCTAL))
+#define ri_word(c)	((c) < 0x100 && (class_tab[c] & RI_WORD))
+#define ri_head(c)	((c) < 0x100 && (class_tab[c] & RI_HEAD))
+#define ri_alpha(c)	((c) < 0x100 && (class_tab[c] & RI_ALPHA))
+#define ri_lower(c)	((c) < 0x100 && (class_tab[c] & RI_LOWER))
+#define ri_upper(c)	((c) < 0x100 && (class_tab[c] & RI_UPPER))
+#define ri_white(c)	((c) < 0x100 && (class_tab[c] & RI_WHITE))
 
 // flags for regflags
 #define RF_ICASE    1	// ignore case
@@ -311,9 +353,6 @@ static int	reg_strict;	// "[abc" is illegal
  * META contains all characters that may be magic, except '^' and '$'.
  */
 
-#ifdef EBCDIC
-static char_u META[] = "%&()*+.123456789<=>?@ACDFHIKLMOPSUVWX[_acdfhiklmnopsuvwxz{|~";
-#else
 // META[] is used often enough to justify turning it into a table.
 static char_u META_flags[] = {
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -331,7 +370,6 @@ static char_u META_flags[] = {
 //  p	     s	   u  v  w  x	  z  {	|     ~
     1, 0, 0, 1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 0, 1
 };
-#endif
 
 static int	curchr;		// currently parsed character
 // Previous character.  Note: prevchr is sometimes -1 when we are not at the
@@ -419,30 +457,6 @@ get_equi_class(char_u **pp)
     }
     return 0;
 }
-
-#ifdef EBCDIC
-/*
- * Table for equivalence class "c". (IBM-1047)
- */
-static char *EQUIVAL_CLASS_C[16] = {
-    "A\x62\x63\x64\x65\x66\x67",
-    "C\x68",
-    "E\x71\x72\x73\x74",
-    "I\x75\x76\x77\x78",
-    "N\x69",
-    "O\xEB\xEC\xED\xEE\xEF\x80",
-    "U\xFB\xFC\xFD\xFE",
-    "Y\xBA",
-    "a\x42\x43\x44\x45\x46\x47",
-    "c\x48",
-    "e\x51\x52\x53\x54",
-    "i\x55\x56\x57\x58",
-    "n\x49",
-    "o\xCB\xCC\xCD\xCE\xCF\x70",
-    "u\xDB\xDC\xDD\xDE",
-    "y\x8D\xDF",
-};
-#endif
 
 /*
  * Check for a collating element "[.a.]".  "pp" points to the '['.
@@ -558,7 +572,7 @@ skip_regexp_err(
 
     if (*p != delim)
     {
-	semsg(_("E654: missing delimiter after search pattern: %s"), startp);
+	semsg(_(e_missing_delimiter_after_search_pattern_str), startp);
 	return NULL;
     }
     return p;
@@ -799,13 +813,7 @@ peekchr(void)
 
 		if (c == NUL)
 		    curchr = '\\';	// trailing '\'
-		else if (
-#ifdef EBCDIC
-			vim_strchr(META, c)
-#else
-			c <= '~' && META_flags[c]
-#endif
-			)
+		else if (c <= '~' && META_flags[c])
 		{
 		    /*
 		     * META contains everything that may be magic sometimes,
@@ -1056,7 +1064,7 @@ read_limits(long *minval, long *maxval)
     if (*regparse == '\\')
 	regparse++;	// Allow either \{...} or \{...\}
     if (*regparse != '}')
-	EMSG2_RET_FAIL(_("E554: Syntax error in %s{...}"),
+	EMSG2_RET_FAIL(_(e_syntax_error_in_str_curlies),
 						       reg_magic == MAGIC_ALL);
 
     /*
@@ -1129,7 +1137,7 @@ typedef struct {
     // The current match-position is stord in these variables:
     linenr_T	lnum;		// line number, relative to first line
     char_u	*line;		// start of current line
-    char_u	*input;		// current input, points into "regline"
+    char_u	*input;		// current input, points into "line"
 
     int	need_clear_subexpr;	// subexpressions still need to be cleared
 #ifdef FEAT_SYN_HL
@@ -1278,8 +1286,8 @@ reg_match_visual(void)
     colnr_T	cols;
     colnr_T	curswant;
 
-    // Check if the buffer is the current buffer.
-    if (rex.reg_buf != curbuf || VIsual.lnum == 0)
+    // Check if the buffer is the current buffer and not using a string.
+    if (rex.reg_buf != curbuf || VIsual.lnum == 0 || !REG_MULTI)
 	return FALSE;
 
     if (VIsual_active)
@@ -1316,9 +1324,9 @@ reg_match_visual(void)
     if (lnum < top.lnum || lnum > bot.lnum)
 	return FALSE;
 
+    col = (colnr_T)(rex.input - rex.line);
     if (mode == 'v')
     {
-	col = (colnr_T)(rex.input - rex.line);
 	if ((lnum == top.lnum && col < top.col)
 		|| (lnum == bot.lnum && col >= bot.col + (*p_sel != 'e')))
 	    return FALSE;
@@ -1333,7 +1341,12 @@ reg_match_visual(void)
 	    end = end2;
 	if (top.col == MAXCOL || bot.col == MAXCOL || curswant == MAXCOL)
 	    end = MAXCOL;
-	cols = win_linetabsize(wp, rex.line, (colnr_T)(rex.input - rex.line));
+
+	// getvvcol() flushes rex.line, need to get it again
+	rex.line = reg_getline(rex.lnum);
+	rex.input = rex.line + col;
+
+	cols = win_linetabsize(wp, rex.reg_firstlnum + rex.lnum, rex.line, col);
 	if (cols < start || cols > end - (*p_sel == 'e'))
 	    return FALSE;
     }
@@ -1501,7 +1514,7 @@ re_mult_next(char *what)
 {
     if (re_multi_type(peekchr()) == MULTI_MULT)
     {
-       semsg(_("E888: (NFA regexp) cannot repeat %s"), what);
+       semsg(_(e_nfa_regexp_cannot_repeat_str), what);
        rc_did_emsg = TRUE;
        return FAIL;
     }
@@ -1671,7 +1684,11 @@ cstrchr(char_u *s, int c)
 	{
 	    if (enc_utf8 && c > 0x80)
 	    {
-		if (utf_fold(utf_ptr2char(p)) == cc)
+		int uc = utf_ptr2char(p);
+
+		// Do not match an illegal byte.  E.g. 0xff matches 0xc3 0xbf,
+		// not 0xff.
+		if ((uc < 0x80 || uc != *p) && utf_fold(uc) == cc)
 		    return p;
 	    }
 	    else if (*p == c || *p == cc)
@@ -1699,7 +1716,7 @@ cstrchr(char_u *s, int c)
  */
 typedef void (*(*fptr_T)(int *, int));
 
-static int vim_regsub_both(char_u *source, typval_T *expr, char_u *dest, int copy, int magic, int backslash);
+static int vim_regsub_both(char_u *source, typval_T *expr, char_u *dest, int destlen, int flags);
 
     static fptr_T
 do_upper(int *d, int c)
@@ -1796,11 +1813,11 @@ regtilde(char_u *source, int magic)
 	}
     }
 
+    // Store a copy of newsub  in reg_prev_sub.  It is always allocated,
+    // because recursive calls may make the returned string invalid.
     vim_free(reg_prev_sub);
-    if (newsub != source)	// newsub was allocated, just keep it
-	reg_prev_sub = newsub;
-    else			// no ~ found, need to save newsub
-	reg_prev_sub = vim_strsave(newsub);
+    reg_prev_sub = vim_strsave(newsub);
+
     return newsub;
 }
 
@@ -1828,14 +1845,14 @@ static regsubmatch_T rsm;  // can only be used when can_f_submatch is TRUE
  * call_func() by vim_regsub_both().
  */
     static int
-fill_submatch_list(int argc UNUSED, typval_T *argv, int argskip, int argcount)
+fill_submatch_list(int argc UNUSED, typval_T *argv, int argskip, ufunc_T *fp)
 {
     listitem_T	*li;
     int		i;
     char_u	*s;
     typval_T	*listarg = argv + argskip;
 
-    if (argcount == argskip)
+    if (!has_varargs(fp) && fp->uf_args.ga_len <= argskip)
 	// called function doesn't take a submatches argument
 	return argskip;
 
@@ -1872,13 +1889,14 @@ clear_submatch_list(staticList10_T *sl)
  * vim_regsub() - perform substitutions after a vim_regexec() or
  * vim_regexec_multi() match.
  *
- * If "copy" is TRUE really copy into "dest".
- * If "copy" is FALSE nothing is copied, this is just to find out the length
- * of the result.
+ * If "flags" has REGSUB_COPY really copy into "dest[destlen]".
+ * Oterwise nothing is copied, only compue the length of the result.
  *
- * If "backslash" is TRUE, a backslash will be removed later, need to double
- * them to keep them, and insert a backslash before a CR to avoid it being
- * replaced with a line break later.
+ * If "flags" has REGSUB_MAGIC then behave like 'magic' is set.
+ *
+ * If "flags" has REGSUB_BACKSLASH a backslash will be removed later, need to
+ * double them to keep them, and insert a backslash before a CR to avoid it
+ * being replaced with a line break later.
  *
  * Note: The matched text must not change between the call of
  * vim_regexec()/vim_regexec_multi() and vim_regsub()!  It would make the back
@@ -1892,9 +1910,8 @@ vim_regsub(
     char_u	*source,
     typval_T	*expr,
     char_u	*dest,
-    int		copy,
-    int		magic,
-    int		backslash)
+    int		destlen,
+    int		flags)
 {
     int		result;
     regexec_T	rex_save;
@@ -1910,7 +1927,7 @@ vim_regsub(
     rex.reg_maxline = 0;
     rex.reg_buf = curbuf;
     rex.reg_line_lbr = TRUE;
-    result = vim_regsub_both(source, expr, dest, copy, magic, backslash);
+    result = vim_regsub_both(source, expr, dest, destlen, flags);
 
     rex_in_use = rex_in_use_save;
     if (rex_in_use)
@@ -1925,9 +1942,8 @@ vim_regsub_multi(
     linenr_T	lnum,
     char_u	*source,
     char_u	*dest,
-    int		copy,
-    int		magic,
-    int		backslash)
+    int		destlen,
+    int		flags)
 {
     int		result;
     regexec_T	rex_save;
@@ -1944,7 +1960,7 @@ vim_regsub_multi(
     rex.reg_firstlnum = lnum;
     rex.reg_maxline = curbuf->b_ml.ml_line_count - lnum;
     rex.reg_line_lbr = FALSE;
-    result = vim_regsub_both(source, NULL, dest, copy, magic, backslash);
+    result = vim_regsub_both(source, NULL, dest, destlen, flags);
 
     rex_in_use = rex_in_use_save;
     if (rex_in_use)
@@ -1953,14 +1969,30 @@ vim_regsub_multi(
     return result;
 }
 
+#if defined(FEAT_EVAL) || defined(PROTO)
+// When nesting more than a couple levels it's probably a mistake.
+# define MAX_REGSUB_NESTING 4
+static char_u   *eval_result[MAX_REGSUB_NESTING] = {NULL, NULL, NULL, NULL};
+
+# if defined(EXITFREE) || defined(PROTO)
+    void
+free_resub_eval_result(void)
+{
+    int i;
+
+    for (i = 0; i < MAX_REGSUB_NESTING; ++i)
+	VIM_CLEAR(eval_result[i]);
+}
+# endif
+#endif
+
     static int
 vim_regsub_both(
     char_u	*source,
     typval_T	*expr,
     char_u	*dest,
-    int		copy,
-    int		magic,
-    int		backslash)
+    int		destlen,
+    int		flags)
 {
     char_u	*src;
     char_u	*dst;
@@ -1973,8 +2005,10 @@ vim_regsub_both(
     linenr_T	clnum = 0;	// init for GCC
     int		len = 0;	// init for GCC
 #ifdef FEAT_EVAL
-    static char_u   *eval_result = NULL;
+    static int  nesting = 0;
+    int		nested;
 #endif
+    int		copy = flags & REGSUB_COPY;
 
     // Be paranoid...
     if ((source == NULL && expr == NULL) || dest == NULL)
@@ -1984,6 +2018,14 @@ vim_regsub_both(
     }
     if (prog_magic_wrong())
 	return 0;
+#ifdef FEAT_EVAL
+    if (nesting == MAX_REGSUB_NESTING)
+    {
+	emsg(_(e_substitute_nesting_too_deep));
+	return 0;
+    }
+    nested = nesting;
+#endif
     src = source;
     dst = dest;
 
@@ -1995,15 +2037,16 @@ vim_regsub_both(
 #ifdef FEAT_EVAL
 	// To make sure that the length doesn't change between checking the
 	// length and copying the string, and to speed up things, the
-	// resulting string is saved from the call with "copy" == FALSE to the
-	// call with "copy" == TRUE.
+	// resulting string is saved from the call with
+	// "flags & REGSUB_COPY" == 0 to the call with
+	// "flags & REGSUB_COPY" != 0.
 	if (copy)
 	{
-	    if (eval_result != NULL)
+	    if (eval_result[nested] != NULL)
 	    {
-		STRCPY(dest, eval_result);
-		dst += STRLEN(eval_result);
-		VIM_CLEAR(eval_result);
+		STRCPY(dest, eval_result[nested]);
+		dst += STRLEN(eval_result[nested]);
+		VIM_CLEAR(eval_result[nested]);
 	    }
 	}
 	else
@@ -2011,7 +2054,7 @@ vim_regsub_both(
 	    int		    prev_can_f_submatch = can_f_submatch;
 	    regsubmatch_T   rsm_save;
 
-	    vim_free(eval_result);
+	    VIM_CLEAR(eval_result[nested]);
 
 	    // The expression may contain substitute(), which calls us
 	    // recursively.  Make sure submatch() gets the text from the first
@@ -2024,6 +2067,11 @@ vim_regsub_both(
 	    rsm.sm_firstlnum = rex.reg_firstlnum;
 	    rsm.sm_maxline = rex.reg_maxline;
 	    rsm.sm_line_lbr = rex.reg_line_lbr;
+
+	    // Although unlikely, it is possible that the expression invokes a
+	    // substitute command (it might fail, but still).  Therefore keep
+	    // an array of eval results.
+	    ++nesting;
 
 	    if (expr != NULL)
 	    {
@@ -2039,8 +2087,8 @@ vim_regsub_both(
 		argv[0].vval.v_list = &matchList.sl_list;
 		matchList.sl_list.lv_len = 0;
 		CLEAR_FIELD(funcexe);
-		funcexe.argv_func = fill_submatch_list;
-		funcexe.evaluate = TRUE;
+		funcexe.fe_argv_func = fill_submatch_list;
+		funcexe.fe_evaluate = TRUE;
 		if (expr->v_type == VAR_FUNC)
 		{
 		    s = expr->vval.v_string;
@@ -2051,8 +2099,12 @@ vim_regsub_both(
 		    partial_T   *partial = expr->vval.v_partial;
 
 		    s = partial_name(partial);
-		    funcexe.partial = partial;
+		    funcexe.fe_partial = partial;
 		    call_func(s, -1, &rettv, 1, argv, &funcexe);
+		}
+		else if (expr->v_type == VAR_INSTR)
+		{
+		    exe_typval_instr(expr, &rettv);
 		}
 		if (matchList.sl_list.lv_len > 0)
 		    // fill_submatch_list() was called
@@ -2060,26 +2112,27 @@ vim_regsub_both(
 
 		if (rettv.v_type == VAR_UNKNOWN)
 		    // something failed, no need to report another error
-		    eval_result = NULL;
+		    eval_result[nested] = NULL;
 		else
 		{
-		    eval_result = tv_get_string_buf_chk(&rettv, buf);
-		    if (eval_result != NULL)
-			eval_result = vim_strsave(eval_result);
+		    eval_result[nested] = tv_get_string_buf_chk(&rettv, buf);
+		    if (eval_result[nested] != NULL)
+			eval_result[nested] = vim_strsave(eval_result[nested]);
 		}
 		clear_tv(&rettv);
 	    }
 	    else if (substitute_instr != NULL)
 		// Execute instructions from ISN_SUBSTITUTE.
-		eval_result = exe_substitute_instr();
+		eval_result[nested] = exe_substitute_instr();
 	    else
-		eval_result = eval_to_string(source + 2, TRUE);
+		eval_result[nested] = eval_to_string(source + 2, TRUE, FALSE);
+	    --nesting;
 
-	    if (eval_result != NULL)
+	    if (eval_result[nested] != NULL)
 	    {
 		int had_backslash = FALSE;
 
-		for (s = eval_result; *s != NUL; MB_PTR_ADV(s))
+		for (s = eval_result[nested]; *s != NUL; MB_PTR_ADV(s))
 		{
 		    // Change NL to CR, so that it becomes a line break,
 		    // unless called from vim_regexec_nl().
@@ -2100,18 +2153,18 @@ vim_regsub_both(
 			had_backslash = TRUE;
 		    }
 		}
-		if (had_backslash && backslash)
+		if (had_backslash && (flags & REGSUB_BACKSLASH))
 		{
 		    // Backslashes will be consumed, need to double them.
-		    s = vim_strsave_escaped(eval_result, (char_u *)"\\");
+		    s = vim_strsave_escaped(eval_result[nested], (char_u *)"\\");
 		    if (s != NULL)
 		    {
-			vim_free(eval_result);
-			eval_result = s;
+			vim_free(eval_result[nested]);
+			eval_result[nested] = s;
 		    }
 		}
 
-		dst += STRLEN(eval_result);
+		dst += STRLEN(eval_result[nested]);
 	    }
 
 	    can_f_submatch = prev_can_f_submatch;
@@ -2123,11 +2176,11 @@ vim_regsub_both(
     else
       while ((c = *src++) != NUL)
       {
-	if (c == '&' && magic)
+	if (c == '&' && (flags & REGSUB_MAGIC))
 	    no = 0;
 	else if (c == '\\' && *src != NUL)
 	{
-	    if (*src == '&' && !magic)
+	    if (*src == '&' && !(flags & REGSUB_MAGIC))
 	    {
 		++src;
 		no = 0;
@@ -2161,6 +2214,11 @@ vim_regsub_both(
 		// Copy a special key as-is.
 		if (copy)
 		{
+		    if (dst + 3 > dest + destlen)
+		    {
+			iemsg("vim_regsub_both(): not enough space");
+			return 0;
+		    }
 		    *dst++ = c;
 		    *dst++ = *src++;
 		    *dst++ = *src++;
@@ -2187,10 +2245,17 @@ vim_regsub_both(
 
 		    // If "backslash" is TRUE the backslash will be removed
 		    // later.  Used to insert a literal CR.
-		    default:	if (backslash)
+		    default:	if (flags & REGSUB_BACKSLASH)
 				{
 				    if (copy)
+				    {
+					if (dst + 1 > dest + destlen)
+					{
+					    iemsg("vim_regsub_both(): not enough space");
+					    return 0;
+					}
 					*dst = '\\';
+				    }
 				    ++dst;
 				}
 				c = *src++;
@@ -2212,10 +2277,18 @@ vim_regsub_both(
 	    if (has_mbyte)
 	    {
 		int totlen = mb_ptr2len(src - 1);
+		int charlen = mb_char2len(cc);
 
 		if (copy)
+		{
+		    if (dst + charlen > dest + destlen)
+		    {
+			iemsg("vim_regsub_both(): not enough space");
+			return 0;
+		    }
 		    mb_char2bytes(cc, dst);
-		dst += mb_char2len(cc) - 1;
+		}
+		dst += charlen - 1;
 		if (enc_utf8)
 		{
 		    int clen = utf_ptr2len(src - 1);
@@ -2225,15 +2298,29 @@ vim_regsub_both(
 		    if (clen < totlen)
 		    {
 			if (copy)
+			{
+			    if (dst + totlen - clen > dest + destlen)
+			    {
+				iemsg("vim_regsub_both(): not enough space");
+				return 0;
+			    }
 			    mch_memmove(dst + 1, src - 1 + clen,
 						     (size_t)(totlen - clen));
+			}
 			dst += totlen - clen;
 		    }
 		}
 		src += totlen - 1;
 	    }
 	    else if (copy)
-		    *dst = cc;
+	    {
+		if (dst + 1 > dest + destlen)
+		{
+		    iemsg("vim_regsub_both(): not enough space");
+		    return 0;
+		}
+		*dst = cc;
+	    }
 	    dst++;
 	}
 	else
@@ -2272,7 +2359,14 @@ vim_regsub_both(
 			    if (rex.reg_mmatch->endpos[no].lnum == clnum)
 				break;
 			    if (copy)
+			    {
+				if (dst + 1 > dest + destlen)
+				{
+				    iemsg("vim_regsub_both(): not enough space");
+				    return 0;
+				}
 				*dst = CAR;
+			    }
 			    ++dst;
 			    s = reg_getline(++clnum);
 			    if (rex.reg_mmatch->endpos[no].lnum == clnum)
@@ -2291,7 +2385,8 @@ vim_regsub_both(
 		    }
 		    else
 		    {
-			if (backslash && (*s == CAR || *s == '\\'))
+			if ((flags & REGSUB_BACKSLASH)
+						  && (*s == CAR || *s == '\\'))
 			{
 			    /*
 			     * Insert a backslash in front of a CR, otherwise
@@ -2301,6 +2396,11 @@ vim_regsub_both(
 			     */
 			    if (copy)
 			    {
+				if (dst + 2 > dest + destlen)
+				{
+				    iemsg("vim_regsub_both(): not enough space");
+				    return 0;
+				}
 				dst[0] = '\\';
 				dst[1] = *s;
 			    }
@@ -2325,6 +2425,7 @@ vim_regsub_both(
 			    if (has_mbyte)
 			    {
 				int l;
+				int charlen;
 
 				// Copy composing characters separately, one
 				// at a time.
@@ -2335,12 +2436,27 @@ vim_regsub_both(
 
 				s += l;
 				len -= l;
+				charlen = mb_char2len(cc);
 				if (copy)
+				{
+				    if (dst + charlen > dest + destlen)
+				    {
+					iemsg("vim_regsub_both(): not enough space");
+					return 0;
+				    }
 				    mb_char2bytes(cc, dst);
-				dst += mb_char2len(cc) - 1;
+				}
+				dst += charlen - 1;
 			    }
 			    else if (copy)
-				    *dst = cc;
+			    {
+				if (dst + 1 > dest + destlen)
+				{
+				    iemsg("vim_regsub_both(): not enough space");
+				    return 0;
+				}
+				*dst = cc;
+			    }
 			    dst++;
 			}
 
@@ -2585,7 +2701,6 @@ static regengine_T bt_regengine =
     bt_regfree,
     bt_regexec_nl,
     bt_regexec_multi,
-    (char_u *)""
 };
 
 #include "regexp_nfa.c"
@@ -2596,7 +2711,6 @@ static regengine_T nfa_regengine =
     nfa_regfree,
     nfa_regexec_nl,
     nfa_regexec_multi,
-    (char_u *)""
 };
 
 // Which regexp engine to use? Needed for vim_regcomp().
@@ -2644,7 +2758,7 @@ vim_regcomp(char_u *expr_arg, int re_flags)
 	}
 	else
 	{
-	    emsg(_("E864: \\%#= can only be followed by 0, 1, or 2. The automatic engine will be used "));
+	    emsg(_(e_percent_hash_can_only_be_followed_by_zero_one_two_automatic_engine_will_be_used));
 	    regexp_engine = AUTOMATIC_ENGINE;
 	}
     }
@@ -2746,8 +2860,7 @@ report_re_switch(char_u *pat)
 }
 #endif
 
-#if (defined(FEAT_X11) && (defined(FEAT_TITLE) || defined(FEAT_XCLIPBOARD))) \
-	|| defined(PROTO)
+#if defined(FEAT_X11) || defined(PROTO)
 /*
  * Return whether "prog" is currently being executed.
  */
@@ -2760,7 +2873,7 @@ regprog_in_use(regprog_T *prog)
 
 /*
  * Match a regexp against a string.
- * "rmp->regprog" is a compiled regexp as returned by vim_regcomp().
+ * "rmp->regprog" must be a compiled regexp as returned by vim_regcomp().
  * Note: "rmp->regprog" may be freed and changed.
  * Uses curbuf for line count and 'iskeyword'.
  * When "nl" is TRUE consider a "\n" in "line" to be a line break.
@@ -2781,7 +2894,7 @@ vim_regexec_string(
     // Cannot use the same prog recursively, it contains state.
     if (rmp->regprog->re_in_use)
     {
-	emsg(_(e_recursive));
+	emsg(_(e_cannot_use_pattern_recursively));
 	return FALSE;
     }
     rmp->regprog->re_in_use = TRUE;
@@ -2892,7 +3005,6 @@ vim_regexec_multi(
     buf_T       *buf,		// buffer in which to search
     linenr_T	lnum,		// nr of line to start looking for match
     colnr_T	col,		// column to start looking for match
-    proftime_T	*tm,		// timeout limit or NULL
     int		*timed_out)	// flag is set when timeout limit reached
 {
     int		result;
@@ -2902,7 +3014,7 @@ vim_regexec_multi(
     // Cannot use the same prog recursively, it contains state.
     if (rmp->regprog->re_in_use)
     {
-	emsg(_(e_recursive));
+	emsg(_(e_cannot_use_pattern_recursively));
 	return FALSE;
     }
     rmp->regprog->re_in_use = TRUE;
@@ -2913,7 +3025,7 @@ vim_regexec_multi(
     rex_in_use = TRUE;
 
     result = rmp->regprog->engine->regexec_multi(
-				      rmp, win, buf, lnum, col, tm, timed_out);
+				      rmp, win, buf, lnum, col, timed_out);
     rmp->regprog->re_in_use = FALSE;
 
     // NFA engine aborted because it's very slow.
@@ -2925,9 +3037,10 @@ vim_regexec_multi(
 	char_u *pat = vim_strsave(((nfa_regprog_T *)rmp->regprog)->pattern);
 
 	p_re = BACKTRACKING_ENGINE;
-	vim_regfree(rmp->regprog);
 	if (pat != NULL)
 	{
+	    regprog_T *prev_prog = rmp->regprog;
+
 #ifdef FEAT_EVAL
 	    report_re_switch(pat);
 #endif
@@ -2940,12 +3053,19 @@ vim_regexec_multi(
 #ifdef FEAT_SYN_HL
 	    reg_do_extmatch = 0;
 #endif
-
-	    if (rmp->regprog != NULL)
+	    if (rmp->regprog == NULL)
 	    {
+		// Somehow compiling the pattern failed now, put back the
+		// previous one to avoid "regprog" becoming NULL.
+		rmp->regprog = prev_prog;
+	    }
+	    else
+	    {
+		vim_regfree(prev_prog);
+
 		rmp->regprog->re_in_use = TRUE;
 		result = rmp->regprog->engine->regexec_multi(
-				      rmp, win, buf, lnum, col, tm, timed_out);
+				      rmp, win, buf, lnum, col, timed_out);
 		rmp->regprog->re_in_use = FALSE;
 	    }
 	    vim_free(pat);

@@ -41,7 +41,6 @@ static char_u *check_for_cryptkey(char_u *cryptkey, char_u *ptr, long *sizep, of
 #endif
 static linenr_T readfile_linenr(linenr_T linecnt, char_u *p, char_u *endp);
 static char_u *check_for_bom(char_u *p, long size, int *lenp, int flags);
-static char *e_auchangedbuf = N_("E812: Autocommands changed buffer or buffer name");
 
 #ifdef FEAT_EVAL
 static int readdirex_sort;
@@ -109,6 +108,7 @@ filemess(
  * READ_STDIN	read from stdin instead of a file
  * READ_BUFFER	read from curbuf instead of a file (converting after reading
  *		stdin)
+ * READ_NOFILE	do not read a file, only trigger BufReadCmd
  * READ_DUMMY	read into a dummy buffer (to check if file contents changed)
  * READ_KEEP_UNDO  don't clear undo info or read it from a file
  * READ_FIFO	read from fifo/socket instead of a file
@@ -217,7 +217,7 @@ readfile(
     int		using_b_ffname;
     int		using_b_fname;
     static char *msg_is_a_directory = N_("is a directory");
-    int         eof;
+    int		eof;
 
     au_did_filetype = FALSE; // reset before triggering any autocommands
 
@@ -310,6 +310,11 @@ readfile(
 #endif
 
 	curbuf->b_op_start = orig_start;
+
+	if (flags & READ_NOFILE)
+	    // Return NOTDONE instead of FAIL so that BufEnter can be triggered
+	    // and other operations don't fail.
+	    return NOTDONE;
     }
 
     if ((shortmess(SHM_OVER) || curbuf->b_help) && p_verbose == 0)
@@ -338,7 +343,7 @@ readfile(
 	    filemess(curbuf, fname, (char_u *)_(msg_is_a_directory), 0);
 	    msg_end();
 	    msg_scroll = msg_save;
-	    return FAIL;
+	    return NOTDONE;
 	}
     }
 
@@ -408,6 +413,7 @@ readfile(
 	{
 	    buf_store_time(curbuf, &st, fname);
 	    curbuf->b_mtime_read = curbuf->b_mtime;
+	    curbuf->b_mtime_read_ns = curbuf->b_mtime_ns;
 	    filesize_disk = st.st_size;
 #ifdef UNIX
 	    /*
@@ -432,7 +438,9 @@ readfile(
 	else
 	{
 	    curbuf->b_mtime = 0;
+	    curbuf->b_mtime_ns = 0;
 	    curbuf->b_mtime_read = 0;
+	    curbuf->b_mtime_read_ns = 0;
 	    curbuf->b_orig_size = 0;
 	    curbuf->b_orig_mode = 0;
 	}
@@ -512,9 +520,7 @@ readfile(
 		    // Create a swap file now, so that other Vims are warned
 		    // that we are editing this file.  Don't do this for a
 		    // "nofile" or "nowrite" buffer type.
-#ifdef FEAT_QUICKFIX
 		    if (!bt_dontwrite(curbuf))
-#endif
 		    {
 			check_need_swap(newfile);
 			// SwapExists autocommand may mess things up
@@ -524,7 +530,7 @@ readfile(
 				|| (using_b_fname
 					 && (old_b_fname != curbuf->b_fname)))
 			{
-			    emsg(_(e_auchangedbuf));
+			    emsg(_(e_autocommands_changed_buffer_or_buffer_name));
 			    return FAIL;
 			}
 		    }
@@ -583,6 +589,8 @@ readfile(
 	// correctly set when reading stdin.
 	if (!read_buffer)
 	{
+	    curbuf->b_p_eof = FALSE;
+	    curbuf->b_start_eof = FALSE;
 	    curbuf->b_p_eol = TRUE;
 	    curbuf->b_start_eol = TRUE;
 	}
@@ -593,16 +601,14 @@ readfile(
     // Create a swap file now, so that other Vims are warned that we are
     // editing this file.
     // Don't do this for a "nofile" or "nowrite" buffer type.
-#ifdef FEAT_QUICKFIX
     if (!bt_dontwrite(curbuf))
-#endif
     {
 	check_need_swap(newfile);
 	if (!read_stdin && (curbuf != old_curbuf
 		|| (using_b_ffname && (old_b_ffname != curbuf->b_ffname))
 		|| (using_b_fname && (old_b_fname != curbuf->b_fname))))
 	{
-	    emsg(_(e_auchangedbuf));
+	    emsg(_(e_autocommands_changed_buffer_or_buffer_name));
 	    if (!read_buffer)
 		close(fd);
 	    return FAIL;
@@ -724,9 +730,9 @@ readfile(
 	    --no_wait_return;
 	    msg_scroll = msg_save;
 	    if (fd < 0)
-		emsg(_("E200: *ReadPre autocommands made the file unreadable"));
+		emsg(_(e_readpre_autocommands_made_file_unreadable));
 	    else
-		emsg(_("E201: *ReadPre autocommands must not change current buffer"));
+		emsg(_(e_readpre_autocommands_must_not_change_current_buffer));
 	    curbuf->b_p_ro = TRUE;	// must use "w!" now
 	    return FAIL;
 	}
@@ -757,8 +763,13 @@ readfile(
 		// Also write a message in the GUI window, if there is one.
 		if (gui.in_use && !gui.dying && !gui.starting)
 		{
-		    p = (char_u *)_("Reading from stdin...");
-		    gui_write(p, (int)STRLEN(p));
+		    // make a copy, gui_write() may try to change it
+		    p = vim_strsave((char_u *)_("Reading from stdin..."));
+		    if (p != NULL)
+		    {
+			gui_write(p, (int)STRLEN(p));
+			vim_free(p);
+		    }
 		}
 #endif
 	    }
@@ -1050,7 +1061,7 @@ retry:
 		    if (fd < 0)
 		    {
 			// Re-opening the original file failed!
-			emsg(_("E202: Conversion made file unreadable!"));
+			emsg(_(e_conversion_mad_file_unreadable));
 			error = TRUE;
 			goto failed;
 		    }
@@ -1238,30 +1249,29 @@ retry:
 				read_buf_col += n;
 				break;
 			    }
-			    else
+
+			    // Append whole line and new-line.  Change NL
+			    // to NUL to reverse the effect done below.
+			    for (ni = 0; ni < n; ++ni)
 			    {
-				// Append whole line and new-line.  Change NL
-				// to NUL to reverse the effect done below.
-				for (ni = 0; ni < n; ++ni)
-				{
-				    if (p[ni] == NL)
-					ptr[tlen++] = NUL;
-				    else
-					ptr[tlen++] = p[ni];
-				}
-				ptr[tlen++] = NL;
-				read_buf_col = 0;
-				if (++read_buf_lnum > from)
-				{
-				    // When the last line didn't have an
-				    // end-of-line don't add it now either.
-				    if (!curbuf->b_p_eol)
-					--tlen;
-				    size = tlen;
-				    eof = TRUE;
-				    break;
-				}
+				if (p[ni] == NL)
+				    ptr[tlen++] = NUL;
+				else
+				    ptr[tlen++] = p[ni];
 			    }
+			    ptr[tlen++] = NL;
+			    read_buf_col = 0;
+			    if (++read_buf_lnum > from)
+			    {
+				// When the last line didn't have an
+				// end-of-line don't add it now either.
+				if (!curbuf->b_p_eol)
+				    --tlen;
+				size = tlen;
+				eof = TRUE;
+				break;
+			    }
+
 			}
 		    }
 		}
@@ -1298,7 +1308,7 @@ retry:
 		    cryptkey = check_for_cryptkey(cryptkey, ptr, &size,
 						  &filesize, newfile, sfname,
 						  &did_ask_for_key);
-# ifdef CRYPT_NOT_INPLACE
+# if defined(CRYPT_NOT_INPLACE) && defined(FEAT_PERSISTENT_UNDO)
 		    if (curbuf->b_cryptstate != NULL
 				 && !crypt_works_inplace(curbuf->b_cryptstate))
 			// reading undo file requires crypt_decode_inplace()
@@ -1625,7 +1635,6 @@ retry:
 		 * Do the conversion.
 		 */
 		dst = ptr;
-		size = size;
 		while (size > 0)
 		{
 		    found_bad = FALSE;
@@ -2270,6 +2279,7 @@ failed:
     if (!error
 	    && !got_int
 	    && linerest != 0
+	    // TODO: should we handle CTRL-Z differently here for 'endoffile'?
 	    && !(!curbuf->b_p_bin
 		&& fileformat == EOL_DOS
 		&& *line_start == Ctrl_Z
@@ -2277,7 +2287,11 @@ failed:
     {
 	// remember for when writing
 	if (set_options)
+	{
 	    curbuf->b_p_eol = FALSE;
+	    if (*line_start == Ctrl_Z && ptr == line_start + 1)
+		curbuf->b_p_eof = TRUE;
+	}
 	*ptr = NUL;
 	len = (colnr_T)(ptr - line_start + 1);
 	if (ml_append(lnum, line_start, len, newfile) == FAIL)
@@ -2370,7 +2384,7 @@ failed:
 	    linecnt = 0;
 	if (newfile || read_buffer)
 	{
-	    redraw_curbuf_later(NOT_VALID);
+	    redraw_curbuf_later(UPD_NOT_VALID);
 #ifdef FEAT_DIFF
 	    // After reading the text into the buffer the diff info needs to
 	    // be updated.
@@ -2403,7 +2417,7 @@ failed:
 	{
 	    if (!(flags & READ_DUMMY))
 	    {
-		filemess(curbuf, sfname, (char_u *)_(e_interr), 0);
+		filemess(curbuf, sfname, (char_u *)_(e_interrupted), 0);
 		if (newfile)
 		    curbuf->b_p_ro = TRUE;	// must use "w!" now
 	    }
@@ -2569,6 +2583,7 @@ failed:
 	{
 	    buf_store_time(curbuf, &st, fname);
 	    curbuf->b_mtime_read = curbuf->b_mtime;
+	    curbuf->b_mtime_read_ns = curbuf->b_mtime_ns;
 	}
 #endif
     }
@@ -2694,7 +2709,7 @@ readfile_linenr(
 }
 
 /*
- * Fill "*eap" to force the 'fileencoding', 'fileformat' and 'binary to be
+ * Fill "*eap" to force the 'fileencoding', 'fileformat' and 'binary' to be
  * equal to the buffer "buf".  Used for calling readfile().
  * Returns OK or FAIL.
  */
@@ -2938,7 +2953,7 @@ check_for_cryptkey(
     // When starting to edit a new file which does not have encryption, clear
     // the 'key' option, except when starting up (called with -x argument)
     else if (newfile && *curbuf->b_p_key != NUL && !starting)
-	set_option_value((char_u *)"key", 0L, (char_u *)"", OPT_LOCAL);
+	set_option_value_give_err((char_u *)"key", 0L, (char_u *)"", OPT_LOCAL);
 
     return cryptkey;
 }
@@ -3008,7 +3023,7 @@ set_rw_fname(char_u *fname, char_u *sfname)
     if (curbuf != buf)
     {
 	// We are in another buffer now, don't do the renaming.
-	emsg(_(e_auchangedbuf));
+	emsg(_(e_autocommands_changed_buffer_or_buffer_name));
 	return FAIL;
     }
 
@@ -3115,16 +3130,21 @@ msg_add_eol(void)
 }
 
     int
-time_differs(long t1, long t2)
+time_differs(stat_T *st, long mtime, long mtime_ns UNUSED)
 {
-#if defined(__linux__) || defined(MSWIN)
-    // On a FAT filesystem, esp. under Linux, there are only 5 bits to store
-    // the seconds.  Since the roundoff is done when flushing the inode, the
-    // time may change unexpectedly by one second!!!
-    return (t1 - t2 > 1 || t2 - t1 > 1);
-#else
-    return (t1 != t2);
+    return
+#ifdef ST_MTIM_NSEC
+	(long)st->ST_MTIM_NSEC != mtime_ns ||
 #endif
+#if defined(__linux__) || defined(MSWIN)
+	// On a FAT filesystem, esp. under Linux, there are only 5 bits to store
+	// the seconds.  Since the roundoff is done when flushing the inode, the
+	// time may change unexpectedly by one second!!!
+	(long)st->st_mtime - mtime > 1 || mtime - (long)st->st_mtime > 1
+#else
+	(long)st->st_mtime != mtime
+#endif
+	;
 }
 
 /*
@@ -3396,9 +3416,7 @@ shorten_buf_fname(buf_T *buf, char_u *dirname, int force)
     char_u	*p;
 
     if (buf->b_fname != NULL
-#ifdef FEAT_QUICKFIX
 	    && !bt_nofilename(buf)
-#endif
 	    && !path_with_url(buf->b_fname)
 	    && (force
 		|| buf->b_sfname == NULL
@@ -3864,17 +3882,17 @@ vim_rename(char_u *from, char_u *to)
     while ((n = read_eintr(fd_in, buffer, WRITEBUFSIZE)) > 0)
 	if (write_eintr(fd_out, buffer, n) != n)
 	{
-	    errmsg = _("E208: Error writing to \"%s\"");
+	    errmsg = _(e_error_writing_to_str);
 	    break;
 	}
 
     vim_free(buffer);
     close(fd_in);
     if (close(fd_out) < 0)
-	errmsg = _("E209: Error closing \"%s\"");
+	errmsg = _(e_error_closing_str);
     if (n < 0)
     {
-	errmsg = _("E210: Error reading \"%s\"");
+	errmsg = _(e_error_reading_str);
 	to = from;
     }
 #ifndef UNIX	    // for Unix mch_open() already set the permission
@@ -4033,7 +4051,11 @@ buf_check_timestamp(
     char	*mesg = NULL;
     char	*mesg2 = "";
     int		helpmesg = FALSE;
-    int		reload = FALSE;
+    enum {
+	RELOAD_NONE,
+	RELOAD_NORMAL,
+	RELOAD_DETECT
+    }		reload = RELOAD_NONE;
     char	*reason;
 #if defined(FEAT_CON_DIALOG) || defined(FEAT_GUI_DIALOG)
     int		can_reload = FALSE;
@@ -4072,7 +4094,7 @@ buf_check_timestamp(
     if (       !(buf->b_flags & BF_NOTEDITED)
 	    && buf->b_mtime != 0
 	    && ((stat_res = mch_stat((char *)buf->b_ffname, &st)) < 0
-		|| time_differs((long)st.st_mtime, buf->b_mtime)
+		|| time_differs(&st, buf->b_mtime, buf->b_mtime_ns)
 		|| st.st_size != buf->b_orig_size
 #ifdef HAVE_ST_MODE
 		|| (int)st.st_mode != buf->b_orig_mode
@@ -4109,7 +4131,7 @@ buf_check_timestamp(
 	 */
 	else if ((buf->b_p_ar >= 0 ? buf->b_p_ar : p_ar)
 				       && !bufIsChanged(buf) && stat_res >= 0)
-	    reload = TRUE;
+	    reload = RELOAD_NORMAL;
 	else
 	{
 	    if (stat_res < 0)
@@ -4146,11 +4168,13 @@ buf_check_timestamp(
 	    if (n)
 	    {
 		if (!bufref_valid(&bufref))
-		    emsg(_("E246: FileChangedShell autocommand deleted buffer"));
+		    emsg(_(e_filechangedshell_autocommand_deleted_buffer));
 #ifdef FEAT_EVAL
 		s = get_vim_var_str(VV_FCS_CHOICE);
 		if (STRCMP(s, "reload") == 0 && *reason != 'd')
-		    reload = TRUE;
+		    reload = RELOAD_NORMAL;
+		else if (STRCMP(s, "edit") == 0)
+		    reload = RELOAD_DETECT;
 		else if (STRCMP(s, "ask") == 0)
 		    n = FALSE;
 		else
@@ -4163,7 +4187,7 @@ buf_check_timestamp(
 		{
 		    // Only give the message once.
 		    if (prev_b_mtime != -1)
-			mesg = _("E211: File \"%s\" no longer available");
+			mesg = _(e_file_str_no_longer_available);
 		}
 		else
 		{
@@ -4187,9 +4211,12 @@ buf_check_timestamp(
 			mesg2 = _("See \":help W16\" for more info.");
 		    }
 		    else
+		    {
 			// Only timestamp changed, store it to avoid a warning
 			// in check_mtime() later.
 			buf->b_mtime_read = buf->b_mtime;
+			buf->b_mtime_read_ns = buf->b_mtime_ns;
+		    }
 		}
 	    }
 	}
@@ -4228,14 +4255,23 @@ buf_check_timestamp(
 		    STRCAT(tbuf, "\n");
 		    STRCAT(tbuf, mesg2);
 		}
-		if (do_dialog(VIM_WARNING, (char_u *)_("Warning"),
-			    (char_u *)tbuf,
-			  (char_u *)_("&OK\n&Load File"), 1, NULL, TRUE) == 2)
-		    reload = TRUE;
+		switch (do_dialog(VIM_WARNING, (char_u *)_("Warning"),
+			(char_u *)tbuf,
+			(char_u *)_("&OK\n&Load File\nLoad File &and Options"),
+			1, NULL, TRUE))
+		{
+		    case 2:
+			reload = RELOAD_NORMAL;
+			break;
+		    case 3:
+			reload = RELOAD_DETECT;
+			break;
+		}
 	    }
 	    else
 #endif
-	    if (State > NORMAL_BUSY || (State & CMDLINE) || already_warned)
+	    if (State > MODE_NORMAL_BUSY || (State & MODE_CMDLINE)
+							     || already_warned)
 	    {
 		if (*mesg2 != NUL)
 		{
@@ -4276,10 +4312,10 @@ buf_check_timestamp(
 	}
     }
 
-    if (reload)
+    if (reload != RELOAD_NONE)
     {
 	// Reload the buffer.
-	buf_reload(buf, orig_mode);
+	buf_reload(buf, orig_mode, reload == RELOAD_DETECT);
 #ifdef FEAT_PERSISTENT_UNDO
 	if (buf->b_p_udf && buf->b_ffname != NULL)
 	{
@@ -4315,7 +4351,7 @@ buf_check_timestamp(
  * buf->b_orig_mode may have been reset already.
  */
     void
-buf_reload(buf_T *buf, int orig_mode)
+buf_reload(buf_T *buf, int orig_mode, int reload_options)
 {
     exarg_T	ea;
     pos_T	old_cursor;
@@ -4326,14 +4362,20 @@ buf_reload(buf_T *buf, int orig_mode)
     int		saved = OK;
     aco_save_T	aco;
     int		flags = READ_NEW;
+    int		prepped = OK;
 
     // set curwin/curbuf for "buf" and save some things
     aucmd_prepbuf(&aco, buf);
 
-    // We only want to read the text from the file, not reset the syntax
-    // highlighting, clear marks, diff status, etc.  Force the fileformat
-    // and encoding to be the same.
-    if (prep_exarg(&ea, buf) == OK)
+    // Unless reload_options is set, we only want to read the text from the
+    // file, not reset the syntax highlighting, clear marks, diff status, etc.
+    // Force the fileformat and encoding to be the same.
+    if (reload_options)
+	memset(&ea, 0, sizeof(ea));
+    else
+	prepped = prep_exarg(&ea, buf);
+
+    if (prepped == OK)
     {
 	old_cursor = curwin->w_cursor;
 	old_topline = curwin->w_topline;
@@ -4373,8 +4415,7 @@ buf_reload(buf_T *buf, int orig_mode)
 	    if (savebuf == NULL || saved == FAIL || buf != curbuf
 				      || move_lines(buf, savebuf) == FAIL)
 	    {
-		semsg(_("E462: Could not prepare for reloading \"%s\""),
-							    buf->b_fname);
+		semsg(_(e_could_not_prepare_for_reloading_str), buf->b_fname);
 		saved = FAIL;
 	    }
 	}
@@ -4390,7 +4431,7 @@ buf_reload(buf_T *buf, int orig_mode)
 #if defined(FEAT_EVAL)
 		if (!aborting())
 #endif
-		    semsg(_("E321: Could not reload \"%s\""), buf->b_fname);
+		    semsg(_(e_could_not_reload_str), buf->b_fname);
 		if (savebuf != NULL && bufref_valid(&bufref) && buf == curbuf)
 		{
 		    // Put the text back from the save buffer.  First
@@ -4468,6 +4509,11 @@ buf_reload(buf_T *buf, int orig_mode)
 buf_store_time(buf_T *buf, stat_T *st, char_u *fname UNUSED)
 {
     buf->b_mtime = (long)st->st_mtime;
+#ifdef ST_MTIM_NSEC
+    buf->b_mtime_ns = (long)st->ST_MTIM_NSEC;
+#else
+    buf->b_mtime_ns = 0;
+#endif
     buf->b_orig_size = st->st_size;
 #ifdef HAVE_ST_MODE
     buf->b_orig_mode = (int)st->st_mode;
@@ -4707,8 +4753,8 @@ compare_readdirex_item(const void *p1, const void *p2)
 {
     char_u  *name1, *name2;
 
-    name1 = dict_get_string(*(dict_T**)p1, (char_u*)"name", FALSE);
-    name2 = dict_get_string(*(dict_T**)p2, (char_u*)"name", FALSE);
+    name1 = dict_get_string(*(dict_T**)p1, "name", FALSE);
+    name2 = dict_get_string(*(dict_T**)p2, "name", FALSE);
     if (readdirex_sort == READDIR_SORT_BYTE)
 	return STRCMP(name1, name2);
     else if (readdirex_sort == READDIR_SORT_IC)
@@ -4744,7 +4790,7 @@ readdir_core(
     int		withattr UNUSED,
     void	*context,
     int		(*checkitem)(void *context, void *item),
-    int         sort)
+    int		sort)
 {
     int			failed = FALSE;
     char_u		*p;
@@ -4759,12 +4805,12 @@ readdir_core(
     struct dirent	*dp;
 # endif
 
-    ga_init2(gap, (int)sizeof(void *), 20);
+    ga_init2(gap, sizeof(void *), 20);
 
 # ifdef FEAT_EVAL
 #  define FREE_ITEM(item)   do { \
 	if (withattr) \
-	    dict_unref((dict_T*)item); \
+	    dict_unref((dict_T*)(item)); \
 	else \
 	    vim_free(item); \
     } while (0)
@@ -4792,7 +4838,7 @@ readdir_core(
     if (!ok)
     {
 	failed = TRUE;
-	semsg(_(e_notopen), path);
+	semsg(_(e_cant_open_file_str), path);
     }
     else
     {
@@ -4862,7 +4908,7 @@ readdir_core(
     if (dirp == NULL)
     {
 	failed = TRUE;
-	semsg(_(e_notopen), path);
+	semsg(_(e_cant_open_file_str), path);
     }
     else
     {
@@ -4893,7 +4939,7 @@ readdir_core(
 		break;
 	    }
 
-	    if (!ignore && checkitem != NULL)
+	    if (checkitem != NULL)
 	    {
 		int r = checkitem(context, item);
 
@@ -4977,13 +5023,16 @@ delete_recursive(char_u *name)
 		vim_snprintf((char *)NameBuff, MAXPATHL, "%s/%s", exp,
 					    ((char_u **)ga.ga_data)[i]);
 		if (delete_recursive(NameBuff) != 0)
+		    // Remember the failure but continue deleting any further
+		    // entries.
 		    result = -1;
 	    }
 	    ga_clear_strings(&ga);
+	    if (mch_rmdir(exp) != 0)
+		result = -1;
 	}
 	else
 	    result = -1;
-	(void)mch_rmdir(exp);
 	vim_free(exp);
     }
     else
@@ -5362,7 +5411,6 @@ match_file_pat(
     return result;
 }
 
-#if defined(FEAT_WILDIGN) || defined(PROTO)
 /*
  * Return TRUE if a file matches with a pattern in "list".
  * "list" is a comma-separated list of patterns, like 'wildignore'.
@@ -5396,7 +5444,6 @@ match_file_list(char_u *list, char_u *sfname, char_u *ffname)
     }
     return FALSE;
 }
-#endif
 
 /*
  * Convert the given pattern "pat" which has shell style wildcards in it, into
@@ -5596,9 +5643,9 @@ file_pat_to_reg_pat(
     if (nested != 0)
     {
 	if (nested < 0)
-	    emsg(_("E219: Missing {."));
+	    emsg(_(e_missing_open_curly));
 	else
-	    emsg(_("E220: Missing }."));
+	    emsg(_(e_missing_close_curly));
 	VIM_CLEAR(reg_pat);
     }
     return reg_pat;

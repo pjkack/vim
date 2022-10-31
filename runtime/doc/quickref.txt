@@ -1,4 +1,4 @@
-*quickref.txt*  For Vim version 8.2.  Last change: 2021 Mar 29
+*quickref.txt*  For Vim version 9.0.  Last change: 2022 Oct 28
 
 
 		  VIM REFERENCE MANUAL    by Bram Moolenaar
@@ -635,6 +635,7 @@ Short explanation of each option:		*option-list*
 'buflisted'	  'bl'	    whether the buffer shows up in the buffer list
 'buftype'	  'bt'	    special type of buffer
 'casemap'	  'cmp'     specifies how case of letters is changed
+'cdhome'	  'cdh'	    change directory to the home directory by ":cd"
 'cdpath'	  'cd'	    list of directories searched with ":cd"
 'cedit'			    key used to open the command-line window
 'charconvert'	  'ccv'     expression for character encoding conversion
@@ -642,6 +643,7 @@ Short explanation of each option:		*option-list*
 'cinkeys'	  'cink'    keys that trigger indent when 'cindent' is set
 'cinoptions'	  'cino'    how to do indenting when 'cindent' is set
 'cinwords'	  'cinw'    words where 'si' and 'cin' add an indent
+'cinscopedecls'	  'cinsd'   words that are recognized by 'cino-g'
 'clipboard'	  'cb'	    use the clipboard as the unnamed register
 'cmdheight'	  'ch'	    number of lines to use for the command-line
 'cmdwinheight'	  'cwh'     height of the command-line window
@@ -687,6 +689,7 @@ Short explanation of each option:		*option-list*
 'edcompatible'	  'ed'	    toggle flags of ":substitute" command
 'emoji'		  'emo'	    emoji characters are considered full width
 'encoding'	  'enc'     encoding used internally
+'endoffile'	  'eof'     write CTRL-Z at end of the file
 'endofline'	  'eol'     write <EOL> for last line in file
 'equalalways'	  'ea'	    windows are automatically made the same size
 'equalprg'	  'ep'	    external program to use for "=" command
@@ -732,6 +735,7 @@ Short explanation of each option:		*option-list*
 'guifontset'	  'gfs'     GUI: Names of multibyte fonts to be used
 'guifontwide'	  'gfw'     list of font names for double-wide characters
 'guiheadroom'	  'ghr'     GUI: pixels room for window decorations
+'guiligatures'	  'gli'	    GTK GUI: ASCII characters that can form shapes
 'guioptions'	  'go'	    GUI: Which components and options are used
 'guipty'		    GUI: try to use a pseudo-tty for ":!" commands
 'guitablabel'	  'gtl'     GUI: custom label for a tab page
@@ -782,6 +786,7 @@ Short explanation of each option:		*option-list*
 'lines'			    number of lines in the display
 'linespace'	  'lsp'     number of pixel lines to use between characters
 'lisp'			    automatic indenting for Lisp
+'lispoptions'	  'lop'     changes how Lisp indenting is done
 'lispwords'	  'lw'	    words that change how lisp indenting works
 'list'			    show <Tab> and <EOL>
 'listchars'	  'lcs'     characters for displaying in list mode
@@ -812,6 +817,7 @@ Short explanation of each option:		*option-list*
 'mousefocus'	  'mousef'  keyboard focus follows the mouse
 'mousehide'	  'mh'	    hide mouse pointer while typing
 'mousemodel'	  'mousem'  changes meaning of mouse buttons
+'mousemoveevent'  'mousemev'  report mouse moves with <MouseMove>
 'mouseshape'	  'mouses'  shape of the mouse pointer in different modes
 'mousetime'	  'mouset'  max time between mouse double-click
 'mzquantum'	  'mzq'     the interval between polls for MzScheme threads
@@ -906,6 +912,7 @@ Short explanation of each option:		*option-list*
 'smartcase'	  'scs'     no ignore case when pattern has uppercase
 'smartindent'	  'si'	    smart autoindenting for C programs
 'smarttab'	  'sta'     use 'shiftwidth' when inserting <Tab>
+'smoothscroll'	  'sms'     scroll by screen lines when 'wrap' is set
 'softtabstop'	  'sts'     number of spaces that <Tab> uses while editing
 'spell'			    enable spell checking
 'spellcapcheck'   'spc'     pattern to locate end of a sentence
@@ -914,6 +921,7 @@ Short explanation of each option:		*option-list*
 'spelloptions'	  'spo'     options for spell checking
 'spellsuggest'	  'sps'     method(s) used to suggest spelling corrections
 'splitbelow'	  'sb'	    new window from split is below the current one
+'splitkeep'	  'spk'     determines scroll behavior for split windows
 'splitright'	  'spr'     new window is put right of the current one
 'startofline'	  'sol'     commands move cursor to first non-blank in line
 'statusline'	  'stl'     custom format for the status line
@@ -948,6 +956,7 @@ Short explanation of each option:		*option-list*
 'textmode'	  'tx'	    obsolete, use 'fileformat'
 'textwidth'	  'tw'	    maximum width of text that is being inserted
 'thesaurus'	  'tsr'     list of thesaurus files for keyword completion
+'thesaurusfunc'	  'tsrfu'   function to be used for thesaurus completion
 'tildeop'	  'top'     tilde command "~" behaves like an operator
 'timeout'	  'to'	    time out on mappings and key codes
 'timeoutlen'	  'tm'	    time out time in milliseconds
@@ -1007,6 +1016,7 @@ Short explanation of each option:		*option-list*
 'writeany'	  'wa'	    write to file with no need for "!" override
 'writebackup'	  'wb'	    make a backup before overwriting a file
 'writedelay'	  'wd'	    delay this many msec for each char (for debug)
+'xtermcodes'		    request terminal codes from an xterm
 ------------------------------------------------------------------------------
 *Q_ur*		Undo/Redo commands
 
@@ -1344,7 +1354,7 @@ Context-sensitive completion on the command-line:
 |CTRL-W_^|	CTRL-W ^		split window and edit alternate file
 |CTRL-W_n|	CTRL-W n  or  :new	create new empty window
 |CTRL-W_q|	CTRL-W q  or  :q[uit]	quit editing and close window
-|CTRL-W_c|	CTRL-W c  or  :cl[ose]	make buffer hidden and close window
+|CTRL-W_c|	CTRL-W c  or  :clo[se]	make buffer hidden and close window
 |CTRL-W_o|	CTRL-W o  or  :on[ly]	make current window only one on the
 					   screen
 

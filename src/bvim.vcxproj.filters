@@ -264,9 +264,6 @@
     <ClCompile Include="findfile.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="glbl_ime.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="highlight.c">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -388,6 +385,18 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="strings.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="vim9instr.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="vim9cmds.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="vim9expr.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="gui_xim.c">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -857,6 +866,15 @@
       <Filter>Proto Files</Filter>
     </None>
     <None Include="proto\winclip.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\vim9cmds.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\vim9expr.pro">
+      <Filter>Proto Files</Filter>
+    </None>
+    <None Include="proto\vim9instr.pro">
       <Filter>Proto Files</Filter>
     </None>
   </ItemGroup>

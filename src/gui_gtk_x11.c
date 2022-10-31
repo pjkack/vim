@@ -396,6 +396,140 @@ static int using_gnome = 0;
 # define using_gnome 0
 #endif
 
+// Comment out the following line to ignore code for resize history tracking.
+#define TRACK_RESIZE_HISTORY
+#ifdef TRACK_RESIZE_HISTORY
+/*
+ * Keep a short term resize history so that stale gtk responses can be
+ * discarded.
+ * When a gtk_window_resize() request is sent to gtk, the width/height of
+ * the request is saved. Recent stale requests are kept around in a list.
+ * See https://github.com/vim/vim/issues/10123
+ */
+# if 0  // Change to 1 to enable ch_log() calls for debugging.
+#  ifdef FEAT_JOB_CHANNEL
+#   define ENABLE_RESIZE_HISTORY_LOG
+#  endif
+# endif
+
+/*
+ * History item of a resize request.
+ * Width and height are of gui.mainwin.
+ */
+typedef struct resize_history {
+    int used;	    // If true, can't match for discard. Only matches once.
+    int width;
+    int height;
+# ifdef ENABLE_RESIZE_HISTORY_LOG
+    int seq;	    // for ch_log messages
+# endif
+    struct resize_history *next;
+} resize_hist_T;
+
+// never NULL during execution
+static resize_hist_T *latest_resize_hist;
+// list of stale resize requests
+static resize_hist_T *old_resize_hists;
+
+/*
+ * Used when calling gtk_window_resize().
+ * Create a resize request history item, put previous request on stale list.
+ * Width/height are the size of the request for the gui.mainwin.
+ */
+    static void
+alloc_resize_hist(int width, int height)
+{
+    // alloc a new resize hist, save current in list of old history
+    resize_hist_T *prev_hist = latest_resize_hist;
+    resize_hist_T *new_hist = ALLOC_CLEAR_ONE(resize_hist_T);
+
+    new_hist->width = width;
+    new_hist->height = height;
+    latest_resize_hist = new_hist;
+
+    // previous hist item becomes head of list
+    prev_hist->next = old_resize_hists;
+    old_resize_hists = prev_hist;
+
+# ifdef ENABLE_RESIZE_HISTORY_LOG
+    new_hist->seq = prev_hist->seq + 1;
+    ch_log(NULL, "gui_gtk: New resize seq %d (%d, %d) [%d, %d]",
+	   new_hist->seq, width, height, (int)Columns, (int)Rows);
+# endif
+}
+
+/*
+ * Free everything on the stale resize history list.
+ * This list is empty when there are no outstanding resize requests.
+ */
+    static void
+clear_resize_hists()
+{
+# ifdef ENABLE_RESIZE_HISTORY_LOG
+    int		    i = 0;
+# endif
+
+    if (latest_resize_hist)
+	latest_resize_hist->used = TRUE;
+    while (old_resize_hists != NULL)
+    {
+	resize_hist_T *next_hist = old_resize_hists->next;
+
+	vim_free(old_resize_hists);
+	old_resize_hists = next_hist;
+# ifdef ENABLE_RESIZE_HISTORY_LOG
+	i++;
+# endif
+    }
+# ifdef ENABLE_RESIZE_HISTORY_LOG
+    ch_log(NULL, "gui_gtk: free %d hists", i);
+# endif
+}
+
+// true if hist item is unused and matches w,h
+# define MATCH_WIDTH_HEIGHT(hist, w, h) \
+	  (!hist->used && hist->width == w && hist->height == h)
+
+/*
+ * Search the resize hist list.
+ * Return true if the specified width,height match an item in the list that
+ * has never matched before. Mark the matching item as used so it will
+ * not match again.
+ */
+    static int
+match_stale_width_height(int width, int height)
+{
+    resize_hist_T *hist = old_resize_hists;
+
+    for (hist = old_resize_hists; hist != NULL; hist = hist->next)
+	if (MATCH_WIDTH_HEIGHT(hist, width, height))
+	{
+# ifdef ENABLE_RESIZE_HISTORY_LOG
+	    ch_log(NULL, "gui_gtk: discard seq %d, cur seq %d",
+		   hist->seq, latest_resize_hist->seq);
+# endif
+	    hist->used = TRUE;
+	    return TRUE;
+	}
+    return FALSE;
+}
+
+# if defined(EXITFREE)
+    static void
+free_all_resize_hist()
+{
+    clear_resize_hists();
+    vim_free(latest_resize_hist);
+}
+# endif
+#endif
+
+/*
+ * GTK doesn't set the GDK_BUTTON1_MASK state when dragging a touch. Add this
+ * state when dragging.
+ */
+static guint dragging_button_state = 0;
+
 /*
  * Parse the GUI related command-line arguments.  Any arguments used are
  * deleted from argv, and *argc is decremented accordingly.  This is called
@@ -587,6 +721,9 @@ gui_mch_free_all(void)
 #if defined(USE_GNOME_SESSION)
     vim_free(abs_restart_command);
 #endif
+#ifdef TRACK_RESIZE_HISTORY
+    free_all_resize_hist();
+#endif
 }
 #endif
 
@@ -618,46 +755,6 @@ visibility_event(GtkWidget *widget UNUSED,
  * Redraw the corresponding portions of the screen.
  */
 #if GTK_CHECK_VERSION(3,0,0)
-static gboolean is_key_pressed = FALSE;
-static gboolean blink_mode = TRUE;
-
-static gboolean gui_gtk_is_blink_on(void);
-
-    static void
-gui_gtk3_redraw(int x, int y, int width, int height)
-{
-    // Range checks are left to gui_redraw_block()
-    gui_redraw_block(Y_2_ROW(y), X_2_COL(x),
-	    Y_2_ROW(y + height - 1), X_2_COL(x + width - 1),
-	    GUI_MON_NOCLEAR);
-}
-
-    static void
-gui_gtk3_update_cursor(cairo_t *cr)
-{
-    if (gui.row == gui.cursor_row)
-    {
-	gui.by_signal = TRUE;
-	if (State & CMDLINE)
-	    gui_update_cursor(TRUE, FALSE);
-	else
-	    gui_update_cursor(TRUE, TRUE);
-	gui.by_signal = FALSE;
-	cairo_paint(cr);
-    }
-}
-
-    static gboolean
-gui_gtk3_should_draw_cursor(void)
-{
-    unsigned int cond = 0;
-    cond |= gui_gtk_is_blink_on();
-    if (gui.cursor_col >= gui.col)
-	cond |= is_key_pressed;
-    cond |= gui.in_focus == FALSE;
-    return  cond;
-}
-
     static gboolean
 draw_event(GtkWidget *widget UNUSED,
 	   cairo_t   *cr,
@@ -672,8 +769,6 @@ draw_event(GtkWidget *widget UNUSED,
 
     cairo_set_source_surface(cr, gui.surface, 0, 0);
 
-    // Draw the window without the cursor.
-    gui.by_signal = TRUE;
     {
 	cairo_rectangle_list_t *list = NULL;
 
@@ -682,47 +777,15 @@ draw_event(GtkWidget *widget UNUSED,
 	{
 	    int i;
 
-	    // First clear all the blocks and then redraw them.  Just in case
-	    // some blocks overlap.
 	    for (i = 0; i < list->num_rectangles; i++)
 	    {
-		const cairo_rectangle_t rect = list->rectangles[i];
-
-		gui_mch_clear_block(Y_2_ROW((int)rect.y), 0,
-			Y_2_ROW((int)(rect.y + rect.height)) - 1, Columns - 1);
-	    }
-
-	    for (i = 0; i < list->num_rectangles; i++)
-	    {
-		const cairo_rectangle_t rect = list->rectangles[i];
-
-		if (blink_mode)
-		    gui_gtk3_redraw(rect.x, rect.y, rect.width, rect.height);
-		else
-		{
-		    if (get_real_state() & VISUAL)
-			gui_gtk3_redraw(rect.x, rect.y,
-				rect.width, rect.height);
-		    else
-			gui_redraw(rect.x, rect.y, rect.width, rect.height);
-		}
+		const cairo_rectangle_t *rect = &list->rectangles[i];
+		cairo_rectangle(cr, rect->x, rect->y, rect->width, rect->height);
+		cairo_fill(cr);
 	    }
 	}
 	cairo_rectangle_list_destroy(list);
-
-	if (get_real_state() & VISUAL)
-	{
-	    if (gui.cursor_row == gui.row && gui.cursor_col >= gui.col)
-		gui_update_cursor(TRUE, TRUE);
-	}
-
-	cairo_paint(cr);
     }
-    gui.by_signal = FALSE;
-
-    // Add the cursor to the window if necessary.
-    if (gui_gtk3_should_draw_cursor() && blink_mode)
-	gui_gtk3_update_cursor(cr);
 
     return FALSE;
 }
@@ -777,7 +840,7 @@ property_event(GtkWidget *widget,
 	xev.xproperty.window = commWindow;
 	xev.xproperty.state = PropertyNewValue;
 	serverEventProc(GDK_WINDOW_XDISPLAY(gtk_widget_get_window(widget)),
-		&xev, 0);
+								      &xev, 0);
     }
     return FALSE;
 }
@@ -788,8 +851,8 @@ property_event(GtkWidget *widget,
  */
     static void
 gtk_settings_xft_dpi_changed_cb(GtkSettings *gtk_settings UNUSED,
-                                GParamSpec *pspec UNUSED,
-                                gpointer data UNUSED)
+				    GParamSpec *pspec UNUSED,
+				    gpointer data UNUSED)
 {
     // Create a new PangoContext for this screen, and initialize it
     // with the current font if necessary.
@@ -847,14 +910,6 @@ static long_u blink_ontime = 400;
 static long_u blink_offtime = 250;
 static guint blink_timer = 0;
 
-#if GTK_CHECK_VERSION(3,0,0)
-    static gboolean
-gui_gtk_is_blink_on(void)
-{
-    return blink_state == BLINK_ON;
-}
-#endif
-
     int
 gui_mch_is_blinking(void)
 {
@@ -870,28 +925,9 @@ gui_mch_is_blink_off(void)
     void
 gui_mch_set_blinking(long waittime, long on, long off)
 {
-#if GTK_CHECK_VERSION(3,0,0)
-    if (waittime == 0 || on == 0 || off == 0)
-    {
-	blink_mode = FALSE;
-
-	blink_waittime = 700;
-	blink_ontime = 400;
-	blink_offtime = 250;
-    }
-    else
-    {
-	blink_mode = TRUE;
-
-	blink_waittime = waittime;
-	blink_ontime = on;
-	blink_offtime = off;
-    }
-#else
     blink_waittime = waittime;
     blink_ontime = on;
     blink_offtime = off;
-#endif
 }
 
 /*
@@ -908,7 +944,9 @@ gui_mch_stop_blink(int may_call_gui_update_cursor)
     if (blink_state == BLINK_OFF && may_call_gui_update_cursor)
     {
 	gui_update_cursor(TRUE, FALSE);
+#if !GTK_CHECK_VERSION(3,0,0)
 	gui_mch_flush();
+#endif
     }
     blink_state = BLINK_NONE;
 }
@@ -928,7 +966,9 @@ blink_cb(gpointer data UNUSED)
 	blink_state = BLINK_ON;
 	blink_timer = timeout_add(blink_ontime, blink_cb, NULL);
     }
+#if !GTK_CHECK_VERSION(3,0,0)
     gui_mch_flush();
+#endif
 
     return FALSE;		// don't happen again
 }
@@ -951,7 +991,9 @@ gui_mch_start_blink(void)
 	blink_timer = timeout_add(blink_waittime, blink_cb, NULL);
 	blink_state = BLINK_ON;
 	gui_update_cursor(TRUE, FALSE);
+#if !GTK_CHECK_VERSION(3,0,0)
 	gui_mch_flush();
+#endif
     }
 }
 
@@ -1118,11 +1160,7 @@ key_press_event(GtkWidget *widget UNUSED,
     int		key;
     guint	state;
     char_u	*s, *d;
-
-#if GTK_CHECK_VERSION(3,0,0)
-    is_key_pressed = TRUE;
-    gui_mch_stop_blink(TRUE);
-#endif
+    int		ctrl_prefix_added = 0;
 
     gui.event_time = event->time;
     key_sym = event->keyval;
@@ -1208,6 +1246,22 @@ key_press_event(GtkWidget *widget UNUSED,
 	}
     }
 
+#ifdef GDK_KEY_dead_circumflex
+    // Belgian Ctrl+[ workaround
+    if (len == 0 && key_sym == GDK_KEY_dead_circumflex)
+    {
+	string[0] = CSI;
+	string[1] = KS_MODIFIER;
+	string[2] = MOD_MASK_CTRL;
+	string[3] = '[';
+	len = 4;
+	add_to_input_buf(string, len);
+	// workaround has to return here, otherwise our fake string[] entries
+	// are confusing code downstream
+	return TRUE;
+    }
+#endif
+
     if (len == 0)   // Unrecognized key
 	return TRUE;
 
@@ -1251,6 +1305,8 @@ key_press_event(GtkWidget *widget UNUSED,
 	string2[1] = KS_MODIFIER;
 	string2[2] = modifiers;
 	add_to_input_buf(string2, 3);
+	if (modifiers == 0x4)
+	    ctrl_prefix_added = 1;
     }
 
     // Check if the key interrupts.
@@ -1265,6 +1321,15 @@ key_press_event(GtkWidget *widget UNUSED,
 	}
     }
 
+    // workaround for German keyboard, where instead of '[' char we have code
+    // sequence of bytes 195, 188 (UTF-8 for "u-umlaut")
+    if (ctrl_prefix_added && len == 2
+		    && ((int)string[0]) == 195
+		    && ((int)string[1]) == 188)
+    {
+	string[0] = 91; // ASCII('[')
+	len = 1;
+    }
     add_to_input_buf(string, len);
 
     // blank out the pointer if necessary
@@ -1277,13 +1342,9 @@ key_press_event(GtkWidget *widget UNUSED,
 #if defined(FEAT_XIM) || GTK_CHECK_VERSION(3,0,0)
     static gboolean
 key_release_event(GtkWidget *widget UNUSED,
-		  GdkEventKey *event,
+		  GdkEventKey *event UNUSED,
 		  gpointer data UNUSED)
 {
-# if GTK_CHECK_VERSION(3,0,0)
-    is_key_pressed = FALSE;
-    gui_mch_start_blink();
-# endif
 # if defined(FEAT_XIM)
     gui.event_time = event->time;
     /*
@@ -1605,7 +1666,7 @@ gui_mch_early_init_check(int give_message)
     {
 	gui.dying = TRUE;
 	if (give_message)
-	    emsg(_((char *)e_opendisp));
+	    emsg(_((char *)e_cannot_open_display));
 	return FAIL;
     }
     return OK;
@@ -1651,7 +1712,7 @@ gui_mch_init_check(void)
     if (!gtk_init_check(&gui_argc, &gui_argv))
     {
 	gui.dying = TRUE;
-	emsg(_((char *)e_opendisp));
+	emsg(_((char *)e_cannot_open_display));
 	return FAIL;
     }
 
@@ -1688,6 +1749,9 @@ process_motion_notify(int x, int y, GdkModifierType state)
     int	    button;
     int_u   vim_modifiers;
     GtkAllocation allocation;
+
+    // Need to add GDK_BUTTON1_MASK state when dragging a touch.
+    state |= dragging_button_state;
 
     button = (state & (GDK_BUTTON1_MASK | GDK_BUTTON2_MASK |
 		       GDK_BUTTON3_MASK | GDK_BUTTON4_MASK |
@@ -1915,7 +1979,11 @@ button_press_event(GtkWidget *widget,
     {
 	// Keep in sync with gui_x11.c.
 	// Buttons 4-7 are handled in scroll_event()
-	case 1: button = MOUSE_LEFT; break;
+	case 1:
+		button = MOUSE_LEFT;
+		// needed for touch-drag
+		dragging_button_state |= GDK_BUTTON1_MASK;
+		break;
 	case 2: button = MOUSE_MIDDLE; break;
 	case 3: button = MOUSE_RIGHT; break;
 	case 8: button = MOUSE_X1; break;
@@ -2009,6 +2077,13 @@ button_release_event(GtkWidget *widget UNUSED,
     vim_modifiers = modifiers_gdk2mouse(event->state);
 
     gui_send_mouse_event(MOUSE_RELEASE, x, y, FALSE, vim_modifiers);
+
+    switch (event->button)
+    {
+	case 1:  // MOUSE_LEFT
+	    dragging_button_state = 0;
+	    break;
+    }
 
     return TRUE;
 }
@@ -3236,11 +3311,7 @@ on_tabline_menu(GtkWidget *widget, GdkEvent *event)
 
 	// When ignoring events return TRUE so that the selected page doesn't
 	// change.
-	if (hold_gui_events
-# ifdef FEAT_CMDWIN
-		|| cmdwin_type != 0
-# endif
-	   )
+	if (hold_gui_events || cmdwin_type != 0)
 	    return TRUE;
 
 	tabwin = gui_gtk_window_at_position(gui.mainwin, &x, &y);
@@ -3269,6 +3340,12 @@ on_tabline_menu(GtkWidget *widget, GdkEvent *event)
 		// small guess it's the left button.
 		send_tabline_event(x < 50 ? -1 : 0);
 	    }
+	}
+	else if (bevent->button == 2)
+	{
+	    if (clicked_page != 0)
+		// Middle mouse click on tabpage label closes that tab.
+		send_tabline_menu_event(clicked_page, TABLINE_MENU_CLOSE);
 	}
     }
 
@@ -3523,7 +3600,7 @@ gui_mch_init(void)
     {
 	gnome_program_init(VIMPACKAGE, VIM_VERSION_SHORT,
 			   LIBGNOMEUI_MODULE, gui_argc, gui_argv, NULL);
-# if defined(FEAT_FLOAT) && defined(LC_NUMERIC)
+# if defined(LC_NUMERIC)
 	{
 	    char *p = setlocale(LC_NUMERIC, NULL);
 
@@ -3546,7 +3623,8 @@ gui_mch_init(void)
      * did_set_string_option() in option.c prohibits changing 'termencoding'
      * to something else than UTF-8 if the GUI is in use.
      */
-    set_option_value((char_u *)"termencoding", 0L, (char_u *)"utf-8", 0);
+    set_option_value_give_err((char_u *)"termencoding",
+						     0L, (char_u *)"utf-8", 0);
 
 #ifdef FEAT_TOOLBAR
     gui_gtk_register_stock_icons();
@@ -3823,7 +3901,6 @@ gui_mch_init(void)
     gui.drawarea = gtk_drawing_area_new();
 #if GTK_CHECK_VERSION(3,0,0)
     gui.surface = NULL;
-    gui.by_signal = FALSE;
 #endif
 
     // Determine which events we will filter.
@@ -4090,7 +4167,37 @@ form_configure_event(GtkWidget *widget UNUSED,
 		     GdkEventConfigure *event,
 		     gpointer data UNUSED)
 {
-    int usable_height = event->height;
+    int	    usable_height = event->height;
+#ifdef TRACK_RESIZE_HISTORY
+    // Resize requests are made for gui.mainwin;
+    // get its dimensions for searching if this event
+    // is a response to a vim request.
+    int	    w, h;
+    gtk_window_get_size(GTK_WINDOW(gui.mainwin), &w, &h);
+
+# ifdef ENABLE_RESIZE_HISTORY_LOG
+    ch_log(NULL, "gui_gtk: form_configure_event: (%d, %d) [%d, %d]",
+	   w, h, (int)Columns, (int)Rows);
+# endif
+
+    // Look through history of recent vim resize requests.
+    // If this event matches:
+    //	    - "latest resize hist" We're caught up;
+    //		clear the history and process this event.
+    //		If history is, old to new, 100, 99, 100, 99. If this event is
+    //		99 for the stale, it is matched against the current. History
+    //		is cleared, we may bounce, but no worse than before.
+    //	    - "older/stale hist" If match an unused event in history,
+    //		then discard this event, and mark the matching event as used.
+    //	    - "no match" Figure it's a user resize event, clear history.
+    // NOTE: clear history is default, then all incoming events are processed
+
+    if (!MATCH_WIDTH_HEIGHT(latest_resize_hist, w, h)
+					     && match_stale_width_height(w, h))
+	// discard stale event
+	return TRUE;
+    clear_resize_hists();
+#endif
 
 #if GTK_CHECK_VERSION(3,22,2) && !GTK_CHECK_VERSION(3,22,4)
     // As of 3.22.2, GdkWindows have started distributing configure events to
@@ -4413,15 +4520,18 @@ gui_mch_open(void)
      * manager upon us and should not interfere with what VIM is requesting
      * upon startup.
      */
+#ifdef TRACK_RESIZE_HISTORY
+    latest_resize_hist = ALLOC_CLEAR_ONE(resize_hist_T);
+#endif
     g_signal_connect(G_OBJECT(gui.formwin), "configure-event",
-		     G_CALLBACK(form_configure_event), NULL);
+				       G_CALLBACK(form_configure_event), NULL);
 
 #ifdef FEAT_DND
     // Set up for receiving DND items.
     gui_gtk_set_dnd_targets();
 
     g_signal_connect(G_OBJECT(gui.drawarea), "drag-data-received",
-		     G_CALLBACK(drag_data_received_cb), NULL);
+				      G_CALLBACK(drag_data_received_cb), NULL);
 #endif
 
 	// With GTK+ 2, we need to iconify the window before calling show()
@@ -4600,6 +4710,9 @@ gui_mch_set_shellsize(int width, int height,
     width  += get_menu_tool_width();
     height += get_menu_tool_height();
 
+#ifdef TRACK_RESIZE_HISTORY
+    alloc_resize_hist(width, height); // track the resize request
+#endif
     if (gtk_socket_id == 0)
 	gtk_window_resize(GTK_WINDOW(gui.mainwin), width, height);
     else
@@ -4625,7 +4738,6 @@ gui_mch_set_shellsize(int width, int height,
     gui_mch_update();
 }
 
-#if defined(FEAT_TITLE) || defined(PROTO)
     void
 gui_mch_settitle(char_u *title, char_u *icon UNUSED)
 {
@@ -4637,7 +4749,6 @@ gui_mch_settitle(char_u *title, char_u *icon UNUSED)
     if (output_conv.vc_type != CONV_NONE)
 	vim_free(title);
 }
-#endif // FEAT_TITLE
 
 #if defined(FEAT_MENU) || defined(PROTO)
     void
@@ -5158,7 +5269,7 @@ gui_mch_get_font(char_u *name, int report_error)
     if (font == NULL)
     {
 	if (report_error)
-	    semsg(_((char *)e_font), name);
+	    semsg(_((char *)e_unknown_font_str), name);
 	return NULL;
     }
 
@@ -5530,7 +5641,8 @@ draw_under(int flags, int row, int col, int cells)
 	cairo_set_source_rgba(cr,
 		gui.spcolor->red, gui.spcolor->green, gui.spcolor->blue,
 		gui.spcolor->alpha);
-	for (i = FILL_X(col); i < FILL_X(col + cells); ++i)
+	cairo_move_to(cr, FILL_X(col) + 1, y - 2 + 0.5);
+	for (i = FILL_X(col) + 1; i < FILL_X(col + cells); ++i)
 	{
 	    offset = val[i % 8];
 	    cairo_line_to(cr, i, y - offset + 0.5);
@@ -5595,18 +5707,21 @@ draw_under(int flags, int row, int col, int cells)
     int
 gui_gtk2_draw_string(int row, int col, char_u *s, int len, int flags)
 {
-    GdkRectangle	area;		    // area for clip mask
-    PangoGlyphString	*glyphs;	    // glyphs of current item
-    int			column_offset = 0;  // column offset in cells
-    int			i;
-    char_u		*conv_buf = NULL;   // result of UTF-8 conversion
-    char_u		*new_conv_buf;
-    int			convlen;
-    char_u		*sp, *bp;
-    int			plen;
-#if GTK_CHECK_VERSION(3,0,0)
-    cairo_t		*cr;
-#endif
+    char_u	*conv_buf = NULL;   // result of UTF-8 conversion
+    char_u	*new_conv_buf;
+    int		convlen;
+    char_u	*sp, *bp;
+    int		plen;
+    int		len_sum;	// return value needs to add up since we are
+				// printing substrings
+    int		byte_sum;	// byte position in string
+    char_u	*cs;		// current *s pointer
+    int		needs_pango;	// look ahead, 0=ascii 1=unicode/ligatures
+    int		should_need_pango = FALSE;
+    int		slen;
+    int		is_ligature;
+    int		is_utf8;
+    char_u	backup_ch;
 
     if (gui.text_context == NULL || gtk_widget_get_window(gui.drawarea) == NULL)
 	return len;
@@ -5653,6 +5768,135 @@ gui_gtk2_draw_string(int row, int col, char_u *s, int len, int flags)
     }
 
     /*
+     * Ligature support and complex utf-8 char optimization:
+     * String received to output to screen can print using pre-cached glyphs
+     * (fast) or Pango (slow). Ligatures and multibype utf-8 must use Pango.
+     * Since we receive mixed content string, split it into logical segments
+     * that are guaranteed to go trough glyphs as much as possible. Since
+     * single ligature char prints as ascii, print it that way.
+     */
+    len_sum = 0;    // return value needs to add up since we are printing
+		    // substrings
+    byte_sum = 0;
+    cs = s;
+    // First char decides starting needs_pango mode, 0=ascii 1=utf8/ligatures.
+    // Even if it is ligature char, two chars or more make ligature.
+    // Ascii followed by utf8 is also going trough pango.
+    is_utf8 = (*cs & 0x80);
+    is_ligature = gui.ligatures_map[*cs] && (len > 1);
+    if (is_ligature)
+	is_ligature = gui.ligatures_map[*(cs + 1)];
+    if (!is_utf8 && len > 1)
+	is_utf8 = (*(cs + 1) & 0x80) != 0;
+    needs_pango = is_utf8 || is_ligature;
+
+    // split string into ascii and non-ascii (ligatures + utf-8) substrings,
+    // print glyphs or use Pango
+    while (cs < s + len)
+    {
+	slen = 0;
+	while (slen < (len - byte_sum))
+	{
+	    is_ligature = gui.ligatures_map[*(cs + slen)];
+	    // look ahead, single ligature char between ascii is ascii
+	    if (is_ligature && !needs_pango)
+	    {
+		if ((slen + 1) < (len - byte_sum))
+		    is_ligature = gui.ligatures_map[*(cs + slen + 1)];
+		else
+		    is_ligature = 0;
+	    }
+	    is_utf8 = *(cs + slen) & 0x80;
+	    // ascii followed by utf8 could be combining
+	    // if so send it trough pango
+	    if ((!is_utf8) && ((slen + 1) < (len - byte_sum)))
+		is_utf8 = (*(cs + slen + 1) & 0x80);
+	    should_need_pango = (is_ligature || is_utf8);
+	    if (needs_pango != should_need_pango) // mode switch
+		break;
+	    if (needs_pango)
+	    {
+		if (is_ligature)
+		{
+		    slen++; // ligature char by char
+		}
+		else // is_utf8
+		{
+		    if ((*(cs + slen) & 0xC0) == 0x80)
+		    {
+			// a continuation, find next 0xC0 != 0x80 but don't
+			// include it
+			while ((slen < (len - byte_sum))
+					    && ((*(cs + slen) & 0xC0) == 0x80))
+			{
+			    slen++;
+			}
+		    }
+		    else if ((*(cs + slen) & 0xE0) == 0xC0)
+		    {
+			// + one byte utf8
+			slen++;
+		    }
+		    else if ((*(cs + slen) & 0xF0) == 0xE0)
+		    {
+			// + two bytes utf8
+			slen += 2;
+		    }
+		    else if ((*(cs + slen) & 0xF8) == 0xF0)
+		    {
+			// + three bytes utf8
+			slen += 3;
+		    }
+		    else
+		    {
+			// this should not happen, try moving forward, Pango
+			// will catch it
+			slen++;
+		    }
+		}
+	    }
+	    else
+	    {
+		slen++; // ascii
+	    }
+	}
+
+	if (slen < len)
+	{
+	    // temporarily zero terminate substring, print, restore char, wrap
+	    backup_ch = *(cs + slen);
+	    *(cs + slen) = NUL;
+	}
+	len_sum += gui_gtk2_draw_string_ext(row, col + len_sum,
+						 cs, slen, flags, needs_pango);
+	if (slen < len)
+	    *(cs + slen) = backup_ch;
+	cs += slen;
+	byte_sum += slen;
+	needs_pango = should_need_pango;
+    }
+    vim_free(conv_buf);
+    return len_sum;
+}
+
+    int
+gui_gtk2_draw_string_ext(
+	int	row,
+	int	col,
+	char_u	*s,
+	int	len,
+	int	flags,
+	int	force_pango)
+{
+    GdkRectangle	area;		    // area for clip mask
+    PangoGlyphString	*glyphs;	    // glyphs of current item
+    int			column_offset = 0;  // column offset in cells
+    int			i;
+#if GTK_CHECK_VERSION(3,0,0)
+    cairo_t		*cr;
+#endif
+
+    /*
      * Restrict all drawing to the current screen line in order to prevent
      * fuzzy font lookups from messing up the screen.
      */
@@ -5679,7 +5923,8 @@ gui_gtk2_draw_string(int row, int col, char_u *s, int len, int flags)
      */
     if (!(flags & DRAW_ITALIC)
 	    && !((flags & DRAW_BOLD) && gui.font_can_bold)
-	    && gui.ascii_glyphs != NULL)
+	    && gui.ascii_glyphs != NULL
+	    && !force_pango)
     {
 	char_u *p;
 
@@ -5883,13 +6128,11 @@ skipitall:
 #endif
 
     pango_glyph_string_free(glyphs);
-    vim_free(conv_buf);
 
 #if GTK_CHECK_VERSION(3,0,0)
     cairo_destroy(cr);
-    if (!gui.by_signal)
-	gdk_window_invalidate_rect(gtk_widget_get_window(gui.drawarea),
-		&area, FALSE);
+    gtk_widget_queue_draw_area(gui.drawarea, area.x, area.y,
+	    area.width, area.height);
 #else
     gdk_gc_set_clip_rectangle(gui.text_gc, NULL);
 #endif
@@ -5912,7 +6155,7 @@ gui_mch_haskey(char_u *name)
     return FAIL;
 }
 
-#if defined(FEAT_TITLE) || defined(FEAT_EVAL) || defined(PROTO)
+#if defined(FEAT_EVAL) || defined(PROTO)
 /*
  * Return the text window-id and display.  Only required for X-based GUI's
  */
@@ -6020,20 +6263,19 @@ gui_mch_invert_rectangle(int r, int c, int nr, int nc)
     };
     cairo_t * const cr = cairo_create(gui.surface);
 
-    set_cairo_source_rgba_from_color(cr, gui.norm_pixel ^ gui.back_pixel);
+    cairo_set_source_rgba(cr, 1.0, 1.0, 1.0, 1.0);
 # if CAIRO_VERSION >= CAIRO_VERSION_ENCODE(1,9,2)
     cairo_set_operator(cr, CAIRO_OPERATOR_DIFFERENCE);
 # else
     // Give an implementation for older cairo versions if necessary.
 # endif
-    gdk_cairo_rectangle(cr, &rect);
+    cairo_rectangle(cr, rect.x, rect.y, rect.width, rect.height);
     cairo_fill(cr);
 
     cairo_destroy(cr);
 
-    if (!gui.by_signal)
-	gtk_widget_queue_draw_area(gui.drawarea, rect.x, rect.y,
-		rect.width, rect.height);
+    gtk_widget_queue_draw_area(gui.drawarea, rect.x, rect.y,
+	    rect.width, rect.height);
 #else
     GdkGCValues values;
     GdkGC *invert_gc;
@@ -6041,13 +6283,9 @@ gui_mch_invert_rectangle(int r, int c, int nr, int nc)
     if (gui.drawarea->window == NULL)
 	return;
 
-    values.foreground.pixel = gui.norm_pixel ^ gui.back_pixel;
-    values.background.pixel = gui.norm_pixel ^ gui.back_pixel;
-    values.function = GDK_XOR;
+    values.function = GDK_INVERT;
     invert_gc = gdk_gc_new_with_values(gui.drawarea->window,
 				       &values,
-				       GDK_GC_FOREGROUND |
-				       GDK_GC_BACKGROUND |
 				       GDK_GC_FUNCTION);
     gdk_gc_set_exposures(invert_gc, gui.visibility !=
 						   GDK_VISIBILITY_UNOBSCURED);
@@ -6353,23 +6591,23 @@ gui_mch_clear_block(int row1arg, int col1arg, int row2arg, int col2arg)
 	    (col2 - col1 + 1) * gui.char_width + (col2 == Columns - 1),
 	    (row2 - row1 + 1) * gui.char_height
 	};
-	GdkWindow * const win = gtk_widget_get_window(gui.drawarea);
 	cairo_t * const cr = cairo_create(gui.surface);
 # if GTK_CHECK_VERSION(3,22,2)
 	set_cairo_source_rgba_from_color(cr, gui.back_pixel);
 # else
+	GdkWindow * const win = gtk_widget_get_window(gui.drawarea);
 	cairo_pattern_t * const pat = gdk_window_get_background_pattern(win);
 	if (pat != NULL)
 	    cairo_set_source(cr, pat);
 	else
 	    set_cairo_source_rgba_from_color(cr, gui.back_pixel);
 # endif
-	gdk_cairo_rectangle(cr, &rect);
+	cairo_rectangle(cr, rect.x, rect.y, rect.width, rect.height);
 	cairo_fill(cr);
 	cairo_destroy(cr);
 
-	if (!gui.by_signal)
-	    gdk_window_invalidate_rect(win, &rect, FALSE);
+	gtk_widget_queue_draw_area(gui.drawarea,
+		rect.x, rect.y, rect.width, rect.height);
     }
 #else // !GTK_CHECK_VERSION(3,0,0)
     gdk_gc_set_foreground(gui.text_gc, &color);
@@ -6401,12 +6639,12 @@ gui_gtk_window_clear(GdkWindow *win)
     else
 	set_cairo_source_rgba_from_color(cr, gui.back_pixel);
 # endif
-    gdk_cairo_rectangle(cr, &rect);
+    cairo_rectangle(cr, rect.x, rect.y, rect.width, rect.height);
     cairo_fill(cr);
     cairo_destroy(cr);
 
-    if (!gui.by_signal)
-	gdk_window_invalidate_rect(win, &rect, FALSE);
+    gtk_widget_queue_draw_area(gui.drawarea,
+	    rect.x, rect.y, rect.width, rect.height);
 }
 #else
 # define gui_gtk_window_clear(win)  gdk_window_clear(win)
@@ -6497,13 +6735,9 @@ gui_mch_delete_lines(int row, int num_lines)
     gui_clear_block(
 	    gui.scroll_region_bot - num_lines + 1, gui.scroll_region_left,
 	    gui.scroll_region_bot,		   gui.scroll_region_right);
-    gui_gtk3_redraw(
+    gtk_widget_queue_draw_area(gui.drawarea,
 	    FILL_X(gui.scroll_region_left), FILL_Y(row),
-	    gui.char_width * ncols + 1,     gui.char_height * nrows);
-    if (!gui.by_signal)
-	gtk_widget_queue_draw_area(gui.drawarea,
-		FILL_X(gui.scroll_region_left), FILL_Y(row),
-		gui.char_width * ncols + 1,	gui.char_height * nrows);
+	    gui.char_width * ncols + 1,	gui.char_height * nrows);
 #else
     if (gui.visibility == GDK_VISIBILITY_FULLY_OBSCURED)
 	return;			// Can't see the window
@@ -6544,16 +6778,12 @@ gui_mch_insert_lines(int row, int num_lines)
 	    FILL_X(gui.scroll_region_left), FILL_Y(row + num_lines),
 	    FILL_X(gui.scroll_region_left), FILL_Y(row),
 	    gui.char_width * ncols + 1,     gui.char_height * src_nrows);
-    gui_mch_clear_block(
+    gui_clear_block(
 	    row,		 gui.scroll_region_left,
 	    row + num_lines - 1, gui.scroll_region_right);
-    gui_gtk3_redraw(
+    gtk_widget_queue_draw_area(gui.drawarea,
 	    FILL_X(gui.scroll_region_left), FILL_Y(row),
-	    gui.char_width * ncols + 1,     gui.char_height * nrows);
-    if (!gui.by_signal)
-	gtk_widget_queue_draw_area(gui.drawarea,
-		FILL_X(gui.scroll_region_left), FILL_Y(row),
-		gui.char_width * ncols + 1,	gui.char_height * nrows);
+	    gui.char_width * ncols + 1,	gui.char_height * nrows);
 #else
     if (gui.visibility == GDK_VISIBILITY_FULLY_OBSCURED)
 	return;			// Can't see the window
@@ -6995,9 +7225,8 @@ gui_mch_drawsign(int row, int col, int typenr)
 	    cairo_surface_destroy(bg_surf);
 	    cairo_destroy(cr);
 
-	    if (!gui.by_signal)
-		gtk_widget_queue_draw_area(gui.drawarea,
-			FILL_X(col), FILL_Y(col), width, height);
+	    gtk_widget_queue_draw_area(gui.drawarea,
+		    FILL_X(col), FILL_Y(col), width, height);
 
 	}
 # else // !GTK_CHECK_VERSION(3,0,0)

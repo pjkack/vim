@@ -10,7 +10,8 @@ CheckScreendump
 
 let s:common_script =<< trim [CODE]
   call setline(1, ["one one one", "two tXo two", "three three three"])
-  set balloonevalterm balloonexpr=MyBalloonExpr() balloondelay=100
+  set balloonevalterm balloonexpr=MyBalloonExpr()..s:trailing balloondelay=100
+  let s:trailing = '<'  " check that script context is set
   func MyBalloonExpr()
     return "line " .. v:beval_lnum .. " column " .. v:beval_col .. ":\n" .. v:beval_text
   endfun
@@ -28,7 +29,7 @@ func Test_balloon_eval_term()
       call feedkeys("\<MouseMove>\<Ignore>", "xt")
     endfunc
   [CODE]
-  call writefile(s:common_script + xtra_lines, 'XTest_beval')
+  call writefile(s:common_script + xtra_lines, 'XTest_beval', 'D')
 
   " Check that the balloon shows up after a mouse move
   let buf = RunVimInTerminal('-S XTest_beval', {'rows': 10, 'cols': 50})
@@ -44,7 +45,6 @@ func Test_balloon_eval_term()
 
   " clean up
   call StopVimInTerminal(buf)
-  call delete('XTest_beval')
 endfunc
 
 func Test_balloon_eval_term_visual()
@@ -53,7 +53,7 @@ func Test_balloon_eval_term_visual()
   call writefile(s:common_script + [
 	\ 'call test_setmouse(3, 6)',
 	\ 'call feedkeys("3Gevfr\<MouseMove>\<Ignore>", "xt")',
-	\ ], 'XTest_beval_visual')
+	\ ], 'XTest_beval_visual', 'D')
 
   " Check that the balloon shows up after a mouse move
   let buf = RunVimInTerminal('-S XTest_beval_visual', {'rows': 10, 'cols': 50})
@@ -62,7 +62,6 @@ func Test_balloon_eval_term_visual()
 
   " clean up
   call StopVimInTerminal(buf)
-  call delete('XTest_beval_visual')
 endfunc
 
 " vim: shiftwidth=2 sts=2 expandtab

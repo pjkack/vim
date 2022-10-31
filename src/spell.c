@@ -67,7 +67,7 @@
 #define REGION_ALL 0xff		// word valid in all regions
 
 // Result values.  Lower number is accepted over higher one.
-#define SP_BANNED	-1
+#define SP_BANNED	(-1)
 #define SP_OK		0
 #define SP_RARE		1
 #define SP_LOCAL	2
@@ -253,7 +253,7 @@ spell_check(
 							     MAXWLEN + 1);
     mi.mi_fwordlen = (int)STRLEN(mi.mi_fword);
 
-    if (camel_case)
+    if (camel_case && mi.mi_fwordlen > 0)
 	// Introduce a fake word end space into the folded word.
 	mi.mi_fword[mi.mi_fwordlen - 1] = ' ';
 
@@ -478,7 +478,7 @@ find_word(matchinf_T *mip, int mode)
 	    if (endidxcnt == MAXWLEN)
 	    {
 		// Must be a corrupted spell file.
-		emsg(_(e_format));
+		emsg(_(e_format_error_in_spell_file));
 		return;
 	    }
 	    endlen[endidxcnt] = wlen;
@@ -1238,18 +1238,27 @@ spell_valid_case(
 }
 
 /*
- * Return TRUE if spell checking is not enabled.
+ * Return TRUE if spell checking is enabled for "wp".
+ */
+    int
+spell_check_window(win_T *wp)
+{
+    return wp->w_p_spell
+		&& *wp->w_s->b_p_spl != NUL
+		&& wp->w_s->b_langp.ga_len > 0
+		&& *(char **)(wp->w_s->b_langp.ga_data) != NULL;
+}
+
+/*
+ * Return TRUE and give an error if spell checking is not enabled.
  */
     static int
 no_spell_checking(win_T *wp)
 {
-    if (!wp->w_p_spell || *wp->w_s->b_p_spl == NUL
-					 || wp->w_s->b_langp.ga_len == 0)
-    {
-	emsg(_(e_no_spell));
-	return TRUE;
-    }
-    return FALSE;
+    if (spell_check_window(wp))
+	return FALSE;
+    emsg(_(e_spell_checking_is_not_possible));
+    return TRUE;
 }
 
 /*
@@ -1275,7 +1284,7 @@ spell_move_to(
     char_u	*line;
     char_u	*p;
     char_u	*endp;
-    hlf_T	attr;
+    hlf_T	attr = 0;
     int		len;
 #ifdef FEAT_SYN_HL
     int		has_syntax = syntax_present(wp);
@@ -1308,6 +1317,8 @@ spell_move_to(
 
     while (!got_int)
     {
+	int empty_line;
+
 	line = ml_get_buf(wp->w_buffer, lnum, FALSE);
 
 	len = (int)STRLEN(line);
@@ -1340,7 +1351,9 @@ spell_move_to(
 	}
 
 	// Copy the line into "buf" and append the start of the next line if
-	// possible.
+	// possible.  Note: this ml_get_buf() may make "line" invalid, check
+	// for empty line first.
+	empty_line = *skipwhite(line) == NUL;
 	STRCPY(buf, line);
 	if (lnum < wp->w_buffer->b_ml.ml_line_count)
 	    spell_cat_line(buf + STRLEN(buf),
@@ -1371,11 +1384,10 @@ spell_move_to(
 		    // the cursor.
 		    if (dir == BACKWARD
 			    || lnum != wp->w_cursor.lnum
-			    || (lnum == wp->w_cursor.lnum
-				&& (wrapped
-				    || (colnr_T)(curline ? p - buf + len
+			    || (wrapped
+				|| (colnr_T)(curline ? p - buf + len
 						     : p - buf)
-						  > wp->w_cursor.col)))
+						  > wp->w_cursor.col))
 		    {
 #ifdef FEAT_SYN_HL
 			if (has_syntax)
@@ -1488,7 +1500,7 @@ spell_move_to(
 	    --capcol;
 
 	    // But after empty line check first word in next line
-	    if (*skipwhite(line) == NUL)
+	    if (empty_line)
 		capcol = 0;
 	}
 
@@ -1501,7 +1513,7 @@ spell_move_to(
 
 /*
  * For spell checking: concatenate the start of the following line "line" into
- * "buf", blanking-out special characters.  Copy less then "maxlen" bytes.
+ * "buf", blanking-out special characters.  Copy less than "maxlen" bytes.
  * Keep the blanks at the start of the next line, this is used in win_line()
  * to skip those bytes if the word was OK.
  */
@@ -1556,6 +1568,10 @@ spell_load_lang(char_u *lang)
     sl.sl_slang = NULL;
     sl.sl_nobreak = FALSE;
 
+    // Disallow deleting the current buffer.  Autocommands can do weird things
+    // and cause "lang" to be freed.
+    ++curbuf->b_locked;
+
     // We may retry when no spell file is found for the language, an
     // autocommand may load it then.
     for (round = 1; round <= 2; ++round)
@@ -1609,6 +1625,8 @@ spell_load_lang(char_u *lang)
 	STRCPY(fname_enc + STRLEN(fname_enc) - 3, "add.spl");
 	do_in_runtimepath(fname_enc, DIP_ALL, spell_load_cb, &sl);
     }
+
+    --curbuf->b_locked;
 }
 
 /*
@@ -1966,7 +1984,7 @@ count_syllables(slang_T *slang, char_u *word)
 
 /*
  * Parse 'spelllang' and set w_s->b_langp accordingly.
- * Returns NULL if it's OK, an error message otherwise.
+ * Returns NULL if it's OK, an untranslated error message otherwise.
  */
     char *
 did_set_spelllang(win_T *wp)
@@ -2095,7 +2113,7 @@ did_set_spelllang(win_T *wp)
 		// destroying the buffer we are using...
 		if (!bufref_valid(&bufref))
 		{
-		    ret_msg = N_("E797: SpellFileMissing autocommand deleted buffer");
+		    ret_msg = N_(e_spellfilemising_autocommand_deleted_buffer);
 		    goto theend;
 		}
 	    }
@@ -2281,7 +2299,7 @@ did_set_spelllang(win_T *wp)
 		}
 	    }
     }
-    redraw_win_later(wp, NOT_VALID);
+    redraw_win_later(wp, UPD_NOT_VALID);
 
 theend:
     vim_free(spl_copy);
@@ -2534,7 +2552,6 @@ close_spellbuf(buf_T *buf)
 
 /*
  * Init the chartab used for spelling for ASCII.
- * EBCDIC is not supported!
  */
     void
 clear_spell_chartab(spelltab_T *sp)
@@ -2881,7 +2898,7 @@ ex_spellrepall(exarg_T *eap UNUSED)
 
     if (repl_from == NULL || repl_to == NULL)
     {
-	emsg(_("E752: No previous spell replacement"));
+	emsg(_(e_no_previous_spell_replacement));
 	return;
     }
     addlen = (int)(STRLEN(repl_to) - STRLEN(repl_from));
@@ -2915,6 +2932,11 @@ ex_spellrepall(exarg_T *eap UNUSED)
 	    STRCAT(p, line + curwin->w_cursor.col + STRLEN(repl_from));
 	    ml_replace(curwin->w_cursor.lnum, p, FALSE);
 	    changed_bytes(curwin->w_cursor.lnum, curwin->w_cursor.col);
+#if defined(FEAT_PROP_POPUP)
+	    if (curbuf->b_has_textprop && addlen != 0)
+		adjust_prop_columns(curwin->w_cursor.lnum,
+				 curwin->w_cursor.col, addlen, APC_SUBSTITUTE);
+#endif
 
 	    if (curwin->w_cursor.lnum != prev_lnum)
 	    {
@@ -2931,7 +2953,7 @@ ex_spellrepall(exarg_T *eap UNUSED)
     vim_free(frompat);
 
     if (sub_nsubs == 0)
-	semsg(_("E753: Not found: %s"), repl_from);
+	semsg(_(e_not_found_str), repl_from);
     else
 	do_sub_msg(FALSE);
 }
@@ -3260,7 +3282,7 @@ spell_soundfold_sal(slang_T *slang, char_u *inword, char_u *res)
 	    for (; (s = smp[n].sm_lead)[0] == c; ++n)
 	    {
 		// Quickly skip entries that don't match the word.  Most
-		// entries are less then three chars, optimize for that.
+		// entries are less than three chars, optimize for that.
 		k = smp[n].sm_leadlen;
 		if (k > 1)
 		{
@@ -3551,7 +3573,7 @@ spell_soundfold_wsal(slang_T *slang, char_u *inword, char_u *res)
 							 && ws[0] != NUL; ++n)
 	    {
 		// Quickly skip entries that don't match the word.  Most
-		// entries are less then three chars, optimize for that.
+		// entries are less than three chars, optimize for that.
 		if (c != ws[0])
 		    continue;
 		k = smp[n].sm_leadlen;
@@ -3830,14 +3852,14 @@ ex_spelldump(exarg_T *eap)
 
     if (no_spell_checking(curwin))
 	return;
-    (void)get_option_value((char_u*)"spl", &dummy, &spl, OPT_LOCAL);
+    (void)get_option_value((char_u*)"spl", &dummy, &spl, NULL, OPT_LOCAL);
 
     // Create a new empty buffer in a new window.
     do_cmdline_cmd((char_u *)"new");
 
     // enable spelling locally in the new window
-    set_option_value((char_u*)"spell", TRUE, (char_u*)"", OPT_LOCAL);
-    set_option_value((char_u*)"spl",  dummy, spl, OPT_LOCAL);
+    set_option_value_give_err((char_u*)"spell", TRUE, (char_u*)"", OPT_LOCAL);
+    set_option_value_give_err((char_u*)"spl",  dummy, spl, OPT_LOCAL);
     vim_free(spl);
 
     if (!BUFEMPTY())
@@ -3849,7 +3871,7 @@ ex_spelldump(exarg_T *eap)
     if (curbuf->b_ml.ml_line_count > 1)
 	ml_delete(curbuf->b_ml.ml_line_count);
 
-    redraw_later(NOT_VALID);
+    redraw_later(UPD_NOT_VALID);
 }
 
 /*
@@ -3991,9 +4013,10 @@ spell_dump_compl(
 		    n = arridx[depth] + curi[depth];
 		    ++curi[depth];
 		    c = byts[n];
-		    if (c == 0)
+		    if (c == 0 || depth >= MAXWLEN - 1)
 		    {
-			// End of word, deal with the word.
+			// End of word or reached maximum length, deal with the
+			// word.
 			// Don't use keep-case words in the fold-case tree,
 			// they will appear in the keep-case tree.
 			// Only use the word when the region matches.
@@ -4033,7 +4056,7 @@ spell_dump_compl(
 			arridx[depth] = idxs[n];
 			curi[depth] = 1;
 
-			// Check if this characters matches with the pattern.
+			// Check if this character matches with the pattern.
 			// If not skip the whole tree below it.
 			// Always ignore case here, dump_word() will check
 			// proper case later.  This isn't exactly right when
@@ -4357,7 +4380,7 @@ valid_spellfile(char_u *val)
     char_u *s;
 
     for (s = val; *s != NUL; ++s)
-	if (!vim_isfilec(*s) && *s != ',' && *s != ' ')
+	if (!vim_is_fname_char(*s))
 	    return FALSE;
     return TRUE;
 }
@@ -4378,7 +4401,7 @@ did_set_spell_option(int is_spellfile)
 	l = (int)STRLEN(curwin->w_s->b_p_spf);
 	if (l > 0 && (l < 4
 			|| STRCMP(curwin->w_s->b_p_spf + l - 4, ".add") != 0))
-	    errmsg = e_invarg;
+	    errmsg = e_invalid_argument;
     }
 
     if (errmsg == NULL)
@@ -4416,7 +4439,7 @@ compile_cap_prog(synblock_T *synblock)
 	    if (synblock->b_cap_prog == NULL)
 	    {
 		synblock->b_cap_prog = rp; // restore the previous program
-		return e_invarg;
+		return e_invalid_argument;
 	    }
 	}
     }

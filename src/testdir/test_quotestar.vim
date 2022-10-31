@@ -98,7 +98,7 @@ func Do_test_quotestar_for_x11()
 
     " Running in a terminal and the GUI is available: Tell the server to open
     " the GUI and check that the remote command still works.
-    if has('gui_athena') || has('gui_motif')
+    if has('gui_motif')
       " For those GUIs, ignore the 'failed to create input context' error.
       call remote_send(name, ":call test_ignore_error('E285') | gui -f\<CR>")
     else
@@ -131,6 +131,7 @@ func Do_test_quotestar_for_x11()
 endfunc
 
 func Test_quotestar()
+  let g:test_is_flaky = 1
   let skipped = ''
 
   let quotestar_saved = @*
