@@ -310,6 +310,13 @@ skip:
 
 static DWORD WINAPI search_worker(struct search_context_t* search_context)
 {
+    bore_file_t* const files = (bore_file_t*)search_context->b->file_alloc.base;
+    u32 proj_index =
+        search_context->search->options & BS_PROJECT &&
+        ~0u != search_context->search->file_index ?
+        files[search_context->search->file_index].proj_index :
+        ~0u;
+
     for (;;)
     {
         LONG file_index = InterlockedDecrement(search_context->remaining_file_count);
@@ -331,14 +338,9 @@ static DWORD WINAPI search_worker(struct search_context_t* search_context)
                 continue;
         }
 
-        bore_file_t* const files = (bore_file_t*)search_context->b->file_alloc.base;
-
         // skip files based on project filter
-        if (search_context->search->options & BS_PROJECT)
-        {
-            if (files[file_index].proj_index != files[search_context->search->file_index].proj_index)
-                continue;
-        }
+        if (proj_index != ~0u && proj_index != files[file_index].proj_index)
+            continue;
 
         search_one_file(search_context, bore_str(search_context->b, files[file_index].file), file_index);
 

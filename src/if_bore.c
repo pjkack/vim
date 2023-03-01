@@ -1846,7 +1846,7 @@ void borefind_parse_options(bore_t* b, char* arg, bore_search_t* search)
     // Usage: [option(s)] what
     //   -i ignore case
     //   -p project only (based on current buffer)
-    //   -e ext1,ext2,...,ext10
+    //   -e ext1,ext2,...,ext9
     //      filters the search based on a list of file extensions
     //   - 
     //   -u
@@ -1858,7 +1858,6 @@ void borefind_parse_options(bore_t* b, char* arg, bore_search_t* search)
     char* what_ext = NULL;
     int options = BS_NONE;
     u32 file_index = ~0u;
-    enum { MaxMatch = 1000 };
 
     for (; *arg; ++arg)
     {
@@ -1940,7 +1939,7 @@ void borefind_parse_options(bore_t* b, char* arg, bore_search_t* search)
     search->what_len = (int) strlen(what);
     search->options = options;
     search->file_index = file_index;
-    search->match_count = MaxMatch;
+    search->match_count = BORE_MAXMATCHTOTAL;
     search->ext_count = 0;
 
     // parse comma separated list of file extensions into list of hashes
